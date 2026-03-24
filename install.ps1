@@ -64,6 +64,22 @@ if (-not (Test-Path "ialclaw")) {
 else {
     Write-Host "Diretorio 'ialclaw' encontrado. Tentando sincronizar com o repositorio remoto..." -ForegroundColor Yellow
     if (Test-Path "ialclaw/.git") {
+        $workingTreeDirty = $false
+        $statusOutput = cmd.exe /c "git -C ialclaw status --porcelain"
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($statusOutput | Out-String))) {
+            $workingTreeDirty = $true
+        }
+
+        if ($workingTreeDirty) {
+            Write-Host "[ERRO] O repositorio local possui alteracoes nao commitadas e nao pode ser atualizado automaticamente." -ForegroundColor Red
+            Write-Host "[ERRO] Resolva isso antes de continuar. Fluxo recomendado:" -ForegroundColor Red
+            Write-Host "       cd ~/ialclaw" -ForegroundColor Gray
+            Write-Host "       git status" -ForegroundColor Gray
+            Write-Host "       git stash push -u -m 'ialclaw-install'" -ForegroundColor Gray
+            Write-Host "       git pull --ff-only" -ForegroundColor Gray
+            exit 1
+        }
+
         Push-Location ialclaw
         try {
             cmd.exe /c "git pull --ff-only"
@@ -71,9 +87,9 @@ else {
                 Write-Host "Repositorio local atualizado com sucesso." -ForegroundColor Green
             }
             else {
-                Write-Host "[AVISO] Nao foi possivel atualizar o repositorio local automaticamente." -ForegroundColor Yellow
-                Write-Host "[AVISO] Continuando com os arquivos ja existentes em .\ialclaw." -ForegroundColor Yellow
-                Write-Host "[AVISO] Se faltar algum arquivo novo, execute update.bat ou resolva o estado do Git manualmente." -ForegroundColor Yellow
+                Write-Host "[ERRO] Nao foi possivel atualizar o repositorio local automaticamente." -ForegroundColor Red
+                Write-Host "[ERRO] Resolva o estado do Git manualmente ou use update.bat apos limpar a arvore local." -ForegroundColor Red
+                exit 1
             }
         }
         finally {
@@ -81,7 +97,9 @@ else {
         }
     }
     else {
-        Write-Host "[AVISO] .\ialclaw existe, mas nao parece ser um repositorio Git. Continuando sem sincronizar." -ForegroundColor Yellow
+        Write-Host "[ERRO] .\ialclaw existe, mas nao parece ser um repositorio Git." -ForegroundColor Red
+        Write-Host "[ERRO] Renomeie ou remova a pasta atual para permitir um clone limpo." -ForegroundColor Red
+        exit 1
     }
 }
 

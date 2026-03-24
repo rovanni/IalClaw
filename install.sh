@@ -65,15 +65,27 @@ if [ ! -d "ialclaw" ]; then
 else
     echo "Diretório local encontrado. Tentando sincronizar com o repositório remoto..."
     if [ -d "ialclaw/.git" ]; then
+        if [ -n "$(git -C ialclaw status --porcelain)" ]; then
+            echo "[ERRO] O repositório local possui alterações não commitadas e não pode ser atualizado automaticamente."
+            echo "[ERRO] Resolva isso antes de continuar. Fluxo recomendado:"
+            echo "        cd ~/ialclaw"
+            echo "        git status"
+            echo "        git stash push -u -m 'ialclaw-install'"
+            echo "        git pull --ff-only"
+            exit 1
+        fi
+
         if git -C ialclaw pull --ff-only; then
             echo "Repositório local atualizado com sucesso."
         else
-            echo "[AVISO] Não foi possível atualizar o repositório local automaticamente."
-            echo "[AVISO] Continuando com os arquivos já existentes em ./ialclaw."
-            echo "[AVISO] Se faltar algum arquivo novo, execute ./update.sh ou resolva o estado do Git manualmente."
+            echo "[ERRO] Não foi possível atualizar o repositório local automaticamente."
+            echo "[ERRO] Resolva o estado do Git manualmente ou use ./update.sh após limpar a árvore local."
+            exit 1
         fi
     else
-        echo "[AVISO] ./ialclaw existe, mas não parece ser um repositório Git. Continuando sem sincronizar."
+        echo "[ERRO] ./ialclaw existe, mas não parece ser um repositório Git."
+        echo "[ERRO] Renomeie ou remova a pasta atual para permitir um clone limpo."
+        exit 1
     fi
 fi
 

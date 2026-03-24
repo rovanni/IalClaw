@@ -19,12 +19,19 @@ BACKUP_DATE=$(date +"%Y%m%d_%H%M%S")
 echo "      Backup concluído com sucesso."
 echo ""
 
+if [ -n "$(git status --porcelain)" ]; then
+	echo "[ERRO] O repositório possui alterações locais e a atualização automática foi interrompida para evitar perda de trabalho."
+	echo "[ERRO] Resolva com commit ou stash antes de continuar. Exemplo:"
+	echo "        git status"
+	echo "        git stash push -u -m 'ialclaw-update'"
+	echo "        ./update.sh"
+	exit 1
+fi
+
 echo "[2/5] 🌐 Baixando a versão mais recente do repositório..."
 git fetch origin || { echo "[ERRO] Falha ao conectar com o GitHub."; exit 1; }
 
-# Força a versão local a espelhar a remota (apaga commits acidentais do usuário)
-git reset --hard origin/main || { echo "[ERRO] Falha ao sincronizar arquivos."; exit 1; }
-git clean -fd || true # Remove lixo untracked
+git pull --ff-only || { echo "[ERRO] Falha ao sincronizar arquivos via fast-forward."; exit 1; }
 echo "      Sincronização concluída."
 echo ""
 
@@ -34,7 +41,7 @@ echo "      Dependências atualizadas."
 echo ""
 
 echo "[4/5] 🔨 Compilando o IalClaw v3.0 (TypeScript)..."
-npm run build || { echo "[ERRO] Falha ao compilar o código."; exit 1; }
+npx tsc --noEmit || { echo "[ERRO] Falha ao validar o código TypeScript."; exit 1; }
 echo "      Compilação concluída."
 echo ""
 
