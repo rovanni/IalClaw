@@ -14,6 +14,14 @@ import { PlanStep } from '../planner/types';
 import { toolRegistry } from '../tools/ToolRegistry';
 import { buildWorkspaceContext, formatWorkspaceForRepair } from '../planner/workspaceContext';
 import { formatTargetFileBlock, rankFiles, selectWithConfidence } from '../planner/fileTargeting';
+import { workspaceService } from '../../services/WorkspaceService';
+import { DiffOperation, validateDiffOperations } from '../../tools/workspaceDiff';
+import { estimateChangeSize, selectDiffStrategy } from './diffStrategy';
+import { getContext } from '../../shared/TraceContext';
+import { getRequiredCapabilities } from '../../capabilities/taskCapabilities';
+import { handleCapabilityFallback } from '../../capabilities/capabilityFallback';
+import { skillManager } from '../../capabilities';
+import { SkillPolicy } from '../../capabilities/SkillManager';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -47,6 +55,20 @@ export class AgentExecutor {
         for (const [stepIndex, step] of plan.steps.entries()) {
             this.applyFileTargeting(step, plan.goal, session);
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
+
+            if (await this.tryApplyDiffAwareSave(step, plan.goal, session)) {
+                if (session) {
+                    session.last_error = undefined;
+                    session.last_error_type = undefined;
+                    session.last_error_hash = undefined;
+                    session.last_error_fingerprint = undefined;
+                    session._tool_input_attempts = 0;
+                    session._input_history = [];
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+                continue;
+            }
 
             let result;
             try {
@@ -313,6 +335,28 @@ export class AgentExecutor {
                 plan = await this.replan(plan, validationError, session);
                 attempt++;
                 continue;
+            }
+
+            const workspaceContextForRuntime = buildWorkspaceContext(session.current_project_id);
+            const requiresBrowser = workspaceContextForRuntime.some(file => file.relative_path.toLowerCase() === 'index.html');
+            if (requiresBrowser) {
+                const browserCapability = await this.ensureBrowserCapability(session, plan.goal);
+                if (!browserCapability.available) {
+                    const fallback = browserCapability.fallback;
+                    debugBus.emit('capability_fallback', {
+                        capability: 'browser_execution',
+                        fallback,
+                        trace_id: getTraceIdSafe()
+                    });
+
+                    return {
+                        success: false,
+                        error: browserCapability.error,
+                        error_type: 'missing_capability',
+                        capability: 'browser_execution',
+                        fallback
+                    };
+                }
             }
 
             const runtimeResult = await executeToolCall('workspace_run_project', {
@@ -603,6 +647,165 @@ JSON valido`
         }
     }
 
+    private async tryApplyDiffAwareSave(step: PlanStep, goal: string, session?: Session): Promise<boolean> {
+        if (!session?.current_project_id || step.tool !== 'workspace_save_artifact') {
+            return false;
+        }
+
+        const workspaceContext = buildWorkspaceContext(session.current_project_id);
+        const fileSelection = selectWithConfidence(rankFiles({
+            goal,
+            error: this.safeParseErrorPayload(session.last_error),
+            files: workspaceContext
+        }));
+
+        if (!fileSelection || fileSelection.confidence < 0.8) {
+            return false;
+        }
+
+        const filename = step.input.filename || fileSelection.target;
+        const desiredContent = typeof step.input.content === 'string' ? step.input.content : '';
+        const currentContent = workspaceService.readArtifact(session.current_project_id, filename);
+        const changeSizeEstimate = currentContent ? estimateChangeSize(currentContent, desiredContent) : 'large';
+        const strategy = selectDiffStrategy({
+            confidence: fileSelection.confidence,
+            fileExists: currentContent !== null,
+            changeSizeEstimate,
+            errorContext: Boolean(session.last_error)
+        });
+
+        debugBus.emit('diff_strategy_selected', {
+            strategy,
+            confidence: fileSelection.confidence,
+            file: filename,
+            change_size_estimate: changeSizeEstimate,
+            trace_id: getTraceIdSafe()
+        });
+
+        if (strategy !== 'diff') {
+            debugBus.emit('diff_fallback_triggered', {
+                reason: 'strategy_selected_overwrite',
+                file: filename,
+                confidence: fileSelection.confidence,
+                trace_id: getTraceIdSafe()
+            });
+            return false;
+        }
+
+        if (!currentContent || !desiredContent || currentContent === desiredContent) {
+            return false;
+        }
+
+        const operations = await this.generateDiffOperations(filename, currentContent, desiredContent);
+        if (!operations || !validateDiffOperations(operations)) {
+            debugBus.emit('diff_validation_failed', {
+                reason: 'invalid_operations',
+                file: filename,
+                trace_id: getTraceIdSafe()
+            });
+            debugBus.emit('thought', {
+                type: 'thought',
+                content: `[EXECUTOR] Diff-aware editing nao encontrou patch confiavel para ${filename}. Fallback para overwrite.`
+            });
+            debugBus.emit('diff_fallback_triggered', {
+                reason: 'invalid_operations',
+                file: filename,
+                trace_id: getTraceIdSafe()
+            });
+            return false;
+        }
+
+        const diffResult = await executeToolCall('workspace_apply_diff', {
+            project_id: session.current_project_id,
+            filename,
+            operations,
+            validation: {
+                requireAnchorMatch: true,
+                maxReplacements: 6
+            }
+        });
+
+        if (!diffResult.success) {
+            debugBus.emit('diff_validation_failed', {
+                reason: diffResult.error || 'unknown_diff_failure',
+                file: filename,
+                trace_id: getTraceIdSafe()
+            });
+            debugBus.emit('thought', {
+                type: 'thought',
+                content: `[EXECUTOR] workspace_apply_diff falhou em ${filename}. Fallback para overwrite completo.`
+            });
+            debugBus.emit('diff_fallback_triggered', {
+                reason: diffResult.error || 'unknown_diff_failure',
+                file: filename,
+                trace_id: getTraceIdSafe()
+            });
+            return false;
+        }
+
+        debugBus.emit('diff_applied', {
+            file: filename,
+            operationsCount: operations.length,
+            confidence: fileSelection.confidence,
+            trace_id: getTraceIdSafe()
+        });
+        debugBus.emit('thought', {
+            type: 'thought',
+            content: `[EXECUTOR] Diff-aware editing aplicado em ${filename} com ${operations.length} operacao(oes).`
+        });
+        return true;
+    }
+
+    private async ensureBrowserCapability(session: Session, goal: string): Promise<{
+        available: boolean;
+        error?: string;
+        fallback?: ReturnType<typeof handleCapabilityFallback>;
+    }> {
+        const required = getRequiredCapabilities({
+            type: 'browser_validation'
+        });
+
+        for (const capability of required) {
+            const overridePolicy = this.getCapabilityPolicyOverride(session, capability);
+            const available = await skillManager.ensure(capability, overridePolicy);
+
+            if (!available) {
+                const fallback = handleCapabilityFallback(capability);
+
+                if (capability === 'browser_execution') {
+                    if (overridePolicy === 'auto-install') {
+                        return {
+                            available: false,
+                            error: 'Nao foi possivel instalar automaticamente o suporte a browser (Puppeteer) neste ambiente.',
+                            fallback
+                        };
+                    }
+
+                    return {
+                        available: false,
+                        error: `Esta tarefa requer suporte a browser para validar o projeto atual.
+
+Objetivo atual: ${goal}
+
+Posso continuar em modo degradado sem validacao em browser, ou voce pode autorizar a tentativa de instalacao do suporte necessario.
+
+Se quiser autorizar, responda:
+"pode instalar o puppeteer"`,
+                        fallback
+                    };
+                }
+
+                return {
+                    available: false,
+                    error: `Capacidade obrigatoria indisponivel: ${capability}`,
+                    fallback
+                };
+            }
+        }
+
+        return { available: true };
+    }
+
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
     }
@@ -644,6 +847,70 @@ JSON valido`
         } catch {
             return null;
         }
+    }
+
+    private getCapabilityPolicyOverride(session: Session, capability: string): SkillPolicy | undefined {
+        return session.capability_policy_overrides?.[capability] as SkillPolicy | undefined;
+    }
+
+    private async generateDiffOperations(filename: string, currentContent: string, desiredContent: string): Promise<DiffOperation[] | null> {
+        const messages: MessagePayload[] = [
+            {
+                role: 'system',
+                content: `Voce gera patches minimos e seguros.
+Retorne apenas JSON valido.
+Nao reescreva o arquivo inteiro.
+Use apenas operacoes com ancoras textuais existentes.
+Prefira replace a append quando possivel.
+
+Formato:
+{
+  "operations": [
+    { "type": "replace", "anchor": "ancora existente", "content": "novo conteudo" },
+    { "type": "insert", "anchor": "ancora existente", "position": "before" | "after", "content": "novo conteudo" },
+    { "type": "append", "content": "novo conteudo" }
+  ]
+}`
+            },
+            {
+                role: 'user',
+                content: `Arquivo alvo: ${filename}
+
+CONTEUDO ATUAL:
+${currentContent.slice(0, 12000)}
+
+CONTEUDO DESEJADO:
+${desiredContent.slice(0, 12000)}
+
+REGRAS:
+- Use mudancas minimas.
+- Use ancoras que ja existam no CONTEUDO ATUAL.
+- Nao reescreva o arquivo todo.
+- Se nao for possivel fazer patch seguro, retorne {"operations":[]}.
+- Retorne apenas JSON.`
+            }
+        ];
+
+        const response = await this.llm.generate(messages);
+        const raw = response.final_answer;
+        if (!raw) {
+            return null;
+        }
+
+        try {
+            const parsed = parseLlmJson<any>(raw);
+            if (Array.isArray(parsed)) {
+                return parsed as DiffOperation[];
+            }
+
+            if (Array.isArray(parsed?.operations)) {
+                return parsed.operations as DiffOperation[];
+            }
+        } catch {
+            return null;
+        }
+
+        return null;
     }
 
     private buildStructuredErrorPrompt(lastError?: string, lastErrorType?: string): string {
@@ -701,5 +968,13 @@ Each step.tool must be one of: [${strictToolEnum}]`;
         if (recreatesProject) {
             throw new Error('Validacao falhou: replan tentou recriar projeto ativo.');
         }
+    }
+}
+
+function getTraceIdSafe(): string | undefined {
+    try {
+        return getContext().trace_id;
+    } catch {
+        return undefined;
     }
 }

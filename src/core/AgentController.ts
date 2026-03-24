@@ -9,6 +9,7 @@ import { MessagePayload } from '../engine/ProviderFactory';
 import { AgentGateway } from '../engine/AgentGateway';
 import { SessionManager } from '../shared/SessionManager';
 import { AgentRuntime } from './AgentRuntime';
+import { skillManager } from '../capabilities';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -44,9 +45,9 @@ export class AgentController {
             try {
                 const answer = await this.runConversation(conversationId, payload.text);
                 await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
-            } catch (e: any) {
-                console.error('[AgentController] Error executing flow:', e);
-                ctx.reply(`Ocorreu um erro no pipeline cognitivo:\n${e.message}`);
+            } catch (error: any) {
+                console.error('[AgentController] Error executing flow:', error);
+                ctx.reply(`Ocorreu um erro no pipeline cognitivo:\n${error.message}`);
             }
         });
     }
@@ -55,9 +56,9 @@ export class AgentController {
         return SessionManager.runWithSession(sessionId, async () => {
             try {
                 return await this.runConversation(sessionId, userQuery);
-            } catch (e: any) {
-                console.error('[AgentController] Error executing web flow:', e);
-                throw e;
+            } catch (error: any) {
+                console.error('[AgentController] Error executing web flow:', error);
+                throw error;
             }
         });
     }
@@ -66,7 +67,7 @@ export class AgentController {
         const session = SessionManager.getCurrentSession();
         this.memory.saveMessage(sessionId, 'user', userQuery);
 
-        const sessionDirectiveReply = this.handleSessionDirective(userQuery, session);
+        const sessionDirectiveReply = await this.handleSessionDirective(userQuery, session);
         if (sessionDirectiveReply) {
             this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
             return sessionDirectiveReply;
@@ -109,9 +110,9 @@ Nao alucine fatos.\n\n${contextStr}`
             }
         ];
 
-        for (const msg of history) {
-            if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') {
-                messages.push({ role: msg.role, content: msg.content });
+        for (const message of history) {
+            if (message.role === 'user' || message.role === 'assistant' || message.role === 'tool') {
+                messages.push({ role: message.role, content: message.content });
             }
         }
 
@@ -119,13 +120,13 @@ Nao alucine fatos.\n\n${contextStr}`
 
         const result = await this.loop.run(messages, policy);
 
-        for (const nm of result.newMessages) {
+        for (const newMessage of result.newMessages) {
             this.memory.saveMessage(
                 sessionId,
-                nm.role,
-                nm.content,
-                nm.tool_name,
-                nm.tool_args ? JSON.stringify(nm.tool_args) : undefined
+                newMessage.role,
+                newMessage.content,
+                newMessage.tool_name,
+                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
             );
         }
 
@@ -147,15 +148,29 @@ Nao alucine fatos.\n\n${contextStr}`
         return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend)\b/i.test(userQuery);
     }
 
-    private handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): string | null {
+    private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {
         const normalized = userQuery.toLowerCase().trim();
 
         if (this.isPuppeteerInstallAuthorization(normalized)) {
-            return `Recebi sua autorização para instalar o puppeteer.
+            if (!session) {
+                return 'Nao encontrei uma sessao ativa para registrar a autorizacao de instalacao.';
+            }
 
-No runtime atual do dashboard, a instalação automática ainda não está conectada ao sistema de execução do agente, então esse pedido não será enviado ao planner nem ao executor por engano.
+            session.capability_policy_overrides = {
+                ...(session.capability_policy_overrides || {}),
+                browser_execution: 'auto-install'
+            };
 
-Enquanto isso, vou continuar tratando o projeto atual como continuidade da mesma sessão.`;
+            const installed = await skillManager.ensure('browser_execution', 'auto-install');
+            if (installed) {
+                return 'Instalacao do suporte a browser concluida com sucesso. Agora posso validar projetos HTML automaticamente nesta sessao.';
+            }
+
+            return `Recebi sua autorizacao e tentei instalar o suporte a browser automaticamente, mas a instalacao nao concluiu com sucesso neste ambiente.
+
+Voce ainda pode:
+1. instalar manualmente o puppeteer
+2. continuar em modo degradado sem validacao em browser`;
         }
 
         if (this.isContinueProjectDirective(normalized) && session?.current_project_id) {
@@ -167,7 +182,7 @@ Enquanto isso, vou continuar tratando o projeto atual como continuidade da mesma
             session._tool_input_attempts = 0;
             session._input_history = [];
 
-            return `Vou continuar apenas o projeto atual desta sessão (${session.current_project_id}) e não vou criar um projeto novo.`;
+            return `Vou continuar apenas o projeto atual desta sessao (${session.current_project_id}) e nao vou criar um projeto novo.`;
         }
 
         return null;

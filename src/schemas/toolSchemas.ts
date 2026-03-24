@@ -38,9 +38,85 @@ function buildRequiredStringSchema(fields: string[]): ToolSchema {
     };
 }
 
+function buildWorkspaceApplyDiffSchema(): ToolSchema {
+    return {
+        safeParse(input: any): ValidationResult {
+            const candidate = input && typeof input === 'object' ? input : {};
+            const errors: Array<{ path: string[]; message: string }> = [];
+
+            const filenameValue = candidate.filename || candidate.filePath;
+            const projectIdMessage = validateStringField(candidate, 'project_id');
+            if (projectIdMessage) {
+                errors.push({ path: ['project_id'], message: projectIdMessage });
+            }
+
+            if (typeof filenameValue !== 'string' || filenameValue.trim().length < 1) {
+                errors.push({ path: ['filename'], message: 'Expected non-empty filename string' });
+            }
+
+            if (!Array.isArray(candidate.operations) || candidate.operations.length === 0) {
+                errors.push({ path: ['operations'], message: 'Expected non-empty operations array' });
+            } else {
+                candidate.operations.forEach((operation: any, index: number) => {
+                    if (!operation || typeof operation !== 'object') {
+                        errors.push({ path: ['operations', String(index)], message: 'Expected object operation' });
+                        return;
+                    }
+
+                    if (!['replace', 'insert', 'append'].includes(operation.type)) {
+                        errors.push({ path: ['operations', String(index), 'type'], message: 'Invalid diff operation type' });
+                    }
+
+                    if (operation.type !== 'append') {
+                        if (typeof operation.anchor !== 'string' || operation.anchor.length < 1) {
+                            errors.push({ path: ['operations', String(index), 'anchor'], message: 'Expected non-empty anchor string' });
+                        }
+                    }
+
+                    if (operation.type === 'insert' && !['before', 'after'].includes(operation.position)) {
+                        errors.push({ path: ['operations', String(index), 'position'], message: 'Expected "before" or "after"' });
+                    }
+
+                    if (typeof operation.content !== 'string' || operation.content.length < 2) {
+                        errors.push({ path: ['operations', String(index), 'content'], message: 'Expected non-empty content string' });
+                    }
+                });
+            }
+
+            if (!candidate.validation || typeof candidate.validation !== 'object') {
+                errors.push({ path: ['validation'], message: 'Expected validation object' });
+            } else {
+                if (typeof candidate.validation.requireAnchorMatch !== 'boolean') {
+                    errors.push({ path: ['validation', 'requireAnchorMatch'], message: 'Expected boolean requireAnchorMatch' });
+                }
+
+                if (
+                    candidate.validation.maxReplacements !== undefined
+                    && (!Number.isInteger(candidate.validation.maxReplacements) || candidate.validation.maxReplacements < 1)
+                ) {
+                    errors.push({ path: ['validation', 'maxReplacements'], message: 'Expected positive integer maxReplacements' });
+                }
+            }
+
+            if (errors.length > 0) {
+                return { success: false, errors };
+            }
+
+            return {
+                success: true,
+                data: {
+                    ...candidate,
+                    filename: filenameValue
+                }
+            };
+        }
+    };
+}
+
 export const toolSchemas: Record<string, ToolSchema> = {
     workspace_create_project: buildRequiredStringSchema(['name', 'type', 'prompt']),
     workspace_save_artifact: buildRequiredStringSchema(['project_id', 'filename', 'content']),
+    workspace_apply_diff: buildWorkspaceApplyDiffSchema(),
     workspace_validate_project: buildRequiredStringSchema(['project_id']),
     workspace_run_project: buildRequiredStringSchema(['project_id'])
 };

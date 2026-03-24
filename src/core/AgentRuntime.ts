@@ -34,6 +34,10 @@ export class AgentRuntime {
                 const result = await this.executor.runWithHealing(plan, session);
 
                 if (!result.success) {
+                    if (result.error_type === 'missing_capability' && result.capability === 'browser_execution') {
+                        return result.error || `O ambiente atual nao oferece a capacidade obrigatoria: ${result.capability}.`;
+                    }
+
                     if (result.error_type === 'environment_dependency' && result.dependency === 'puppeteer') {
                         return `O projeto foi gerado, mas falta um componente do ambiente para testar HTML automaticamente: puppeteer.
 

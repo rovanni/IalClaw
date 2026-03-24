@@ -5,6 +5,7 @@ export interface SessionContext {
     current_goal?: string;
     current_project_id?: string;
     continue_project_only?: boolean;
+    capability_policy_overrides?: Record<string, 'auto-install' | 'ask-user' | 'strict-no-install'>;
     last_error?: string;
     last_error_type?: string;
     last_error_hash?: string;

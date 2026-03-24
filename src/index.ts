@@ -10,6 +10,8 @@ import { TelegramInputHandler } from './telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from './telegram/TelegramOutputHandler';
 import { AgentController } from './core/AgentController';
 import { startTraceRecorder } from './shared/TraceRecorder';
+import { bootstrapCapabilities } from './capabilities/bootstrapCapabilities';
+import { capabilityRegistry, skillManager } from './capabilities';
 
 dotenv.config();
 
@@ -50,6 +52,10 @@ const controller = new AgentController(
     inputHandler,
     outputHandler
 );
+
+bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
+    console.error('[Startup] Falha ao fazer bootstrap de capabilities:', error.message);
+});
 
 dashboard.setController(controller);
 dashboard.start();

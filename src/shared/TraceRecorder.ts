@@ -38,7 +38,22 @@ export function startTraceRecorder() {
         'tool_input_error',
         'repair:tool_input:raw',
         'repair:tool_input:normalized',
-        'repair:tool_input:baseline'
+        'repair:tool_input:baseline',
+        'diff_strategy_selected',
+        'diff_validation_failed',
+        'diff_applied',
+        'diff_fallback_triggered',
+        'anchor_resolved',
+        'anchor_resolution_failed',
+        'capability_required',
+        'capability_available',
+        'capability_fallback',
+        'skill_not_found',
+        'skill_missing',
+        'skill_install_required',
+        'skill_auto_install_start',
+        'skill_auto_install_result',
+        'skill_auto_install_failed'
     ];
 
     for (const eventName of tracedEvents) {

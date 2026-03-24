@@ -154,6 +154,22 @@ export class WorkspaceService {
         emitDebug('tool', { name: 'workspace_save', project_id: projectId, file: filename, status: 'success' });
         return outputPath;
     }
+
+    public readArtifact(projectId: string, filename: string): string | null {
+        const projectPath = path.join(this.basePath, 'projects', projectId);
+        if (!fs.existsSync(projectPath)) {
+            throw new Error(`Projeto ${projectId} nao encontrado.`);
+        }
+
+        const safePath = sanitizePath(filename);
+        const outputPath = path.join(projectPath, 'output', safePath);
+
+        if (!fs.existsSync(outputPath)) {
+            return null;
+        }
+
+        return fs.readFileSync(outputPath, 'utf8');
+    }
 }
 
 export const workspaceService = new WorkspaceService();
