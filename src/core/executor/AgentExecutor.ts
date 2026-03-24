@@ -44,7 +44,17 @@ export class AgentExecutor {
         for (const [stepIndex, step] of plan.steps.entries()) {
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
 
-            const result = await executeToolCall(step.tool, step.input);
+            let result;
+            try {
+                result = await executeToolCall(step.tool, step.input);
+            } catch (error: any) {
+                throw new StepExecutionError(
+                    error?.message || `Execucao interrompida no step ${step.id}`,
+                    stepIndex,
+                    step.id,
+                    step.tool
+                );
+            }
 
             if (!result.success) {
                 debugBus.emit('thought', { type: 'error', content: `[EXECUTOR] Abortando. Falha no Step ${step.id}: ${result.error}` });
