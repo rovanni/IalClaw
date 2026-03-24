@@ -3,6 +3,8 @@
 # IalClaw Cognitive System v3.0
 ### OpenClaw-powered local cognitive agent
 
+![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Powered by OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
+
 IalClaw is a 100% local and private Cognitive Agent developed in Node.js (TypeScript). Integrated directly with Telegram, it features an interactive **Local Web Dashboard** for real-time thought visualization.
 
 ---
@@ -101,12 +103,19 @@ If you already have IalClaw installed, use the included updater scripts:
 For detailed technical specifications and cognitive architecture notes, see the [/specs](./specs) folder.
 
 ---
+
+## 🤝 Contributing
+Contributions are welcome! Feel free to open an **issue** to discuss new ideas or report bugs. If you want to contribute code, please open a **Pull Request**.
+
+---
 ---
 
 # 🇧🇷 Versão em Português
 
 # IalClaw Cognitive System v3.0
 ### Agente cognitivo local baseado em OpenClaw
+
+![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Baseado em OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
 
 O IalClaw é um Agente Cognitivo 100% local e privado, desenvolvido em Node.js (TypeScript). Integrado diretamente no Telegram, ele conta com um **Dashboard Web Local** interativo para visualização de pensamentos em tempo real.
 
@@ -201,3 +210,8 @@ Se você já instalou o IalClaw, use nossos scripts de atualização:
 
 ## 📄 Documentação
 Para especificações técnicas detalhadas e notas sobre a arquitetura cognitiva, consulte a pasta [/specs](./specs).
+
+---
+
+## 🤝 Contribuições
+Contribuições são bem-vindas! Sinta-se à vontade para abrir uma **issue** para discutir novas ideias ou reportar bugs. Se você deseja contribuir com código, abra um **Pull Request**.
