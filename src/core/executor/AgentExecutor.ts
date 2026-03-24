@@ -14,6 +14,20 @@ import { parseLlmJson } from '../../utils/parseLlmJson';
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
 
+class StepExecutionError extends Error {
+    stepIndex: number;
+    stepId: number;
+    stepTool: string;
+
+    constructor(message: string, stepIndex: number, stepId: number, stepTool: string) {
+        super(message);
+        this.name = 'StepExecutionError';
+        this.stepIndex = stepIndex;
+        this.stepId = stepId;
+        this.stepTool = stepTool;
+    }
+}
+
 export class AgentExecutor {
     private llm: LLMProvider;
     private memory: CognitiveMemory;
@@ -26,14 +40,19 @@ export class AgentExecutor {
     async run(plan: ExecutionPlan) {
         debugBus.emit('thought', { type: 'action', content: `[EXECUTOR] Iniciando meta: ${plan.goal}` });
 
-        for (const step of plan.steps) {
+        for (const [stepIndex, step] of plan.steps.entries()) {
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
 
             const result = await executeToolCall(step.tool, step.input);
 
             if (!result.success) {
                 debugBus.emit('thought', { type: 'error', content: `[EXECUTOR] Abortando. Falha no Step ${step.id}: ${result.error}` });
-                throw new Error(`Execucao interrompida no step ${step.id}: ${result.error}`);
+                throw new StepExecutionError(
+                    `Execucao interrompida no step ${step.id}: ${result.error}`,
+                    stepIndex,
+                    step.id,
+                    step.tool
+                );
             }
 
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -54,6 +73,8 @@ export class AgentExecutor {
                 await this.run(plan);
             } catch (error: any) {
                 const failureMessage = error.message || 'Falha desconhecida na execucao do plano.';
+                const failedStepIndex = error instanceof StepExecutionError ? error.stepIndex : 0;
+                const currentStep = plan.steps[failedStepIndex] || plan.steps[0];
 
                 if (failureMessage.startsWith('tool_input_error::')) {
                     let payload: any;
@@ -97,7 +118,6 @@ export class AgentExecutor {
                         reason: 'tool_input_error'
                     });
 
-                    const currentStep = plan.steps[0];
                     plan.steps = [currentStep];
 
                     const newPlan = await this.replan(plan, session.last_error, session);
