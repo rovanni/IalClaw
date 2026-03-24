@@ -64,6 +64,18 @@ irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
    ```
    > 🧠 Open Telegram to chat with the bot and access `http://localhost:3000` in your browser to see the Neural Graph working and forming memories in real-time!
 
+6. **Bootstrap the minimal Gateway identities manually (optional):**
+   ```bash
+   npx ts-node src/scripts/bootstrap-identities.ts
+   ```
+   > This is normally done automatically by the installer. Use this command only if you need to reseed the default routing identities manually.
+
+7. **Validate Gateway routing:**
+   ```bash
+   npx ts-node src/scripts/test-routing.ts
+   ```
+   > The routing test now uses the same `db.sqlite` database as the main app. If the database has no agent identities, the script will warn you and routing will fall back to `identity:agent:general`.
+
 ---
 
 ## 🔄 How to Update
@@ -74,6 +86,31 @@ If you already have IalClaw installed and want to pull the latest version withou
 - **Linux/macOS:** Run `./update.sh` in the terminal
 
 *The script will safely backup your `db.sqlite` and `.env` before forcing a clean synchronization with the latest official code.*
+
+### Important: local changes block automatic update
+
+If your local checkout has modified files, the installer and updater now stop early to avoid partial updates and broken installs.
+
+Recommended recovery flow:
+
+```bash
+git status
+git stash push -u -m "ialclaw-update"
+git pull --ff-only
+npm install
+```
+
+If needed, reapply your local changes later with:
+
+```bash
+git stash list
+git stash pop
+```
+
+### Installer behavior on existing folders
+
+If the `ialclaw` folder already exists, the installer will try to update it using `git pull --ff-only`.
+If the folder is dirty or not a Git repository, installation stops with a clear error instead of continuing with a partially updated copy.
 
 ---
 ---
@@ -146,6 +183,18 @@ irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
    ```
    > 🧠 Abra o Telegram para conversar com o bot e acesse `http://localhost:3000` no navegador para ver o Grafo Neural trabalhando e formando memórias em tempo real!
 
+6. **Semeie manualmente as identidades mínimas do Gateway (opcional):**
+   ```bash
+   npx ts-node src/scripts/bootstrap-identities.ts
+   ```
+   > Normalmente isso já é feito automaticamente pelo instalador. Use esse comando apenas se precisar recriar manualmente as identidades padrão de roteamento.
+
+7. **Valide o roteamento do Gateway:**
+   ```bash
+   npx ts-node src/scripts/test-routing.ts
+   ```
+   > O teste de roteamento agora usa o mesmo banco `db.sqlite` da aplicação principal. Se o banco estiver sem identidades de agentes, o script vai avisar e o roteamento cairá no fallback `identity:agent:general`.
+
 ---
 
 ## 🔄 Como Atualizar
@@ -156,3 +205,28 @@ Se você já instalou o IalClaw e quer puxar a versão mais recente da nuvem sem
 - **Linux/macOS:** Rode `./update.sh` no terminal
 
 *O script fará um backup de segurança automático do seu `db.sqlite` e `.env` antes de forçar uma sincronização limpa com o código oficial.*
+
+### Importante: alterações locais bloqueiam atualização automática
+
+Se o seu checkout local tiver arquivos modificados, o instalador e o atualizador agora interrompem o processo cedo para evitar atualização parcial e instalação quebrada.
+
+Fluxo recomendado para destravar:
+
+```bash
+git status
+git stash push -u -m "ialclaw-update"
+git pull --ff-only
+npm install
+```
+
+Se quiser reaplicar suas mudanças depois:
+
+```bash
+git stash list
+git stash pop
+```
+
+### Comportamento do instalador quando a pasta já existe
+
+Se a pasta `ialclaw` já existir, o instalador tentará atualizá-la usando `git pull --ff-only`.
+Se a pasta estiver suja ou nem for um repositório Git, a instalação será interrompida com um erro claro, em vez de continuar com uma cópia parcialmente atualizada.

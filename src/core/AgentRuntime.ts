@@ -56,7 +56,7 @@ e eu tento fazer isso para voce.`;
                 return `Plano executado com sucesso.
 Meta: ${plan.goal}
 Passos executados: ${plan.steps.length}
-Verifique o Dashboard Web para os traces completos.`;
+Os traces completos ficam no Thought Trace e no Interaction Panel deste dashboard.`;
             } catch (error: any) {
                 return `Falha na execucao do plano: ${error.message}`;
             }
