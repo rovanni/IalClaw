@@ -1,0 +1,54 @@
+import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+const question = (query: string): Promise<string> => {
+    return new Promise(resolve => rl.question(query, resolve));
+};
+
+async function runSetup() {
+    console.log("\n==========================================");
+    console.log(" 🛠️  Configuração Interativa do IalClaw  🛠️ ");
+    console.log("==========================================\n");
+    console.log("Vamos configurar o seu assistente passo a passo. Se não souber o que colocar, apenas aperte Enter para usar o padrão.\n");
+
+    const ollamaHost = await question("1. Qual o endereço do Ollama? [Padrão: http://127.0.0.1:11434]: ");
+    const finalOllamaHost = ollamaHost.trim() || "http://127.0.0.1:11434";
+
+    const model = await question("2. Qual modelo de IA deseja usar? [Padrão: glm-5:cloud]: ");
+    const finalModel = model.trim() || "glm-5:cloud";
+
+    console.log("\n[DICA] Para criar um Bot no Telegram, fale com o @BotFather e copie o Token gerado.");
+    const telegramToken = await question("3. Cole aqui o TELEGRAM_BOT_TOKEN: ");
+
+    console.log("\n[DICA] O IalClaw é privado e seguro. Apenas você pode falar com ele.");
+    console.log("[DICA] Para descobrir seu ID, mande um 'Oi' para o bot @userinfobot no Telegram.");
+    const telegramId = await question("4. Cole aqui o seu ID do Telegram (ex: 8071707790): ");
+
+    const envContent = `# Configurações do Provedor (Ollama local)
+OLLAMA_HOST=${finalOllamaHost}
+
+# Modelo Principal
+MODEL=${finalModel}
+
+# Conexão com o Telegram
+TELEGRAM_BOT_TOKEN=${telegramToken.trim()}
+
+# Seu ID do Telegram autorizado a conversar com o bot
+TELEGRAM_ALLOWED_USER_IDS=${telegramId.trim()}
+`;
+
+    const envPath = path.join(process.cwd(), '.env');
+    fs.writeFileSync(envPath, envContent, 'utf8');
+
+    console.log("\n✅ Arquivo .env criado com sucesso! Tudo pronto.");
+    console.log("▶️  Para iniciar o agente, digite: npm run dev\n");
+    rl.close();
+}
+
+runSetup().catch(console.error);
