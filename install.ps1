@@ -103,9 +103,11 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host " Instalacao concluida com sucesso!        " -ForegroundColor Green
 Write-Host ""
 Write-Host " >> PROXIMO PASSO:" -ForegroundColor Yellow
-Write-Host " 1. Configure o arquivo .env (Ollama, OpenAI, Anthropic, etc)"
-Write-Host " 2. Valide o Router Cerebro de teste rodando:"
+Write-Host " 1. Acesse a pasta do agente:"
+Write-Host "    cd ialclaw" -ForegroundColor Gray
+Write-Host " 2. Configure o arquivo .env (Ollama, OpenAI, Anthropic, etc)"
+Write-Host " 3. Valide o Router Cerebro de teste rodando:"
 Write-Host "    npx ts-node src/scripts/test-routing.ts" -ForegroundColor Gray
-Write-Host " 3. Se tudo passar, execute:"
+Write-Host " 4. Se tudo passar, execute:"
 Write-Host "    npm run dev" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Cyan
