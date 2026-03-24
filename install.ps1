@@ -37,8 +37,8 @@ if ($NodeMajorVersion -lt 18) {
 # -------------------------
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    Write-Host "[AVISO] Ollama nao encontrado." -ForegroundColor Yellow
-    Write-Host "Instale em: https://ollama.com" -ForegroundColor Yellow
+    Write-Host "[INFO] Ollama nao encontrado localmente (opcional)." -ForegroundColor Cyan
+    Write-Host "Voce pode configurar outro provedor (.env) ou instalar o Ollama depois." -ForegroundColor Cyan
 }
 else {
     Write-Host "Ollama encontrado ✔" -ForegroundColor Green
@@ -95,7 +95,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host " Instalacao concluida com sucesso!        " -ForegroundColor Green
 Write-Host ""
 Write-Host " >> PROXIMO PASSO:" -ForegroundColor Yellow
-Write-Host " 1. Configure o arquivo .env"
+Write-Host " 1. Configure o arquivo .env (Ollama, OpenAI, Anthropic, etc)"
 Write-Host " 2. Valide o Router Cerebro de teste rodando:"
 Write-Host "    npx ts-node src/scripts/test-routing.ts" -ForegroundColor Gray
 Write-Host " 3. Se tudo passar, execute:"

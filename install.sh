@@ -33,8 +33,8 @@ fi
 # -------------------------
 
 if ! command -v ollama &> /dev/null; then
-    echo "[AVISO] Ollama não encontrado."
-    echo "Instale em: https://ollama.com"
+    echo "[INFO] Ollama não encontrado localmente."
+    echo "Opcional: Você pode usar provedores em nuvem (OpenAI, Anthropic) ou instalar depois em: https://ollama.com"
 else
     echo "Ollama encontrado ✔"
     ollama list || true
@@ -88,7 +88,7 @@ echo "=========================================="
 echo " Instalação concluída com sucesso!"
 echo ""
 echo " >> PRÓXIMO PASSO:"
-echo " 1. Configure o .env"
+echo " 1. Configure o .env (defina seu provedor como Ollama, OpenAI, etc)"
 echo " 2. Valide o Router Cérebro com:"
 echo "    npx ts-node src/scripts/test-routing.ts"
 echo " 3. Execute:"
