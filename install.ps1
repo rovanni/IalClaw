@@ -62,7 +62,27 @@ if (-not (Test-Path "ialclaw")) {
     git clone $RepoUrl ialclaw
 }
 else {
-    Write-Host "Diretorio 'ialclaw' ja existe. Pulando clone." -ForegroundColor Yellow
+    Write-Host "Diretorio 'ialclaw' encontrado. Tentando sincronizar com o repositorio remoto..." -ForegroundColor Yellow
+    if (Test-Path "ialclaw/.git") {
+        Push-Location ialclaw
+        try {
+            cmd.exe /c "git pull --ff-only"
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Repositorio local atualizado com sucesso." -ForegroundColor Green
+            }
+            else {
+                Write-Host "[AVISO] Nao foi possivel atualizar o repositorio local automaticamente." -ForegroundColor Yellow
+                Write-Host "[AVISO] Continuando com os arquivos ja existentes em .\ialclaw." -ForegroundColor Yellow
+                Write-Host "[AVISO] Se faltar algum arquivo novo, execute update.bat ou resolva o estado do Git manualmente." -ForegroundColor Yellow
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    else {
+        Write-Host "[AVISO] .\ialclaw existe, mas nao parece ser um repositorio Git. Continuando sem sincronizar." -ForegroundColor Yellow
+    }
 }
 
 Set-Location ialclaw
@@ -95,8 +115,14 @@ if (-not (Test-Path .env)) {
 Write-Host "Validando TypeScript codebase..."
 cmd.exe /c "npx tsc --noEmit"
 
-Write-Host "Semeando identidades iniciais do gateway..."
-cmd.exe /c "npx ts-node src/scripts/bootstrap-identities.ts"
+if (Test-Path "src/scripts/bootstrap-identities.ts") {
+    Write-Host "Semeando identidades iniciais do gateway..."
+    cmd.exe /c "npx ts-node src/scripts/bootstrap-identities.ts"
+}
+else {
+    Write-Host "[AVISO] Bootstrap de identidades nao encontrado nesta copia local. Etapa ignorada." -ForegroundColor Yellow
+    Write-Host "[AVISO] Atualize o repositorio local para obter o script src/scripts/bootstrap-identities.ts." -ForegroundColor Yellow
+}
 
 # -------------------------
 # DONE

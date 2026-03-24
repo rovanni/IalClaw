@@ -63,7 +63,18 @@ if [ ! -d "ialclaw" ]; then
     echo "Clonando repositório..."
     git clone "$REPO_URL" ialclaw
 else
-    echo "Diretório local. Pulando clone."
+    echo "Diretório local encontrado. Tentando sincronizar com o repositório remoto..."
+    if [ -d "ialclaw/.git" ]; then
+        if git -C ialclaw pull --ff-only; then
+            echo "Repositório local atualizado com sucesso."
+        else
+            echo "[AVISO] Não foi possível atualizar o repositório local automaticamente."
+            echo "[AVISO] Continuando com os arquivos já existentes em ./ialclaw."
+            echo "[AVISO] Se faltar algum arquivo novo, execute ./update.sh ou resolva o estado do Git manualmente."
+        fi
+    else
+        echo "[AVISO] ./ialclaw existe, mas não parece ser um repositório Git. Continuando sem sincronizar."
+    fi
 fi
 
 cd ialclaw || { echo "[ERRO] Não foi possível acessar a pasta ialclaw."; exit 1; }
@@ -97,8 +108,13 @@ fi
 echo "Validando TypeScript..."
 npx tsc --noEmit
 
-echo "Semeando identidades iniciais do gateway..."
-npx ts-node src/scripts/bootstrap-identities.ts
+if [ -f "src/scripts/bootstrap-identities.ts" ]; then
+    echo "Semeando identidades iniciais do gateway..."
+    npx ts-node src/scripts/bootstrap-identities.ts
+else
+    echo "[AVISO] Bootstrap de identidades não encontrado nesta cópia local. Etapa ignorada."
+    echo "[AVISO] Atualize o repositório local para obter o script src/scripts/bootstrap-identities.ts."
+fi
 
 # -------------------------
 # DONE
