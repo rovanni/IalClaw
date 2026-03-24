@@ -378,9 +378,13 @@
       padding: 16px;
       background: var(--bg-surface);
       border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 12px;
+      align-items: center;
     }
 
     #chat-input {
+      flex: 1;
       width: 100%;
       box-sizing: border-box;
       padding: 12px 18px;
@@ -398,6 +402,29 @@
       border: 1px solid var(--accent);
       background: var(--bg-surface);
       box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+    }
+
+    #send-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 24px;
+      padding: 0 24px;
+      height: 48px;
+      font-weight: 600;
+      font-size: var(--font-md);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #send-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    #send-btn:disabled {
+      background: var(--border-color);
+      color: var(--text-muted);
+      cursor: not-allowed;
     }
   </style>
 </head>
@@ -452,13 +479,22 @@
         <div id="typing-indicator">Agent is thinking...</div>
         <div class="input-area">
           <input type="text" id="chat-input" placeholder="Comando cognitivo..." autocomplete="off">
+          <button id="send-btn">Enviar</button>
         </div>
       </div>
     </div>
   </div>
 
   <script type="text/javascript">
+    // --- Controle da Sessão Cognitiva ---
+    let sessionId = localStorage.getItem('ialclaw_session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('ialclaw_session_id', sessionId);
+    }
+
     const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
     const chatMsgs = document.getElementById('chat-messages');
     const typingIndicator = document.getElementById('typing-indicator');
     const thoughtLog = document.getElementById('thought-log');
@@ -590,40 +626,50 @@
 
     appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
 
-    chatInput.addEventListener('keypress', async (e) => {
-      if (e.key === 'Enter' && chatInput.value.trim() && !chatInput.disabled) {
-        const text = chatInput.value.trim();
-        chatInput.value = '';
-        chatInput.disabled = true;
-        appendMessage('user', text);
-        typingIndicator.style.display = 'block';
-        chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    async function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text || chatInput.disabled) return;
 
+      chatInput.value = '';
+      chatInput.disabled = true;
+      sendBtn.disabled = true;
 
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text })
-          });
-          const data = await res.json();
+      appendMessage('user', text);
+      typingIndicator.style.display = 'block';
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
 
-          typingIndicator.style.display = 'none';
-          if (data.answer) {
-            appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
-            loadGraph();
-          } else if (data.error) {
-            appendMessage('bot', 'Erro: ' + data.error);
-          }
-        } catch (err) {
-          typingIndicator.style.display = 'none';
-          appendMessage('bot', 'Erro de rede ao falar com IalClaw.');
-        } finally {
-          chatInput.disabled = false;
-          chatInput.focus();
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, sessionId })
+        });
+        const data = await res.json();
+
+        typingIndicator.style.display = 'none';
+        if (data.answer) {
+          appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
+          loadGraph();
+        } else if (data.error) {
+          appendMessage('bot', 'Erro: ' + data.error);
         }
+      } catch (err) {
+        typingIndicator.style.display = 'none';
+        appendMessage('bot', 'Erro de rede ao falar com IalClaw.');
+      } finally {
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+      }
+    }
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
       }
     });
+
+    sendBtn.addEventListener('click', sendMessage);
 
     // Variáveis globais para o Grafo utilizando DataSet
     const nodesData = new vis.DataSet([]);

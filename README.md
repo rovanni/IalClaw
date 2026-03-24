@@ -65,6 +65,17 @@ irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
    > 🧠 Open Telegram to chat with the bot and access `http://localhost:3000` in your browser to see the Neural Graph working and forming memories in real-time!
 
 ---
+
+## 🔄 How to Update
+
+If you already have IalClaw installed and want to pull the latest version without dealing with Git manually, just use the included updater scripts:
+
+- **Windows:** Double-click `update.bat`
+- **Linux/macOS:** Run `./update.sh` in the terminal
+
+*The script will safely backup your `db.sqlite` and `.env` before forcing a clean synchronization with the latest official code.*
+
+---
 ---
 
 <br><br>
@@ -134,3 +145,14 @@ irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
    npm run dev
    ```
    > 🧠 Abra o Telegram para conversar com o bot e acesse `http://localhost:3000` no navegador para ver o Grafo Neural trabalhando e formando memórias em tempo real!
+
+---
+
+## 🔄 Como Atualizar
+
+Se você já instalou o IalClaw e quer puxar a versão mais recente da nuvem sem escovar comandos Git, basta usar nossos scripts de atualização com 1 clique:
+
+- **Windows:** Dê um duplo-clique no arquivo `update.bat`
+- **Linux/macOS:** Rode `./update.sh` no terminal
+
+*O script fará um backup de segurança automático do seu `db.sqlite` e `.env` antes de forçar uma sincronização limpa com o código oficial.*
