@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "test": "ts-node src/tests/run.ts",
-    "setup": "ts-node src/scripts/setup.ts"
+    "setup": "ts-node src/scripts/setup.ts",
+    "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts"
   },
   "keywords": [],
   "author": "",

@@ -95,6 +95,9 @@ if (-not (Test-Path .env)) {
 Write-Host "Validando TypeScript codebase..."
 cmd.exe /c "npx tsc --noEmit"
 
+Write-Host "Semeando identidades iniciais do gateway..."
+cmd.exe /c "npx ts-node src/scripts/bootstrap-identities.ts"
+
 # -------------------------
 # DONE
 # -------------------------

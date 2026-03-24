@@ -97,6 +97,9 @@ fi
 echo "Validando TypeScript..."
 npx tsc --noEmit
 
+echo "Semeando identidades iniciais do gateway..."
+npx ts-node src/scripts/bootstrap-identities.ts
+
 # -------------------------
 # DONE
 # -------------------------
