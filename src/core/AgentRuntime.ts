@@ -34,6 +34,18 @@ export class AgentRuntime {
                 const result = await this.executor.runWithHealing(plan, session);
 
                 if (!result.success) {
+                    if (result.error_type === 'environment_dependency' && result.dependency === 'puppeteer') {
+                        return `O projeto foi gerado, mas falta um componente do ambiente para testar HTML automaticamente: puppeteer.
+
+Voce pode seguir de duas formas:
+1. instalar o componente manualmente
+2. autorizar o agente a tentar instalar para voce
+
+Se quiser, me responda:
+"pode instalar o puppeteer"
+e eu tento fazer isso para voce.`;
+                    }
+
                     return `Falha na execucao do plano: ${result.error}`;
                 }
 

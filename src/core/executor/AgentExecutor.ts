@@ -326,6 +326,21 @@ export class AgentExecutor {
                 const errorType = classifyError(runtimeError);
                 const normalizedError = normalizeError(runtimeError);
 
+                if (errorType === 'environment_dependency') {
+                    debugBus.emit('self_healing_abort', {
+                        reason: 'missing_runtime_dependency',
+                        error: runtimeError,
+                        dependency: 'puppeteer'
+                    });
+
+                    return {
+                        success: false,
+                        error: runtimeError,
+                        error_type: 'environment_dependency',
+                        dependency: 'puppeteer'
+                    };
+                }
+
                 if (session.last_error_fingerprint && session.last_error_fingerprint === normalizedError) {
                     debugBus.emit('self_healing_abort', {
                         reason: 'equivalent_error_loop',
