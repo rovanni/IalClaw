@@ -45,11 +45,16 @@ irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
    ```bash
    npm install
    ```
-4. Copie o `.env`:
-   - Preencha primariamente com seu **`TELEGRAM_BOT_TOKEN`** e o Host da sua LLM.
+4. **Configure o ambiente interativamente (Novo!)**:
+   ```bash
+   npm run setup
+   ```
+   > 💡 **DICA:** O assistente guiará você passo a passo. Tenha em mãos:
+   > - O **Token do seu Bot** (crie falando com o [@BotFather](https://t.me/botfather) no Telegram).
+   > - O **seu ID de usuário** do Telegram (descubra mandando um "Oi" para o [@userinfobot](https://t.me/userinfobot)). O agente é privado e só responderá para este ID por segurança!
 
-5. Inicie:
+5. **Inicie o Agente Cognitivo:**
    ```bash
    npm run dev
    ```
-   > Abra o Telegram para conversar e acesse a porta 3000 no navegador para ver a Consciência!
+   > 🧠 Abra o Telegram para conversar com o bot e acesse `http://localhost:3000` no navegador para ver o Grafo Neural trabalhando e formando memórias em tempo real!

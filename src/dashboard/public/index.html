@@ -235,14 +235,24 @@
       fetch('/api/graph')
         .then(res => res.json())
         .then(data => {
-          // Criamos um ID único para cada aresta para o Vis.js conseguir atualizar corretamente
-          const processEdges = data.edges.map(e => ({
-            ...e,
-            id: `${e.from}-${e.to}-${e.label}`
+          if (!data || !data.nodes) return;
+
+          // Mapeia 'name' do banco de dados para o 'label' que o Vis.js exige
+          const processNodes = data.nodes.map(n => ({
+            ...n,
+            label: n.label || n.name
           }));
 
-          // O método update() magicamente mescla as diferenças, adiciona novos e evita recriar o canvas!
-          nodesData.update(data.nodes);
+          // Mapeia 'source/target/relation' do banco para 'from/to/label' do Vis.js
+          const processEdges = (data.edges || []).map(e => ({
+            ...e,
+            from: e.from || e.source,
+            to: e.to || e.target,
+            label: e.label || e.relation,
+            id: e.id || `${e.source || e.from}-${e.target || e.to}-${e.relation || e.label}`
+          }));
+
+          nodesData.update(processNodes);
           edgesData.update(processEdges);
         })
         .catch(console.error);
