@@ -15,6 +15,10 @@ export function validatePlan(plan: ExecutionPlan): void {
         throw new Error("Validacao falhou: o plano deve iniciar com 'workspace_create_project' quando nao houver projeto ativo.");
     }
 
+    if (hasActiveProject && plan.steps.some(step => step.tool === 'workspace_create_project')) {
+        throw new Error("Validacao falhou: nao recrie projeto quando ja existir projeto ativo na sessao.");
+    }
+
     for (const step of plan.steps) {
         if (!toolRegistry.get(step.tool)) {
             throw new Error(`Validacao falhou: tool alucinada detectada no plano -> ${step.tool}`);

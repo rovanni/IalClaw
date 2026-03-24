@@ -106,11 +106,23 @@ export class DashboardServer {
             const thoughtListener = (payload: any) => forwardEvent('thought', payload);
             const toolListener = (payload: any) => forwardEvent('tool', payload);
             const ragListener = (payload: any) => forwardEvent('rag', payload);
+            const toolInputListener = (payload: any) => forwardEvent('tool_input_error', payload);
+            const selfHealingListener = (payload: any) => forwardEvent('self_healing', payload);
+            const selfHealingAbortListener = (payload: any) => forwardEvent('self_healing_abort', payload);
+            const repairBaselineListener = (payload: any) => forwardEvent('repair:tool_input:baseline', payload);
+            const repairRawListener = (payload: any) => forwardEvent('repair:tool_input:raw', payload);
+            const repairNormalizedListener = (payload: any) => forwardEvent('repair:tool_input:normalized', payload);
 
             debugBus.on('gateway', gatewayListener);
             debugBus.on('thought', thoughtListener);
             debugBus.on('tool', toolListener);
             debugBus.on('rag', ragListener);
+            debugBus.on('tool_input_error', toolInputListener);
+            debugBus.on('self_healing', selfHealingListener);
+            debugBus.on('self_healing_abort', selfHealingAbortListener);
+            debugBus.on('repair:tool_input:baseline', repairBaselineListener);
+            debugBus.on('repair:tool_input:raw', repairRawListener);
+            debugBus.on('repair:tool_input:normalized', repairNormalizedListener);
 
             const heartbeat = setInterval(() => {
                 res.write(': ping\n\n');
@@ -122,6 +134,12 @@ export class DashboardServer {
                 debugBus.off('thought', thoughtListener);
                 debugBus.off('tool', toolListener);
                 debugBus.off('rag', ragListener);
+                debugBus.off('tool_input_error', toolInputListener);
+                debugBus.off('self_healing', selfHealingListener);
+                debugBus.off('self_healing_abort', selfHealingAbortListener);
+                debugBus.off('repair:tool_input:baseline', repairBaselineListener);
+                debugBus.off('repair:tool_input:raw', repairRawListener);
+                debugBus.off('repair:tool_input:normalized', repairNormalizedListener);
                 res.end();
             });
         });

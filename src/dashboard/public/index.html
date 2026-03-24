@@ -788,6 +788,44 @@
       const data = JSON.parse(event.data);
       appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados (Top Score: ${data.nodes?.[0]?.score || 0})`);
     });
+    eventSource.addEventListener('tool_input_error', (event) => {
+      const data = JSON.parse(event.data);
+      const issues = Array.isArray(data.issues)
+        ? data.issues.map(issue => `${issue.path || '<root>'}: ${issue.message}`).join(' | ')
+        : 'sem detalhes';
+      appendThought('obs', `Tool input error em ${data.tool}: ${issues}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('self_healing', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('obs', `Self-healing [${data.stage || 'unknown'}] tentativa ${data.attempt ?? '-'} para ${data.tool || data.error_type || 'erro'}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('self_healing_abort', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('obs', `Self-healing abortado: ${data.reason}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('repair:tool_input:baseline', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('obs', `Repair baseline para ${data.step?.tool}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('repair:tool_input:raw', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('obs', `Repair raw recebido para ${data.step?.tool}: ${String(data.raw).slice(0, 120)}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('repair:tool_input:normalized', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('obs', `Repair normalizado para ${data.normalized_step?.tool}`);
+      updateDebugLog(data);
+    });
   </script>
 </body>
 

@@ -41,6 +41,10 @@ export async function executeToolCall(toolName: string, input: any) {
             trace_id: ctx.trace_id,
             ...errorPayload
         });
+        emitDebug('thought', {
+            type: 'error',
+            content: `[TOOL_INPUT] ${toolName} rejeitou input. Issues: ${issues.map((issue: any) => `${issue.path || '<root>'}: ${issue.message}`).join(' | ')}`
+        });
         throw new Error(`tool_input_error::${JSON.stringify(errorPayload)}`);
     }
 

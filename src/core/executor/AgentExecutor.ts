@@ -11,6 +11,7 @@ import { detectOscillation, updateHistory } from '../../utils/inputOscillation';
 import { isMinimalChange } from '../../utils/minimalChange';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 import { PlanStep } from '../planner/types';
+import { toolRegistry } from '../tools/ToolRegistry';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -130,7 +131,12 @@ export class AgentExecutor {
                         stage: 'tool_input',
                         tool: payload.tool,
                         issues: payload.issues,
-                        attempt
+                        attempt,
+                        failed_step: {
+                            id: currentStep?.id,
+                            tool: currentStep?.tool,
+                            input: currentStep?.input
+                        }
                     });
 
                     debugBus.emit('executor:replan', {
@@ -147,6 +153,14 @@ export class AgentExecutor {
                         input: repairBaselineInput,
                         is_repair: true
                     };
+                    debugBus.emit('repair:tool_input:baseline', {
+                        step: {
+                            id: repairStep.id,
+                            tool: repairStep.tool,
+                            input: repairStep.input
+                        },
+                        payload
+                    });
                     plan.steps = [repairStep];
 
                     const newStep = await this.replanToolInputStep(repairStep, session);
@@ -158,7 +172,9 @@ export class AgentExecutor {
                         debugBus.emit('self_healing_abort', {
                             reason: 'tool_mismatch_during_repair',
                             expected_tool: repairStep.tool,
-                            received_tool: newStep?.tool
+                            received_tool: newStep?.tool,
+                            repair_step: repairStep,
+                            normalized_step: newStep
                         });
 
                         return {
@@ -388,14 +404,31 @@ export class AgentExecutor {
     }
 
     async replan(previousPlan: ExecutionPlan, error: string, session: Session) {
+        const strictToolPrompt = this.buildStrictToolPrompt();
+        const activeProjectRule = session.current_project_id
+            ? `PROJETO ATIVO:
+- Ja existe um projeto ativo com ID ${session.current_project_id}.
+- Nao use "workspace_create_project".
+- Corrija ou continue usando apenas as tools necessarias sobre o projeto atual.`
+            : `SEM PROJETO ATIVO:
+- Se precisar gerar arquivos em workspace, o primeiro passo deve ser "workspace_create_project".`;
+
         const messages: MessagePayload[] = [
             {
                 role: 'system',
                 content: `Voce corrige ExecutionPlans.
 Retorne apenas JSON valido.
-Nao recrie o projeto atual.
 Reutilize os arquivos existentes.
-Gere apenas os passos necessarios para corrigir a falha.`
+Gere apenas os passos necessarios para corrigir a falha.
+
+${strictToolPrompt}
+
+${activeProjectRule}
+
+REGRAS:
+- Nao invente tools.
+- Nao use "execute_command" nem qualquer tool fora da lista permitida.
+- Se houver projeto ativo, nao recrie o projeto.`
             },
             {
                 role: 'user',
@@ -427,6 +460,7 @@ Novo ExecutionPlan JSON`
         }
 
         const repairedPlan = this.parsePlan(rawPlan);
+        this.assertReplanConstraints(repairedPlan, session);
         validatePlan(repairedPlan);
         return repairedPlan;
     }
@@ -471,8 +505,21 @@ JSON valido`
             throw new Error('LLM nao retornou correcao de tool_input.');
         }
 
+        debugBus.emit('repair:tool_input:raw', {
+            step: {
+                id: currentStep.id,
+                tool: currentStep.tool
+            },
+            raw
+        });
+
         const parsed = parseLlmJson<any>(raw);
         const normalized = this.normalizeToolInputRepair(parsed, currentStep);
+
+        debugBus.emit('repair:tool_input:normalized', {
+            expected_tool: currentStep.tool,
+            normalized_step: normalized
+        });
 
         if (normalized.tool !== currentStep.tool) {
             throw new Error(`Tool mismatch during tool_input correction: expected ${currentStep.tool}, received ${normalized.tool}`);
@@ -542,6 +589,30 @@ INSTRUCTION:
         } catch {
             return `PREVIOUS ERROR (JSON):
 ${lastError}`;
+        }
+    }
+
+    private buildStrictToolPrompt(): string {
+        const registeredTools = toolRegistry.list();
+        const strictToolList = registeredTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n');
+        const strictToolEnum = registeredTools.map(tool => `"${tool.name}"`).join(', ');
+
+        return `TOOLS PERMITIDAS:
+${strictToolList}
+
+AVAILABLE TOOLS (STRICT):
+Use ONLY these tools.
+Each step.tool must be one of: [${strictToolEnum}]`;
+    }
+
+    private assertReplanConstraints(plan: ExecutionPlan, session: Session) {
+        if (!session.current_project_id) {
+            return;
+        }
+
+        const recreatesProject = plan.steps.some(step => step.tool === 'workspace_create_project');
+        if (recreatesProject) {
+            throw new Error('Validacao falhou: replan tentou recriar projeto ativo.');
         }
     }
 }
