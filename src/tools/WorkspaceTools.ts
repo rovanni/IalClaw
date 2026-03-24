@@ -2,7 +2,7 @@ import { workspaceService, ProjectType } from '../services/WorkspaceService';
 import { ToolDefinition } from '../core/tools/types';
 import { getContext } from '../shared/TraceContext';
 import { emitDebug } from '../shared/DebugBus';
-import { workspaceValidateProjectTool } from './workspace/workspaceValidateProject';
+import { workspaceValidateProjectTool } from './workspaceValidateProject';
 
 export const workspaceCreateProjectTool: ToolDefinition = {
     name: 'workspace_create_project',
