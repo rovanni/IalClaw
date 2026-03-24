@@ -2,11 +2,13 @@ import { LLMProvider, MessagePayload } from '../../../engine/ProviderFactory';
 import { ExecutionPlan, PlanStep } from '../types';
 import { WorkspaceFileContext, formatWorkspaceContext } from '../workspaceContext';
 import { formatTargetFileBlock, rankFiles, selectWithConfidence } from '../fileTargeting';
+import { workspaceService } from '../../../services/WorkspaceService';
 
 export interface PlanTemplateContext {
     goal: string;
     provider: LLMProvider;
     hasActiveProject: boolean;
+    currentProjectId?: string;
     workspaceContext: WorkspaceFileContext[];
 }
 
@@ -85,12 +87,21 @@ function fallbackHtml(goal: string): string {
 </html>`;
 }
 
-async function generateHtmlFromGoal(goal: string, provider: LLMProvider, workspaceContext: WorkspaceFileContext[]): Promise<string> {
+async function generateHtmlFromGoal(
+    goal: string,
+    provider: LLMProvider,
+    workspaceContext: WorkspaceFileContext[],
+    activeProjectId?: string
+): Promise<string> {
     const workspaceBlock = formatWorkspaceContext(workspaceContext);
     const existingIndex = workspaceContext.find(file => file.relative_path === 'index.html');
     const rankedFiles = rankFiles({ goal, files: workspaceContext });
     const fileSelection = selectWithConfidence(rankedFiles);
     const targetBlock = formatTargetFileBlock(fileSelection);
+    const targetFile = fileSelection?.target || 'index.html';
+    const existingFileContent = activeProjectId
+        ? workspaceService.readArtifact(activeProjectId, targetFile)
+        : null;
     const messages: MessagePayload[] = [
         {
             role: 'system',
@@ -100,7 +111,8 @@ Use inline CSS and inline JavaScript when needed.
 Do not include markdown fences.
 The output must be immediately runnable as index.html.
 If index.html already exists, update it instead of inventing a parallel structure.
-Prefer preserving working parts and extending the current file.`
+Prefer preserving working parts and extending the current file.
+When an existing file is provided, you MUST edit that file instead of regenerating a generic page.`
         },
         {
             role: 'user',
@@ -114,6 +126,7 @@ Requirements:
 - make it functional, not a placeholder
 ${workspaceBlock ? `\n\nCurrent workspace:\n${workspaceBlock}` : ''}
 ${targetBlock ? `\n\n${targetBlock}` : ''}
+${existingFileContent ? `\n\nExisting file content (preserve and modify this file):\n${existingFileContent.slice(0, 12000)}` : ''}
 ${existingIndex ? '\n\nIMPORTANT: index.html already exists. Return an updated full replacement for that same file.' : ''}`
         }
     ];
@@ -142,7 +155,7 @@ export const createWebProjectTemplate: PlanTemplate = {
             || g.includes('landing')
         );
     },
-    build: async ({ goal, provider, hasActiveProject, workspaceContext }: PlanTemplateContext): Promise<ExecutionPlan> => {
+    build: async ({ goal, provider, hasActiveProject, currentProjectId, workspaceContext }: PlanTemplateContext): Promise<ExecutionPlan> => {
         const steps: PlanStep[] = [];
         const rankedFiles = rankFiles({ goal, files: workspaceContext });
         const fileSelection = selectWithConfidence(rankedFiles);
@@ -157,7 +170,7 @@ export const createWebProjectTemplate: PlanTemplate = {
         }
 
         const nextId = steps.length + 1;
-        const html = await generateHtmlFromGoal(goal, provider, workspaceContext);
+        const html = await generateHtmlFromGoal(goal, provider, workspaceContext, currentProjectId);
 
         steps.push(buildStep(
             nextId,

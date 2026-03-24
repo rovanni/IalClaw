@@ -10,6 +10,7 @@ import { AgentGateway } from '../engine/AgentGateway';
 import { SessionManager } from '../shared/SessionManager';
 import { AgentRuntime } from './AgentRuntime';
 import { skillManager } from '../capabilities';
+import { workspaceService } from '../services/WorkspaceService';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -141,15 +142,35 @@ Nao alucine fatos.\n\n${contextStr}`
     }
 
     private shouldUsePlannerRuntime(userQuery: string, currentProjectId?: string): boolean {
-        if (currentProjectId) {
-            return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|continuar|continue|ajuste|corrija|corrigir|adicione|instale|instalar)\b/i.test(userQuery);
+        if (this.extractWorkspaceProjectId(userQuery)) {
+            return true;
         }
 
-        return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend)\b/i.test(userQuery);
+        if (currentProjectId) {
+            return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|continuar|continue|ajuste|corrija|corrigir|adicione|instale|instalar|som|sons|audio|áudio|efeito|efeitos|index\.html)\b/i.test(userQuery);
+        }
+
+        return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|som|sons|audio|áudio|efeito|efeitos|index\.html)\b/i.test(userQuery);
     }
 
     private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {
         const normalized = userQuery.toLowerCase().trim();
+        const projectIdFromPath = this.extractWorkspaceProjectId(userQuery);
+
+        if (projectIdFromPath && session) {
+            session.current_project_id = projectIdFromPath;
+            session.continue_project_only = true;
+            session.last_error = undefined;
+            session.last_error_type = undefined;
+            session.last_error_hash = undefined;
+            session.last_error_fingerprint = undefined;
+            session._tool_input_attempts = 0;
+            session._input_history = [];
+
+            return `Projeto existente conectado a esta sessao: ${projectIdFromPath}.
+
+Vou continuar editando os arquivos desse projeto sem criar um novo.`;
+        }
 
         if (this.isPuppeteerInstallAuthorization(normalized)) {
             if (!session) {
@@ -194,6 +215,20 @@ Voce ainda pode:
     }
 
     private isContinueProjectDirective(normalizedQuery: string): boolean {
-        return /\b(s[oó] continue|continuar|continue o projeto|continue os projetos|nao recrie|não recrie|nao crie novo projeto|não crie novo projeto)\b/.test(normalizedQuery);
+        return /\b(so continue|continuar|continue o projeto|continue os projetos|nao recrie|não recrie|nao crie novo projeto|não crie novo projeto)\b/.test(normalizedQuery);
+    }
+
+    private extractWorkspaceProjectId(userQuery: string): string | null {
+        const matches = userQuery.match(/(?:[A-Za-z]:\\|\/)[^\s"'`]+/g) || [];
+
+        for (const match of matches) {
+            const normalized = match.replace(/[)\].,;]+$/, '');
+            const projectId = workspaceService.resolveProjectIdFromPath(normalized);
+            if (projectId) {
+                return projectId;
+            }
+        }
+
+        return null;
     }
 }

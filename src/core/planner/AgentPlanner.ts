@@ -56,6 +56,7 @@ export class AgentPlanner {
                 goal: userInput,
                 provider,
                 hasActiveProject: Boolean(session?.current_project_id),
+                currentProjectId: session?.current_project_id,
                 workspaceContext
             });
 

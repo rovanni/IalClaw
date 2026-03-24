@@ -52,6 +52,27 @@ export class WorkspaceService {
         return path.join(this.getProjectPath(projectId), 'output');
     }
 
+    public resolveProjectIdFromPath(inputPath: string): string | null {
+        if (typeof inputPath !== 'string' || !inputPath.trim()) {
+            return null;
+        }
+
+        const normalizedInput = path.resolve(inputPath.trim());
+        const projectsRoot = path.resolve(path.join(this.basePath, 'projects'));
+
+        if (!normalizedInput.startsWith(projectsRoot)) {
+            return null;
+        }
+
+        const relative = path.relative(projectsRoot, normalizedInput);
+        if (!relative || relative.startsWith('..')) {
+            return null;
+        }
+
+        const [projectId] = relative.split(path.sep);
+        return projectId && this.projectExists(projectId) ? projectId : null;
+    }
+
     public projectExists(projectId: string): boolean {
         if (!projectId || typeof projectId !== 'string') {
             return false;

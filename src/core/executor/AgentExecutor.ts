@@ -22,6 +22,12 @@ import { getRequiredCapabilities } from '../../capabilities/taskCapabilities';
 import { handleCapabilityFallback } from '../../capabilities/capabilityFallback';
 import { skillManager } from '../../capabilities';
 import { SkillPolicy } from '../../capabilities/SkillManager';
+import {
+    getRequiredCapabilitiesForStep,
+    requiresDOM,
+    resolveRuntimeModeForPlan,
+    sanitizeStep
+} from '../../capabilities/stepCapabilities';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -52,7 +58,29 @@ export class AgentExecutor {
     async run(plan: ExecutionPlan, session?: Session) {
         debugBus.emit('thought', { type: 'action', content: `[EXECUTOR] Iniciando meta: ${plan.goal}` });
 
-        for (const [stepIndex, step] of plan.steps.entries()) {
+        for (const [stepIndex, rawStep] of plan.steps.entries()) {
+            const step = sanitizeStep(rawStep);
+            plan.steps[stepIndex] = step;
+
+            debugBus.emit('dom_decision', {
+                stepId: step.id,
+                tool: step.tool,
+                requiresDOM: requiresDOM(step),
+                source: rawStep.capabilities ? 'planner' : 'default_false',
+                trace_id: getTraceIdSafe()
+            });
+
+            const capabilityCheck = await this.ensureStepCapabilities(step, session, plan.goal);
+            if (!capabilityCheck.ok) {
+                return {
+                    success: false,
+                    error: capabilityCheck.error || 'Capacidade obrigatoria indisponivel.',
+                    error_type: 'missing_capability',
+                    capability: capabilityCheck.capability,
+                    fallback: capabilityCheck.fallback
+                };
+            }
+
             this.applyFileTargeting(step, plan.goal, session);
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
 
@@ -338,9 +366,13 @@ export class AgentExecutor {
             }
 
             const workspaceContextForRuntime = buildWorkspaceContext(session.current_project_id);
-            const runtimeMode = this.resolveRuntimeMode(plan, workspaceContextForRuntime);
+            const runtimeMode = resolveRuntimeModeForPlan(plan, workspaceContextForRuntime);
 
             if (runtimeMode.requiresBrowserValidation) {
+                debugBus.emit('browser_validation_enabled', {
+                    stepId: 'runtime',
+                    trace_id: getTraceIdSafe()
+                });
                 const browserCapability = await this.ensureBrowserCapability(session, plan.goal);
                 if (!browserCapability.available) {
                     const fallback = browserCapability.fallback;
@@ -361,6 +393,11 @@ export class AgentExecutor {
             }
 
             if (runtimeMode.skipRuntimeExecution) {
+                debugBus.emit('browser_skipped', {
+                    stepId: 'runtime',
+                    reason: 'requiresDOM_false',
+                    trace_id: getTraceIdSafe()
+                });
                 debugBus.emit('thought', {
                     type: 'thought',
                     content: '[EXECUTOR] Projeto HTML detectado sem requiresDOM. Pulando validacao em browser.'
@@ -839,18 +876,95 @@ Se quiser autorizar, responda:
         return { available: true };
     }
 
-    private resolveRuntimeMode(plan: ExecutionPlan, workspaceContext: ReturnType<typeof buildWorkspaceContext>): {
-        requiresBrowserValidation: boolean;
-        skipRuntimeExecution: boolean;
-    } {
-        const hasHtmlEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.html');
-        const hasNodeEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.js');
-        const requiresDOM = plan.steps.some(step => step.capabilities?.requiresDOM === true);
+    private async ensureStepCapabilities(
+        step: PlanStep,
+        session: Session | undefined,
+        goal: string
+    ): Promise<{
+        ok: boolean;
+        capability?: string;
+        error?: string;
+        fallback?: ReturnType<typeof handleCapabilityFallback>;
+    }> {
+        if (step.tool === 'workspace_run_project' && !requiresDOM(step)) {
+            debugBus.emit('browser_skipped', {
+                stepId: step.id,
+                reason: 'requiresDOM_false',
+                trace_id: getTraceIdSafe()
+            });
+        }
 
-        return {
-            requiresBrowserValidation: hasHtmlEntry && requiresDOM,
-            skipRuntimeExecution: hasHtmlEntry && !hasNodeEntry && !requiresDOM
-        };
+        const capabilities = getRequiredCapabilitiesForStep(step);
+        for (const capability of capabilities) {
+            if (capability === 'browser_execution' && !requiresDOM(step)) {
+                debugBus.emit('browser_skipped', {
+                    stepId: step.id,
+                    reason: 'requiresDOM_false',
+                    trace_id: getTraceIdSafe()
+                });
+                continue;
+            }
+
+            if (capability === 'browser_execution' && requiresDOM(step)) {
+                debugBus.emit('browser_validation_enabled', {
+                    stepId: step.id,
+                    trace_id: getTraceIdSafe()
+                });
+            }
+
+            const overridePolicy = session ? this.getCapabilityPolicyOverride(session, capability) : undefined;
+            const available = await skillManager.ensure(capability as any, overridePolicy);
+
+            if (!available) {
+                const fallback = handleCapabilityFallback(capability as any);
+                debugBus.emit('capability_fallback', {
+                    capability,
+                    stepId: step.id,
+                    fallback,
+                    trace_id: getTraceIdSafe()
+                });
+
+                if (capability === 'browser_execution') {
+                    if (overridePolicy === 'auto-install') {
+                        return {
+                            ok: false,
+                            capability,
+                            error: 'Nao foi possivel instalar automaticamente o suporte a browser (Puppeteer) neste ambiente.',
+                            fallback
+                        };
+                    }
+
+                    return {
+                        ok: false,
+                        capability,
+                        error: `Esta tarefa requer suporte a browser para validar o projeto atual.
+
+Objetivo atual: ${goal}
+
+Posso continuar em modo degradado sem validacao em browser, ou voce pode autorizar a tentativa de instalacao do suporte necessario.
+
+Se quiser autorizar, responda:
+"pode instalar o puppeteer"`,
+                        fallback
+                    };
+                }
+
+                return {
+                    ok: false,
+                    capability,
+                    error: `Capacidade obrigatoria indisponivel: ${capability}`,
+                    fallback
+                };
+            }
+
+            debugBus.emit('capability_available', {
+                capability,
+                stepId: step.id,
+                trace_id: getTraceIdSafe()
+            });
+        }
+
+        return { ok: true };
     }
 
     private parsePlan(rawPlan: string): ExecutionPlan {

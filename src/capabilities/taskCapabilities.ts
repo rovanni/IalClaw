@@ -1,4 +1,6 @@
 import { Capability } from './CapabilityRegistry';
+import { PlanStep } from '../core/planner/types';
+import { getRequiredCapabilitiesForStep, requiresDOM } from './stepCapabilities';
 
 export type TaskType =
     | 'web_generation'
@@ -34,3 +36,9 @@ export function getRequiredCapabilities(task: {
 
     return capabilities;
 }
+
+export function getRequiredCapabilitiesForPlanStep(step: PlanStep): Capability[] {
+    return getRequiredCapabilitiesForStep(step);
+}
+
+export { requiresDOM };
