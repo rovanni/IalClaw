@@ -3,6 +3,7 @@ export interface PlanStep {
     type: 'tool';
     tool: string;
     input: Record<string, any>;
+    is_repair?: boolean;
 }
 
 export interface ExecutionPlan {

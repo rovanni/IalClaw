@@ -35,13 +35,18 @@ export class ProviderFactory {
 class OllamaProvider implements LLMProvider {
     private client: Ollama;
     private embeddingsUnavailable = false;
+    private warnedEmbeddingsUnavailable = false;
 
     constructor() {
         const host = process.env.OLLAMA_HOST || 'http://localhost:11434';
         const apiKey = process.env.OLLAMA_API_KEY;
+        const normalizedHost = host.toLowerCase();
+        const isLocalHost = normalizedHost.includes('localhost')
+            || normalizedHost.includes('127.0.0.1')
+            || normalizedHost.includes('0.0.0.0');
 
         let fetchParams: RequestInit | undefined = undefined;
-        if (apiKey) {
+        if (apiKey && !isLocalHost) {
             fetchParams = {
                 headers: { Authorization: `Bearer ${apiKey}` }
             };
@@ -137,18 +142,34 @@ class OllamaProvider implements LLMProvider {
             }
 
             this.embeddingsUnavailable = true;
-            console.warn('[OllamaProvider] Embeddings API not available in this Ollama client/runtime. Falling back without embeddings.');
+            this.warnEmbeddingsUnavailable('[OllamaProvider] Embeddings API not available in this Ollama client/runtime. Falling back without embeddings.');
             return [];
         } catch (error: any) {
-            if (error?.status_code === 404 || String(error?.message || '').includes('/api/embeddings')) {
+            const errorMessage = String(error?.message || '').toLowerCase();
+
+            if (
+                error?.status_code === 404
+                || error?.status_code === 401
+                || errorMessage.includes('/api/embeddings')
+                || errorMessage.includes('unauthorized')
+            ) {
                 this.embeddingsUnavailable = true;
-                console.warn('[OllamaProvider] Embeddings endpoint unavailable. Continuing without embeddings.');
+                this.warnEmbeddingsUnavailable('[OllamaProvider] Embeddings unavailable or unauthorized. Continuing without embeddings.');
                 return [];
             }
 
             console.error('[OllamaProvider] Error generation embeddings:', error);
             return [];
         }
+    }
+
+    private warnEmbeddingsUnavailable(message: string) {
+        if (this.warnedEmbeddingsUnavailable) {
+            return;
+        }
+
+        this.warnedEmbeddingsUnavailable = true;
+        console.warn(message);
     }
 }
 

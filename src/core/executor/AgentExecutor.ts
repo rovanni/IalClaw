@@ -37,7 +37,7 @@ export class AgentExecutor {
         this.llm = ProviderFactory.getProvider();
     }
 
-    async run(plan: ExecutionPlan) {
+    async run(plan: ExecutionPlan, session?: Session) {
         debugBus.emit('thought', { type: 'action', content: `[EXECUTOR] Iniciando meta: ${plan.goal}` });
 
         for (const [stepIndex, step] of plan.steps.entries()) {
@@ -55,6 +55,15 @@ export class AgentExecutor {
                 );
             }
 
+            if (session) {
+                session.last_error = undefined;
+                session.last_error_type = undefined;
+                session.last_error_hash = undefined;
+                session.last_error_fingerprint = undefined;
+                session._tool_input_attempts = 0;
+                session._input_history = [];
+            }
+
             await new Promise(resolve => setTimeout(resolve, 500));
         }
 
@@ -70,7 +79,7 @@ export class AgentExecutor {
             debugBus.emit('executor:attempt', { attempt });
 
             try {
-                await this.run(plan);
+                await this.run(plan, session);
             } catch (error: any) {
                 const failureMessage = error.message || 'Falha desconhecida na execucao do plano.';
                 const failedStepIndex = error instanceof StepExecutionError ? error.stepIndex : 0;
@@ -118,12 +127,37 @@ export class AgentExecutor {
                         reason: 'tool_input_error'
                     });
 
-                    plan.steps = [currentStep];
+                    const repairBaselineInput = payload.received_input && typeof payload.received_input === 'object'
+                        ? payload.received_input
+                        : currentStep.input;
+
+                    const repairStep = {
+                        ...currentStep,
+                        input: repairBaselineInput,
+                        is_repair: true
+                    };
+                    plan.steps = [repairStep];
 
                     const newPlan = await this.replan(plan, session.last_error, session);
                     const newStep = newPlan.steps[0];
+                    const isCorrectionMode = repairStep.is_repair === true
+                        && session.last_error_type === 'tool_input'
+                        && payload.tool === repairStep.tool;
 
-                    if (JSON.stringify(currentStep.input) === JSON.stringify(newStep?.input)) {
+                    if (newStep?.tool !== repairStep.tool) {
+                        debugBus.emit('self_healing_abort', {
+                            reason: 'tool_mismatch_during_repair',
+                            expected_tool: repairStep.tool,
+                            received_tool: newStep?.tool
+                        });
+
+                        return {
+                            success: false,
+                            error: 'Tool mismatch during tool_input correction'
+                        };
+                    }
+
+                    if (isCorrectionMode && JSON.stringify(repairStep.input) === JSON.stringify(newStep?.input)) {
                         debugBus.emit('self_healing_abort', {
                             reason: 'noop_correction',
                             tool: payload.tool,
@@ -136,12 +170,12 @@ export class AgentExecutor {
                         };
                     }
 
-                    if (!isMinimalChange(currentStep, newStep, payload.issues || [])) {
+                    if (isCorrectionMode && !isMinimalChange(repairStep, newStep, payload.issues || [])) {
                         debugBus.emit('self_healing_abort', {
                             reason: 'non_minimal_change',
                             tool: payload.tool,
                             issues: payload.issues,
-                            prev_input: currentStep.input,
+                            prev_input: repairStep.input,
                             new_input: newStep?.input
                         });
 
@@ -153,7 +187,7 @@ export class AgentExecutor {
 
                     session._input_history = session._input_history || [];
 
-                    if (detectOscillation(session._input_history, newStep.input)) {
+                    if (isCorrectionMode && detectOscillation(session._input_history, newStep.input)) {
                         debugBus.emit('self_healing_abort', {
                             reason: 'input_oscillation',
                             tool: payload.tool,
@@ -166,10 +200,12 @@ export class AgentExecutor {
                         };
                     }
 
-                    session._input_history = updateHistory(session._input_history, newStep.input);
+                    if (isCorrectionMode) {
+                        session._input_history = updateHistory(session._input_history, newStep.input);
+                    }
                     plan = {
                         ...newPlan,
-                        steps: [newStep]
+                        steps: [{ ...newStep, is_repair: false }]
                     };
                     attempt++;
                     continue;
