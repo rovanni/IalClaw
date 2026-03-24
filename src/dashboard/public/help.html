@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IalClaw - Ajuda</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #f3f6f0;
+      --panel: #ffffff;
+      --text: #1f2b21;
+      --muted: #607064;
+      --accent: #2b6f4b;
+      --accent-soft: #e5f2e9;
+      --border: #d7e4d6;
+      --shadow: 0 18px 36px rgba(29, 56, 37, 0.1);
+      --font-body: "Segoe UI", Tahoma, sans-serif;
+      --font-title: "Palatino Linotype", Georgia, serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-body);
+      background:
+        radial-gradient(circle at top right, rgba(229, 242, 233, 0.85), transparent 32%),
+        linear-gradient(180deg, #eef5ee 0%, #f8fbf7 100%);
+      color: var(--text);
+    }
+
+    .wrap {
+      width: min(1040px, calc(100vw - 32px));
+      margin: 28px auto 40px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      padding: 24px 28px;
+      border-radius: 26px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 10px 0 8px;
+      font-family: var(--font-title);
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.05;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      max-width: 52ch;
+    }
+
+    .nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      text-decoration: none;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .nav a.current {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 22px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .card h2 {
+      margin: 14px 0 10px;
+      font-size: 1.35rem;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .list {
+      margin: 16px 0 0;
+      padding-left: 18px;
+      color: var(--text);
+      line-height: 1.8;
+    }
+
+    .list li + li {
+      margin-top: 4px;
+    }
+
+    .steps {
+      margin-top: 22px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 16px;
+      align-items: start;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .step strong {
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      border-radius: 16px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.1rem;
+    }
+
+    .step h3 {
+      margin: 2px 0 6px;
+      font-size: 1.08rem;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .grid {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="badge">Ajuda do dashboard</div>
+        <h1>Escolha a tela certa para cada tipo de uso.</h1>
+        <p>O IalClaw agora tem duas experiências: uma simples, para quem só quer conversar, e outra avançada, para quem quer acompanhar o funcionamento interno do agente.</p>
+      </div>
+      <nav class="nav">
+        <a href="/simple">Modo simples</a>
+        <a href="/advanced">Modo avançado</a>
+        <a href="/help" class="current">Ajuda</a>
+      </nav>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <span class="badge">Para uso cotidiano</span>
+        <h2>Modo simples</h2>
+        <p>Ideal para usuários leigos, demonstrações e conversas rápidas. A interface foca só na troca de mensagens e esconde logs, grafo e telemetria.</p>
+        <ul class="list">
+          <li>Use para pedir tarefas, ideias, explicações e textos.</li>
+          <li>Recomendado para quem não precisa entender o funcionamento interno.</li>
+          <li>Melhor escolha para apresentações mais limpas.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <span class="badge">Para operação técnica</span>
+        <h2>Modo avançado</h2>
+        <p>Ideal para desenvolvimento, suporte e debugging. Exibe grafo cognitivo, traces, replay e logs de eventos do agente em tempo real.</p>
+        <ul class="list">
+          <li>Use para investigar falhas e acompanhar decisões do agente.</li>
+          <li>Mostra métricas, telemetria e fluxo interno.</li>
+          <li>Recomendado para times técnicos e troubleshooting.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="card steps">
+      <div class="badge">Como usar</div>
+      <div class="step">
+        <strong>1</strong>
+        <div>
+          <h3>Abra a tela adequada</h3>
+          <p>Entre em <a href="/simple">/simple</a> para uma conversa limpa ou em <a href="/advanced">/advanced</a> para o painel completo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <strong>2</strong>
+        <div>
+          <h3>Escreva um pedido claro</h3>
+          <p>Exemplos: “Crie um jogo da cobrinha em HTML”, “Explique esse erro”, “Faça uma página inicial simples para meu produto”.</p>
+        </div>
+      </div>
+      <div class="step">
+        <strong>3</strong>
+        <div>
+          <h3>Acompanhe o retorno</h3>
+          <p>No modo simples você vê só a resposta. No modo avançado também acompanha traces, debug e o grafo cognitivo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <strong>4</strong>
+        <div>
+          <h3>Troque de tela quando precisar</h3>
+          <p>Você pode começar no modo simples e migrar para o avançado quando precisar investigar algo técnico.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+
+</html>

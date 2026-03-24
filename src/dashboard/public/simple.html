@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IalClaw - Modo Simples</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #f5efe3;
+      --panel: #fffaf1;
+      --panel-strong: #fff;
+      --text: #2d261d;
+      --muted: #6e6254;
+      --accent: #1f6f5f;
+      --accent-strong: #154f44;
+      --border: #e6d8c3;
+      --user: #dff4ec;
+      --bot: #fff;
+      --shadow: 0 18px 40px rgba(65, 49, 28, 0.12);
+      --font-body: "Trebuchet MS", "Segoe UI", sans-serif;
+      --font-title: Georgia, "Times New Roman", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-body);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 35%),
+        linear-gradient(160deg, #efe4cf 0%, #f8f3ea 55%, #efe9de 100%);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(110, 98, 84, 0.15);
+      background: rgba(255, 250, 241, 0.82);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .brand strong {
+      font-family: var(--font-title);
+      font-size: 1.35rem;
+      letter-spacing: 0.02em;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      text-decoration: none;
+      color: var(--accent);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--panel-strong);
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .nav a.current {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .shell {
+      width: min(960px, calc(100vw - 32px));
+      margin: 28px auto;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .hero,
+    .chat-card {
+      background: rgba(255, 250, 241, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 28px;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.78rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 12px 0 10px;
+      font-family: var(--font-title);
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      line-height: 1.05;
+    }
+
+    .hero p {
+      margin: 0;
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--muted);
+      max-width: 48ch;
+    }
+
+    .tips {
+      display: grid;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .tip {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(230, 216, 195, 0.9);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+
+    .tip strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.98rem;
+    }
+
+    .tip span {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .chat-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 72vh;
+      overflow: hidden;
+    }
+
+    .chat-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .chat-head strong {
+      font-size: 1.05rem;
+    }
+
+    .chat-head span {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent),
+        var(--panel);
+    }
+
+    .message {
+      max-width: 90%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      box-shadow: 0 8px 18px rgba(65, 49, 28, 0.08);
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--user);
+      border-bottom-right-radius: 6px;
+    }
+
+    .message.bot {
+      align-self: flex-start;
+      background: var(--bot);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 6px;
+    }
+
+    .meta {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    #typing {
+      display: none;
+      padding: 0 18px 12px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .composer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      background: var(--panel-strong);
+    }
+
+    #chat-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      font: inherit;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+    }
+
+    #chat-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(31, 111, 95, 0.12);
+    }
+
+    #send-btn {
+      border: none;
+      border-radius: 18px;
+      padding: 0 22px;
+      min-height: 50px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #send-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .starter-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0 16px 16px;
+      background: var(--panel-strong);
+    }
+
+    .starter-list button {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 14px;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .chat-card {
+        min-height: 66vh;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>IalClaw</strong>
+      <span>Modo simples para conversar sem detalhes técnicos</span>
+    </div>
+    <nav class="nav">
+      <a href="/simple" class="current">Modo simples</a>
+      <a href="/advanced">Modo avançado</a>
+      <a href="/help">Ajuda</a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Converse sem complicação</div>
+      <h1>Peça o que você precisa e o IalClaw responde de forma direta.</h1>
+      <p>Essa tela foi pensada para quem só quer conversar com o agente, pedir uma tarefa ou tirar uma dúvida, sem precisar acompanhar grafo, traces ou logs internos.</p>
+
+      <div class="tips">
+        <div class="tip">
+          <strong>Bom para começar</strong>
+          <span>Peça algo simples, como criar um jogo, corrigir um texto ou explicar um erro.</span>
+        </div>
+        <div class="tip">
+          <strong>Quando usar o modo avançado</strong>
+          <span>Se você quiser ver o raciocínio do agente, eventos de debug ou o grafo cognitivo, troque para a tela avançada.</span>
+        </div>
+        <div class="tip">
+          <strong>Dica de uso</strong>
+          <span>Escreva frases completas, por exemplo: “Crie uma landing page para meu produto” ou “Explique por que meu projeto falhou”.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="chat-card">
+      <div class="chat-head">
+        <div>
+          <strong>Conversa</strong>
+          <span>Sem logs técnicos, só interação</span>
+        </div>
+        <span id="status-label">Pronto</span>
+      </div>
+
+      <div id="chat-messages"></div>
+      <div id="typing">IalClaw está pensando...</div>
+
+      <div class="starter-list">
+        <button data-prompt="Crie um jogo da cobrinha em HTML">Criar jogo da cobrinha</button>
+        <button data-prompt="Explique o que este projeto faz de forma simples">Explicar projeto</button>
+        <button data-prompt="Me ajude a organizar uma página inicial bonita">Criar página inicial</button>
+      </div>
+
+      <div class="composer">
+        <input type="text" id="chat-input" placeholder="Digite sua mensagem aqui" autocomplete="off">
+        <button id="send-btn">Enviar</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let sessionId = localStorage.getItem('ialclaw_simple_session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : 'simple-' + Math.random().toString(36).slice(2);
+      localStorage.setItem('ialclaw_simple_session_id', sessionId);
+    }
+
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const chatMsgs = document.getElementById('chat-messages');
+    const typing = document.getElementById('typing');
+    const statusLabel = document.getElementById('status-label');
+
+    function appendMessage(role, text, meta) {
+      const el = document.createElement('div');
+      el.className = `message ${role}`;
+
+      if (meta) {
+        const metaEl = document.createElement('span');
+        metaEl.className = 'meta';
+        metaEl.innerText = meta;
+        el.appendChild(metaEl);
+      }
+
+      const textNode = document.createTextNode(text);
+      el.appendChild(textNode);
+      chatMsgs.appendChild(el);
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    }
+
+    async function sendMessage(prefill) {
+      const text = (typeof prefill === 'string' ? prefill : chatInput.value).trim();
+      if (!text || chatInput.disabled) return;
+
+      if (!prefill) {
+        chatInput.value = '';
+      }
+
+      chatInput.disabled = true;
+      sendBtn.disabled = true;
+      statusLabel.innerText = 'Enviando';
+      typing.style.display = 'block';
+
+      appendMessage('user', text, 'Você');
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, sessionId })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        }
+
+        appendMessage('bot', data.answer || 'Sem resposta do agente.', 'IalClaw');
+        statusLabel.innerText = 'Pronto';
+      } catch (err) {
+        appendMessage('bot', `Erro ao enviar mensagem: ${err.message || err}`, 'IalClaw');
+        statusLabel.innerText = 'Erro';
+      } finally {
+        typing.style.display = 'none';
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+      }
+    }
+
+    chatInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    });
+
+    sendBtn.addEventListener('click', () => sendMessage());
+
+    document.querySelectorAll('[data-prompt]').forEach(button => {
+      button.addEventListener('click', () => sendMessage(button.dataset.prompt));
+    });
+
+    appendMessage('bot', 'Olá. Você pode pedir ajuda com tarefas, ideias, explicações e criação de conteúdo.', 'IalClaw');
+  </script>
+</body>
+
+</html>

@@ -19,6 +19,22 @@ export class DashboardServer {
         // Serve static files from public
         this.app.use(express.static(path.join(__dirname, 'public')));
 
+        this.app.get('/', (_req, res) => {
+            res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        });
+
+        this.app.get('/advanced', (_req, res) => {
+            res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        });
+
+        this.app.get('/simple', (_req, res) => {
+            res.sendFile(path.join(__dirname, 'public', 'simple.html'));
+        });
+
+        this.app.get('/help', (_req, res) => {
+            res.sendFile(path.join(__dirname, 'public', 'help.html'));
+        });
+
         // API route for graph data
         this.app.get('/api/graph', (req, res) => {
             try {
