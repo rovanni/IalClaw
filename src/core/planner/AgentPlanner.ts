@@ -8,6 +8,7 @@ import { CognitiveMemory, NodeResult } from '../../memory/CognitiveMemory';
 import { SessionManager } from '../../shared/SessionManager';
 import { ProviderFactory } from '../../engine/ProviderFactory';
 import { parseLlmJson } from '../../utils/parseLlmJson';
+import { selectTemplate } from './templates/planTemplates';
 
 export class AgentPlanner {
     constructor(private memory: CognitiveMemory) { }
@@ -24,6 +25,28 @@ export class AgentPlanner {
         const queryEmbedding = await provider.embed(userInput);
         const memoryNodes = await this.memory.retrieveWithTraversal(userInput, queryEmbedding, 3);
         const memoryContext = this.buildMemoryContext(memoryNodes);
+        const session = SessionManager.getCurrentSession();
+
+        const selectedTemplate = selectTemplate(userInput);
+        if (selectedTemplate) {
+            emitDebug('thought', {
+                type: 'thought',
+                content: `[PLANNER] Template selecionado: ${selectedTemplate.id}`
+            });
+
+            const templatePlan = await selectedTemplate.build({
+                goal: userInput,
+                provider,
+                hasActiveProject: Boolean(session?.current_project_id)
+            });
+
+            validatePlan(templatePlan);
+            emitDebug('thought', {
+                type: 'thought',
+                content: `[PLANNER] Plano gerado por template: ${templatePlan.goal} (${templatePlan.steps.length} passos).`
+            });
+            return templatePlan;
+        }
 
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Elaborando plano de execucao estruturado...' });
 
@@ -73,8 +96,8 @@ export class AgentPlanner {
         const toolNames = registeredTools.map(tool => tool.name);
         const strictToolList = toolNames.map(name => `- ${name}`).join('\n');
         const strictToolEnum = toolNames.map(name => `"${name}"`).join(', ');
-
         const session = SessionManager.getCurrentSession();
+
         let sessionPrompt = '';
         if (session && (session.current_goal || session.current_project_id)) {
             sessionPrompt = `

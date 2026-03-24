@@ -165,6 +165,118 @@
       gap: 16px;
     }
 
+    #conversation-sidebar {
+      width: 280px;
+      min-width: 280px;
+      min-height: 0;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .sidebar-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .sidebar-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .sidebar-btn {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--bg-input);
+      color: var(--text-main);
+      padding: 10px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .sidebar-btn:hover {
+      background: var(--bg-surface);
+    }
+
+    #conversation-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conversation-item {
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: var(--bg-surface);
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .conversation-item:hover {
+      border-color: var(--accent);
+      background: var(--bg-input);
+    }
+
+    .conversation-item.active {
+      border-color: var(--accent);
+      background: var(--chat-user-bg);
+    }
+
+    .conversation-name {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .conversation-preview {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .conversation-meta {
+      margin-top: 8px;
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .conversation-empty {
+      padding: 16px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.6;
+    }
+
     /* Panels Base - Google Material Card Style */
     .panel {
       background: var(--bg-surface);
@@ -432,6 +544,13 @@
       color: var(--text-muted);
       cursor: not-allowed;
     }
+
+    @media (max-width: 1200px) {
+      #conversation-sidebar {
+        width: 240px;
+        min-width: 240px;
+      }
+    }
   </style>
 </head>
 
@@ -458,6 +577,20 @@
   </header>
 
   <div id="workspace">
+    <aside class="panel" id="conversation-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <span>Conversas</span>
+          <span id="conversation-count">0</span>
+        </div>
+        <div class="sidebar-subtitle">Continue uma sessão anterior ou comece uma nova conversa.</div>
+        <button class="sidebar-btn btn-primary" id="new-chat-btn">+ Nova conversa</button>
+      </div>
+      <div id="conversation-list">
+        <div class="conversation-empty">Carregando histórico...</div>
+      </div>
+    </aside>
+
     <!-- Left: Graph & Debug -->
     <div id="left-col">
       <div class="panel" id="mynetwork-container">
@@ -507,6 +640,9 @@
     const typingIndicator = document.getElementById('typing-indicator');
     const thoughtLog = document.getElementById('thought-log');
     const debugLog = document.getElementById('debug-log');
+    const conversationList = document.getElementById('conversation-list');
+    const conversationCount = document.getElementById('conversation-count');
+    const newChatBtn = document.getElementById('new-chat-btn');
     let network = null;
 
     // --- Controle de Zoom Persistente ---
@@ -618,6 +754,124 @@
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
     }
 
+    function createSessionId() {
+      return crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    function resetConversationView() {
+      chatMsgs.innerHTML = '';
+      appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
+    }
+
+    async function resetSessionState(targetSessionId) {
+      await fetch('/api/sessions/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: targetSessionId })
+      }).catch(() => null);
+    }
+
+    async function loadConversationList() {
+      try {
+        const res = await fetch('/api/conversations');
+        const conversations = await res.json();
+
+        if (!Array.isArray(conversations)) {
+          throw new Error('Resposta invalida');
+        }
+
+        conversationCount.innerText = String(conversations.length);
+        renderConversationList(conversations);
+      } catch (err) {
+        conversationList.innerHTML = '<div class="conversation-empty">Nao foi possivel carregar o historico.</div>';
+      }
+    }
+
+    function renderConversationList(conversations) {
+      if (!conversations.length) {
+        conversationList.innerHTML = '<div class="conversation-empty">Nenhuma conversa salva ainda. Use "Nova conversa" para começar.</div>';
+        return;
+      }
+
+      conversationList.innerHTML = '';
+
+      conversations.forEach(conversation => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `conversation-item${conversation.conversation_id === sessionId ? ' active' : ''}`;
+        item.dataset.sessionId = conversation.conversation_id;
+
+        const lastContent = String(conversation.last_content || '').trim();
+        const label = String(conversation.title || lastContent || conversation.conversation_id).trim();
+
+        item.innerHTML = `
+          <div class="conversation-name">${escapeHtml(label.slice(0, 64))}</div>
+          <div class="conversation-preview">${escapeHtml(lastContent || 'Sem mensagens')}</div>
+          <div class="conversation-meta">
+            <span>${escapeHtml(conversation.conversation_id)}</span>
+            <span>${conversation.message_count || 0} msgs</span>
+          </div>
+        `;
+
+        item.addEventListener('click', () => switchConversation(conversation.conversation_id));
+        conversationList.appendChild(item);
+      });
+    }
+
+    async function switchConversation(nextSessionId) {
+      if (!nextSessionId || nextSessionId === sessionId) return;
+
+      sessionId = nextSessionId;
+      localStorage.setItem('ialclaw_session_id', sessionId);
+      await resetSessionState(sessionId);
+      resetConversationView();
+      await loadConversationMessages(sessionId);
+      await loadConversationList();
+    }
+
+    async function loadConversationMessages(targetSessionId) {
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
+        const messages = await res.json();
+
+        chatMsgs.innerHTML = '';
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+          appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
+          return;
+        }
+
+        messages.forEach(message => {
+          if (message.role === 'user') {
+            appendMessage('user', message.content);
+          } else if (message.role === 'assistant') {
+            appendMessage('bot', message.content, '[AGENT: core] [SCORE: 0.92]');
+          }
+        });
+      } catch (err) {
+        resetConversationView();
+      }
+    }
+
+    function startNewConversation() {
+      sessionId = createSessionId();
+      localStorage.setItem('ialclaw_session_id', sessionId);
+      resetSessionState(sessionId).finally(() => {
+        resetConversationView();
+        loadConversationList();
+        chatInput.focus();
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function appendThought(type, text) {
       const el = document.createElement('div');
       el.classList.add('thought-item');
@@ -663,6 +917,7 @@
         if (data.answer) {
           appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
           loadGraph();
+          loadConversationList();
         } else if (data.error) {
           appendMessage('bot', 'Erro: ' + data.error);
         }
@@ -683,6 +938,7 @@
     });
 
     sendBtn.addEventListener('click', sendMessage);
+    newChatBtn.addEventListener('click', startNewConversation);
 
     // Variáveis globais para o Grafo utilizando DataSet
     const nodesData = new vis.DataSet([]);
@@ -765,6 +1021,8 @@
     // Inicializar e carregar primeiro estado
     initGraph();
     loadGraph();
+    loadConversationMessages(sessionId);
+    loadConversationList();
 
     // Refresh a cada 10 segundos
     setInterval(loadGraph, 10000);

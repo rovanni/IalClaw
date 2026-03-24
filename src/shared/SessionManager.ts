@@ -38,4 +38,15 @@ export class SessionManager {
     static getCurrentSession(): SessionContext | undefined {
         return sessionAsyncStorage.getStore();
     }
+
+    static resetVolatileState(conversationId: string): SessionContext {
+        const session = this.getSession(conversationId);
+        session.last_error = undefined;
+        session.last_error_type = undefined;
+        session.last_error_hash = undefined;
+        session.last_error_fingerprint = undefined;
+        session._tool_input_attempts = 0;
+        session._input_history = [];
+        return session;
+    }
 }

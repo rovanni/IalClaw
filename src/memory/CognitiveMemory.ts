@@ -242,11 +242,81 @@ export class CognitiveMemory {
         tx();
     }
 
-    public saveMessage(conversationId: string, role: string, content: string, toolName?: string, toolArgs?: string, toolResult?: string) {
+    private buildConversationTitle(content: string): string {
+        const normalized = String(content || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) {
+            return 'Nova conversa';
+        }
+
+        return normalized.slice(0, 60);
+    }
+
+    private upsertConversation(conversationId: string, role: string, content: string) {
+        const existingConversation = this.db.prepare(`
+      SELECT metadata, message_count
+      FROM conversations
+      WHERE id = ?
+    `).get(conversationId) as { metadata?: string; message_count?: number } | undefined;
+
+        const now = new Date().toISOString();
+        const currentMetadata = existingConversation?.metadata
+            ? JSON.parse(existingConversation.metadata)
+            : {};
+
+        if (!currentMetadata.title && role === 'user') {
+            currentMetadata.title = this.buildConversationTitle(content);
+        }
+
+        if (!currentMetadata.title) {
+            currentMetadata.title = 'Nova conversa';
+        }
+
+        if (!existingConversation) {
+            this.db.prepare(`
+        INSERT INTO conversations
+        (id, user_id, provider, started_at, last_message_at, message_count, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+                conversationId,
+                conversationId,
+                'ialclaw',
+                now,
+                now,
+                0,
+                JSON.stringify(currentMetadata)
+            );
+            return;
+        }
+
         this.db.prepare(`
+      UPDATE conversations
+      SET last_message_at = ?, metadata = ?
+      WHERE id = ?
+    `).run(now, JSON.stringify(currentMetadata), conversationId);
+    }
+
+    public saveMessage(conversationId: string, role: string, content: string, toolName?: string, toolArgs?: string, toolResult?: string) {
+        const transaction = this.db.transaction(() => {
+            this.upsertConversation(conversationId, role, content);
+
+            this.db.prepare(`
       INSERT INTO messages (conversation_id, role, content, tool_name, tool_args, tool_result, created_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
     `).run(conversationId, role, content, toolName || null, toolArgs || null, toolResult || null);
+
+            this.db.prepare(`
+      UPDATE conversations
+      SET message_count = (
+        SELECT COUNT(*)
+        FROM messages
+        WHERE conversation_id = ?
+      ),
+      last_message_at = datetime('now')
+      WHERE id = ?
+    `).run(conversationId, conversationId);
+        });
+
+        transaction();
     }
 
     public async saveExecutionFix(input: {

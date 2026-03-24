@@ -4,6 +4,7 @@ import path from 'path';
 import cors from 'cors';
 import { AgentController } from '../core/AgentController';
 import { debugBus } from '../shared/DebugBus';
+import { SessionManager } from '../shared/SessionManager';
 
 export class DashboardServer {
     private app: express.Express;
@@ -71,6 +72,84 @@ export class DashboardServer {
 
                 const answer = await this.controller.handleWebMessage(sessionId, message);
                 res.json({ answer });
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        this.app.get('/api/conversations', (_req, res) => {
+            try {
+                const conversations = this.db.prepare(`
+                    SELECT
+                        c.id AS conversation_id,
+                        c.last_message_at AS last_activity,
+                        c.message_count,
+                        c.metadata,
+                        m.role AS last_role,
+                        m.content AS last_content
+                    FROM conversations c
+                    LEFT JOIN messages m ON m.id = (
+                        SELECT id
+                        FROM messages
+                        WHERE conversation_id = c.id
+                        ORDER BY id DESC
+                        LIMIT 1
+                    )
+                    ORDER BY COALESCE(c.last_message_at, m.created_at) DESC
+                    LIMIT 100
+                `).all();
+
+                res.json(conversations.map((conversation: any) => {
+                    let metadata: Record<string, any> = {};
+
+                    try {
+                        metadata = conversation.metadata ? JSON.parse(conversation.metadata) : {};
+                    } catch {
+                        metadata = {};
+                    }
+
+                    return {
+                        conversation_id: conversation.conversation_id,
+                        title: metadata.title || conversation.last_content || conversation.conversation_id,
+                        last_role: conversation.last_role,
+                        last_content: conversation.last_content,
+                        last_activity: conversation.last_activity,
+                        message_count: conversation.message_count || 0
+                    };
+                }));
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        this.app.get('/api/conversations/:conversationId', (req, res) => {
+            try {
+                const messages = this.db.prepare(`
+                    SELECT id, conversation_id, role, content, tool_name, created_at
+                    FROM messages
+                    WHERE conversation_id = ?
+                    ORDER BY id ASC
+                `).all(req.params.conversationId);
+
+                res.json(messages);
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        this.app.post('/api/sessions/reset', (req, res) => {
+            try {
+                const { sessionId } = req.body || {};
+
+                if (!sessionId || typeof sessionId !== 'string') {
+                    return res.status(400).json({ error: 'sessionId is required' });
+                }
+
+                const session = SessionManager.resetVolatileState(sessionId);
+                res.json({
+                    success: true,
+                    sessionId: session.conversation_id
+                });
             } catch (err: any) {
                 res.status(500).json({ error: err.message });
             }
