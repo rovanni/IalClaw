@@ -500,6 +500,7 @@
     const typingIndicator = document.getElementById('typing-indicator');
     const thoughtLog = document.getElementById('thought-log');
     const debugLog = document.getElementById('debug-log');
+    let network = null;
 
     // --- Controle de Zoom Persistente ---
     let currentZoom = parseFloat(localStorage.getItem('ialclaw_zoom')) || 1.0;
@@ -679,7 +680,6 @@
     // Variáveis globais para o Grafo utilizando DataSet
     const nodesData = new vis.DataSet([]);
     const edgesData = new vis.DataSet([]);
-    let network = null;
 
     function getGraphOptions() {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
