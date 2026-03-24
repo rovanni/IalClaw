@@ -18,7 +18,7 @@
       /* 18px */
       --font-xl: 1.25rem;
       /* 20px */
-      --font-family: 'Google Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
 
       /* Material Light Theme (Base) */
@@ -99,12 +99,12 @@
 
     /* Top Status Bar */
     #status-bar {
-      height: 48px;
+      height: 56px;
       background: var(--bg-header);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
-      padding: 0 24px;
+      padding: 0 20px;
       font-size: var(--font-sm);
       font-weight: 500;
       color: var(--text-muted);
@@ -132,10 +132,10 @@
       background: transparent;
       border: 1px solid var(--border-color);
       color: var(--text-muted);
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
-      padding: 4px 10px;
-      font-size: var(--font-xs);
+      padding: 8px 12px;
+      font-size: var(--font-sm);
       font-weight: 600;
       transition: all 0.2s;
     }
@@ -200,10 +200,10 @@
     .sidebar-btn {
       width: 100%;
       border: 1px solid var(--border-color);
-      border-radius: 10px;
+      border-radius: 8px;
       background: var(--bg-input);
       color: var(--text-main);
-      padding: 10px 12px;
+      padding: 8px 12px;
       font-size: var(--font-sm);
       font-weight: 600;
       cursor: pointer;
@@ -956,7 +956,7 @@
         nodes: {
           shape: 'dot',
           size: 20,
-          font: { color: textColor, face: 'Google Sans, Segoe UI, sans-serif', size: 14 },
+          font: { color: textColor, face: 'Segoe UI, Roboto, sans-serif', size: 14 },
           borderWidth: 2,
           color: {
             border: nodeBorder,
@@ -968,7 +968,7 @@
         edges: {
           width: 1.5,
           color: { color: edgeColor, highlight: edgeHighlight },
-          font: { color: textColor, align: 'middle', size: 11, face: 'Google Sans, Segoe UI, sans-serif' },
+          font: { color: textColor, align: 'middle', size: 11, face: 'Segoe UI, Roboto, sans-serif' },
           arrows: { to: { enabled: true, scaleFactor: 0.5 } },
           smooth: { type: 'continuous' }
         },

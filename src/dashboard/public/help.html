@@ -8,16 +8,41 @@
   <link rel="icon" href="data:,">
   <style>
     :root {
-      --bg: #f3f6f0;
-      --panel: #ffffff;
-      --text: #1f2b21;
-      --muted: #607064;
-      --accent: #2b6f4b;
-      --accent-soft: #e5f2e9;
-      --border: #d7e4d6;
-      --shadow: 0 18px 36px rgba(29, 56, 37, 0.1);
-      --font-body: "Segoe UI", Tahoma, sans-serif;
-      --font-title: "Palatino Linotype", Georgia, serif;
+      --font-xs: 0.75rem;
+      --font-sm: 0.875rem;
+      --font-md: 1rem;
+      --font-lg: 1.125rem;
+      --font-xl: 1.25rem;
+      --font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --space-sm: 12px;
+      --space-md: 16px;
+      --space-lg: 20px;
+
+      --bg-base: #f8f9fa;
+      --bg-surface: #ffffff;
+      --bg-header: #ffffff;
+      --bg-input: #f1f3f4;
+      --text-main: #202124;
+      --text-muted: #5f6368;
+      --border-color: #dadce0;
+      --accent: #1a73e8;
+      --accent-hover: #174ea6;
+      --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+      --chat-user-bg: #e8f0fe;
+    }
+
+    [data-theme="dark"] {
+      --bg-base: #202124;
+      --bg-surface: #292a2d;
+      --bg-header: #292a2d;
+      --bg-input: #303134;
+      --text-main: #e8eaed;
+      --text-muted: #9aa0a6;
+      --border-color: #3c4043;
+      --accent: #8ab4f8;
+      --accent-hover: #aecbfa;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+      --chat-user-bg: #1f3b63;
     }
 
     * {
@@ -27,59 +52,56 @@
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: var(--font-body);
-      background:
-        radial-gradient(circle at top right, rgba(229, 242, 233, 0.85), transparent 32%),
-        linear-gradient(180deg, #eef5ee 0%, #f8fbf7 100%);
-      color: var(--text);
-    }
-
-    .wrap {
-      width: min(1040px, calc(100vw - 32px));
-      margin: 28px auto 40px;
-    }
-
-    .hero {
       display: flex;
-      justify-content: space-between;
-      gap: 20px;
+      flex-direction: column;
+      font-family: var(--font-family);
+      background: var(--bg-base);
+      color: var(--text-main);
+    }
+
+    #status-bar {
+      height: 56px;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
       align-items: center;
-      padding: 24px 28px;
-      border-radius: 26px;
-      background: rgba(255, 255, 255, 0.88);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
+      gap: var(--space-md);
+      padding: 0 var(--space-lg);
+      color: var(--text-muted);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      flex-shrink: 0;
     }
 
-    .hero h1 {
-      margin: 10px 0 8px;
-      font-family: var(--font-title);
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.05;
+    .brand {
+      font-size: var(--font-lg);
+      font-weight: 700;
+      color: var(--text-main);
     }
 
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 1.05rem;
-      line-height: 1.7;
-      max-width: 52ch;
+    .mode-badge {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: var(--font-sm);
     }
 
     .nav {
+      margin-left: auto;
       display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
     }
 
-    .nav a {
+    .nav a,
+    .nav button {
       text-decoration: none;
-      padding: 10px 14px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--accent);
-      font-weight: 700;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
     }
 
     .nav a.current {
@@ -88,171 +110,190 @@
       border-color: var(--accent);
     }
 
+    .page {
+      width: min(1080px, calc(100vw - 32px));
+      margin: 24px auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .hero {
+      padding: 24px;
+    }
+
+    .eyebrow {
+      font-size: var(--font-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.9rem, 3vw, 2.8rem);
+      line-height: 1.1;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--text-muted);
+      line-height: 1.7;
+      max-width: 62ch;
+    }
+
     .grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-top: 22px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-md);
     }
 
     .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 22px;
-      box-shadow: var(--shadow);
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      padding: var(--space-lg);
     }
 
     .card h2 {
-      margin: 14px 0 10px;
-      font-size: 1.35rem;
+      margin: 0 0 10px;
+      font-size: var(--font-xl);
     }
 
-    .card p {
-      margin: 0;
-      color: var(--muted);
+    .card p,
+    .card li {
+      color: var(--text-muted);
       line-height: 1.7;
     }
 
-    .list {
-      margin: 16px 0 0;
+    .card ul {
+      margin: 12px 0 0;
       padding-left: 18px;
-      color: var(--text);
-      line-height: 1.8;
-    }
-
-    .list li + li {
-      margin-top: 4px;
     }
 
     .steps {
-      margin-top: 22px;
+      padding: var(--space-lg);
       display: grid;
       gap: 14px;
     }
 
     .step {
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: var(--space-md);
       display: grid;
-      grid-template-columns: 54px 1fr;
-      gap: 16px;
-      align-items: start;
-      padding: 18px;
-      border-radius: 18px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.9);
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      background: var(--bg-surface);
     }
 
-    .step strong {
-      width: 54px;
-      height: 54px;
-      display: grid;
-      place-items: center;
-      border-radius: 16px;
+    .step-number {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
       background: var(--accent);
       color: #fff;
-      font-size: 1.1rem;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
     }
 
     .step h3 {
       margin: 2px 0 6px;
-      font-size: 1.08rem;
+      font-size: var(--font-lg);
     }
 
     .step p {
       margin: 0;
-      color: var(--muted);
-      line-height: 1.65;
+      color: var(--text-muted);
+      line-height: 1.7;
     }
 
     @media (max-width: 900px) {
-      .hero,
       .grid {
         grid-template-columns: 1fr;
-        display: grid;
       }
     }
   </style>
 </head>
 
 <body>
-  <main class="wrap">
-    <section class="hero">
-      <div>
-        <div class="badge">Ajuda do dashboard</div>
-        <h1>Escolha a tela certa para cada tipo de uso.</h1>
-        <p>O IalClaw agora tem duas experiências: uma simples, para quem só quer conversar, e outra avançada, para quem quer acompanhar o funcionamento interno do agente.</p>
-      </div>
-      <nav class="nav">
-        <a href="/simple">Modo simples</a>
-        <a href="/advanced">Modo avançado</a>
-        <a href="/help" class="current">Ajuda</a>
-      </nav>
+  <header id="status-bar">
+    <div class="brand">IalClaw</div>
+    <div class="mode-badge">AJUDA</div>
+    <div class="nav">
+      <a href="/simple">Modo simples</a>
+      <a href="/advanced">Modo avançado</a>
+      <a href="/help" class="current">Ajuda</a>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="panel hero">
+      <div class="eyebrow">Ajuda do dashboard</div>
+      <h1>Escolha a tela certa para cada tipo de uso.</h1>
+      <p>O IalClaw possui uma experiência simples, pensada para conversa direta, e uma experiência avançada, voltada para acompanhamento técnico, traces e observabilidade.</p>
     </section>
 
     <section class="grid">
-      <article class="card">
-        <span class="badge">Para uso cotidiano</span>
+      <article class="panel card">
         <h2>Modo simples</h2>
-        <p>Ideal para usuários leigos, demonstrações e conversas rápidas. A interface foca só na troca de mensagens e esconde logs, grafo e telemetria.</p>
-        <ul class="list">
-          <li>Use para pedir tarefas, ideias, explicações e textos.</li>
-          <li>Recomendado para quem não precisa entender o funcionamento interno.</li>
-          <li>Melhor escolha para apresentações mais limpas.</li>
+        <p>Converse sem complicação. Peça o que você precisa e o IalClaw responde de forma direta. Essa tela foi pensada para quem só quer conversar com o agente, pedir uma tarefa ou tirar uma dúvida, sem precisar acompanhar grafo, traces ou logs internos.</p>
+        <ul>
+          <li>Bom para começar: peça algo simples, como criar um jogo, corrigir um texto ou explicar um erro.</li>
+          <li>Recomendado para usuários leigos e uso cotidiano.</li>
+          <li>Também inclui histórico de conversas e opção de começar um novo chat.</li>
         </ul>
       </article>
 
-      <article class="card">
-        <span class="badge">Para operação técnica</span>
+      <article class="panel card">
         <h2>Modo avançado</h2>
-        <p>Ideal para desenvolvimento, suporte e debugging. Exibe grafo cognitivo, traces, replay e logs de eventos do agente em tempo real.</p>
-        <ul class="list">
-          <li>Use para investigar falhas e acompanhar decisões do agente.</li>
-          <li>Mostra métricas, telemetria e fluxo interno.</li>
-          <li>Recomendado para times técnicos e troubleshooting.</li>
+        <p>Use esta tela quando quiser acompanhar o raciocínio do agente, eventos de debug, histórico técnico, replay de traces e o grafo cognitivo em tempo real.</p>
+        <ul>
+          <li>Indicado para desenvolvimento, suporte e troubleshooting.</li>
+          <li>Mostra telemetria, repair loop e eventos internos do executor.</li>
+          <li>Ideal para investigar falhas ou validar o comportamento do sistema.</li>
         </ul>
       </article>
     </section>
 
-    <section class="card steps">
-      <div class="badge">Como usar</div>
+    <section class="panel steps">
       <div class="step">
-        <strong>1</strong>
+        <div class="step-number">1</div>
         <div>
           <h3>Abra a tela adequada</h3>
-          <p>Entre em <a href="/simple">/simple</a> para uma conversa limpa ou em <a href="/advanced">/advanced</a> para o painel completo.</p>
+          <p>Entre em <a href="/simple">/simple</a> para uma conversa limpa ou em <a href="/advanced">/advanced</a> para o painel técnico completo.</p>
         </div>
       </div>
+
       <div class="step">
-        <strong>2</strong>
+        <div class="step-number">2</div>
         <div>
           <h3>Escreva um pedido claro</h3>
-          <p>Exemplos: “Crie um jogo da cobrinha em HTML”, “Explique esse erro”, “Faça uma página inicial simples para meu produto”.</p>
+          <p>Exemplos: “Crie uma landing page para meu produto”, “Explique por que meu projeto falhou” ou “Crie um jogo da cobrinha em HTML”.</p>
         </div>
       </div>
+
       <div class="step">
-        <strong>3</strong>
+        <div class="step-number">3</div>
         <div>
-          <h3>Acompanhe o retorno</h3>
-          <p>No modo simples você vê só a resposta. No modo avançado também acompanha traces, debug e o grafo cognitivo.</p>
+          <h3>Use o histórico quando quiser continuar</h3>
+          <p>Tanto no modo simples quanto no avançado você pode abrir conversas salvas e continuar o contexto de uma sessão anterior.</p>
         </div>
       </div>
+
       <div class="step">
-        <strong>4</strong>
+        <div class="step-number">4</div>
         <div>
-          <h3>Troque de tela quando precisar</h3>
-          <p>Você pode começar no modo simples e migrar para o avançado quando precisar investigar algo técnico.</p>
+          <h3>Troque para o avançado quando precisar investigar</h3>
+          <p>Se aparecer um comportamento estranho ou você quiser entender o fluxo interno do agente, mude para a tela avançada e acompanhe os traces e eventos.</p>
         </div>
       </div>
     </section>
