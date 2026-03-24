@@ -104,6 +104,7 @@ export class AgentPlanner {
 CONTEXTO DE SESSAO ATUAL (CONTINUIDADE DE TAREFA):
 - Objetivo da Sessao: ${session.current_goal || 'nenhum'}
 - ID do Projeto Ativo: ${session.current_project_id || 'nenhum'}
+- Continuidade estrita: ${session.continue_project_only ? 'sim' : 'nao'}
 - Arquivos ja gerados nesta sessao: ${session.last_artifacts.length > 0 ? session.last_artifacts.join(', ') : 'nenhum'}
 - Ultimo erro observado: ${session.last_error || 'nenhum'}
 
@@ -112,6 +113,7 @@ ATENCAO A CONTINUIDADE:
 - Continue a tarefa do projeto existente chamando "workspace_save_artifact".
 - O campo "project_id" pode ser omitido que o sistema injetara automaticamente o projeto correspondente a sessao.
 - Se houver ultimo erro, foque em corrigir o erro sem recriar o projeto.
+- Se "Continuidade estrita" for "sim", nunca tente criar um novo projeto.
 `;
 
             if (session.last_error_type === 'tool_input' && session.last_error) {

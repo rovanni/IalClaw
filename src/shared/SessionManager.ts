@@ -4,6 +4,7 @@ export interface SessionContext {
     conversation_id: string;
     current_goal?: string;
     current_project_id?: string;
+    continue_project_only?: boolean;
     last_error?: string;
     last_error_type?: string;
     last_error_hash?: string;

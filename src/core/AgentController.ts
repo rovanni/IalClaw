@@ -66,6 +66,12 @@ export class AgentController {
         const session = SessionManager.getCurrentSession();
         this.memory.saveMessage(sessionId, 'user', userQuery);
 
+        const sessionDirectiveReply = this.handleSessionDirective(userQuery, session);
+        if (sessionDirectiveReply) {
+            this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
+            return sessionDirectiveReply;
+        }
+
         if (this.shouldUsePlannerRuntime(userQuery, session?.current_project_id)) {
             const answer = await this.runtime.execute(userQuery, 'planner');
 
@@ -135,9 +141,44 @@ Nao alucine fatos.\n\n${contextStr}`
 
     private shouldUsePlannerRuntime(userQuery: string, currentProjectId?: string): boolean {
         if (currentProjectId) {
-            return true;
+            return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|continuar|continue|ajuste|corrija|corrigir|adicione|instale|instalar)\b/i.test(userQuery);
         }
 
         return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend)\b/i.test(userQuery);
+    }
+
+    private handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): string | null {
+        const normalized = userQuery.toLowerCase().trim();
+
+        if (this.isPuppeteerInstallAuthorization(normalized)) {
+            return `Recebi sua autorização para instalar o puppeteer.
+
+No runtime atual do dashboard, a instalação automática ainda não está conectada ao sistema de execução do agente, então esse pedido não será enviado ao planner nem ao executor por engano.
+
+Enquanto isso, vou continuar tratando o projeto atual como continuidade da mesma sessão.`;
+        }
+
+        if (this.isContinueProjectDirective(normalized) && session?.current_project_id) {
+            session.continue_project_only = true;
+            session.last_error = undefined;
+            session.last_error_type = undefined;
+            session.last_error_hash = undefined;
+            session.last_error_fingerprint = undefined;
+            session._tool_input_attempts = 0;
+            session._input_history = [];
+
+            return `Vou continuar apenas o projeto atual desta sessão (${session.current_project_id}) e não vou criar um projeto novo.`;
+        }
+
+        return null;
+    }
+
+    private isPuppeteerInstallAuthorization(normalizedQuery: string): boolean {
+        return /\b(pode instalar|pode tentar instalar|autorizo instalar|autorizo tentar instalar|instale o puppeteer|instalar o puppeteer)\b/.test(normalizedQuery)
+            && normalizedQuery.includes('puppeteer');
+    }
+
+    private isContinueProjectDirective(normalizedQuery: string): boolean {
+        return /\b(s[oó] continue|continuar|continue o projeto|continue os projetos|nao recrie|não recrie|nao crie novo projeto|não crie novo projeto)\b/.test(normalizedQuery);
     }
 }
