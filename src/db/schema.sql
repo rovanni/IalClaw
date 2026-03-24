@@ -4,6 +4,12 @@ PRAGMA synchronous=NORMAL;
 PRAGMA temp_store=MEMORY;
 PRAGMA foreign_keys=OFF;
 
+CREATE TABLE IF NOT EXISTS app_config (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT
+);
+
 -- Episodic Memory
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,

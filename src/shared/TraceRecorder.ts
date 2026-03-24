@@ -39,6 +39,8 @@ export function startTraceRecorder() {
         'repair:tool_input:raw',
         'repair:tool_input:normalized',
         'repair:tool_input:baseline',
+        'execution_mode',
+        'agent_config',
         'diff_strategy_selected',
         'diff_validation_failed',
         'diff_applied',

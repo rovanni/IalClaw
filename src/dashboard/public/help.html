@@ -216,8 +216,54 @@
       line-height: 1.7;
     }
 
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-md);
+      padding: var(--space-lg);
+    }
+
+    .mode-card {
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: var(--space-lg);
+      background: var(--bg-surface);
+    }
+
+    .mode-card h3 {
+      margin: 0 0 10px;
+      font-size: var(--font-lg);
+    }
+
+    .mode-card p,
+    .mode-card li {
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    .mode-card ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--chat-user-bg);
+      color: var(--text-main);
+      font-size: var(--font-xs);
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
     @media (max-width: 900px) {
       .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .mode-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -239,7 +285,7 @@
     <section class="panel hero">
       <div class="eyebrow">Ajuda do dashboard</div>
       <h1>Escolha a tela certa para cada tipo de uso.</h1>
-      <p>O IalClaw possui uma experiência simples, pensada para conversa direta, e uma experiência avançada, voltada para acompanhamento técnico, traces e observabilidade.</p>
+      <p>O IalClaw possui uma experiência simples, pensada para conversa direta, e uma experiência avançada, voltada para acompanhamento técnico, traces, observabilidade e controle do comportamento do executor.</p>
     </section>
 
     <section class="grid">
@@ -255,13 +301,55 @@
 
       <article class="panel card">
         <h2>Modo avançado</h2>
-        <p>Use esta tela quando quiser acompanhar o raciocínio do agente, eventos de debug, histórico técnico, replay de traces e o grafo cognitivo em tempo real.</p>
+        <p>Use esta tela quando quiser acompanhar o raciocínio do agente, eventos de debug, histórico técnico, replay de traces, o grafo cognitivo em tempo real e trocar o modo operacional do executor.</p>
         <ul>
           <li>Indicado para desenvolvimento, suporte e troubleshooting.</li>
           <li>Mostra telemetria, repair loop e eventos internos do executor.</li>
-          <li>Ideal para investigar falhas ou validar o comportamento do sistema.</li>
+          <li>Ideal para investigar falhas, validar comportamento e ajustar o nível de risco da execução.</li>
         </ul>
       </article>
+    </section>
+
+    <section class="panel">
+      <div class="card">
+        <h2>Modos de execução</h2>
+        <p>Na tela avançada existe um seletor chamado MODO no topo. Ele controla como o IalClaw trata edição de arquivos, fallback e validação estrutural durante a execução.</p>
+      </div>
+
+      <div class="mode-grid">
+        <article class="mode-card">
+          <div class="tag">Seguro</div>
+          <h3>Use quando quer estabilidade</h3>
+          <p>Esse modo é o mais conservador. Ele prioriza segurança durante alterações em arquivos existentes.</p>
+          <ul>
+            <li>Exige diff confiável antes de editar arquivos já existentes.</li>
+            <li>Se o patch falhar, o overwrite completo é bloqueado.</li>
+            <li>Ideal para mudanças delicadas, correções cirúrgicas e revisão técnica.</li>
+          </ul>
+        </article>
+
+        <article class="mode-card">
+          <div class="tag">Equilibrado</div>
+          <h3>Use como padrão</h3>
+          <p>Esse modo busca concluir a tarefa sem abandonar boas proteções. É o comportamento padrão recomendado.</p>
+          <ul>
+            <li>Tenta aplicar diff primeiro.</li>
+            <li>Se necessário, faz fallback inteligente para overwrite.</li>
+            <li>Validação estrutural é leve para preservar progresso.</li>
+          </ul>
+        </article>
+
+        <article class="mode-card">
+          <div class="tag">Livre</div>
+          <h3>Use para prototipar rápido</h3>
+          <p>Esse modo prioriza resultado imediato. Ele reduz barreiras de execução e aceita mais risco.</p>
+          <ul>
+            <li>Pode sobrescrever diretamente quando isso acelera a entrega.</li>
+            <li>Pula a validação estrutural do projeto no executor.</li>
+            <li>Ideal para experimentação, testes rápidos e primeiras versões.</li>
+          </ul>
+        </article>
+      </div>
     </section>
 
     <section class="panel steps">
@@ -276,13 +364,21 @@
       <div class="step">
         <div class="step-number">2</div>
         <div>
+          <h3>Escolha o modo de execução</h3>
+          <p>No painel avançado, use o seletor MODO no topo. Escolha Seguro para estabilidade, Equilibrado para uso padrão ou Livre para prototipação rápida.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">3</div>
+        <div>
           <h3>Escreva um pedido claro</h3>
           <p>Exemplos: “Crie uma landing page para meu produto”, “Explique por que meu projeto falhou” ou “Crie um jogo da cobrinha em HTML”.</p>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-number">3</div>
+        <div class="step-number">4</div>
         <div>
           <h3>Use o histórico quando quiser continuar</h3>
           <p>Tanto no modo simples quanto no avançado você pode abrir conversas salvas e continuar o contexto de uma sessão anterior.</p>
@@ -290,10 +386,18 @@
       </div>
 
       <div class="step">
-        <div class="step-number">4</div>
+        <div class="step-number">5</div>
         <div>
           <h3>Troque para o avançado quando precisar investigar</h3>
-          <p>Se aparecer um comportamento estranho ou você quiser entender o fluxo interno do agente, mude para a tela avançada e acompanhe os traces e eventos.</p>
+          <p>Se aparecer um comportamento estranho ou você quiser entender o fluxo interno do agente, mude para a tela avançada, acompanhe os traces e veja qual modo estava ativo durante a execução.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">6</div>
+        <div>
+          <h3>Interprete o resultado pelo contexto do modo</h3>
+          <p>Se uma tarefa não concluir no modo Seguro, isso pode ser uma proteção deliberada. Se uma tarefa concluir no modo Livre, confira o resultado final com mais atenção, porque o sistema priorizou velocidade.</p>
         </div>
       </div>
     </section>

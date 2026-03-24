@@ -424,6 +424,59 @@
       border-color: var(--t-rag);
     }
 
+    .thought-mode {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .thought-mode-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .mode-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: var(--font-xs);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+
+    .mode-pill.strict {
+      background: rgba(30, 142, 62, 0.12);
+      color: #1e8e3e;
+      border-color: rgba(30, 142, 62, 0.3);
+    }
+
+    .mode-pill.balanced {
+      background: rgba(242, 153, 0, 0.12);
+      color: #b06000;
+      border-color: rgba(242, 153, 0, 0.3);
+    }
+
+    .mode-pill.aggressive {
+      background: rgba(197, 34, 31, 0.12);
+      color: #c5221f;
+      border-color: rgba(197, 34, 31, 0.3);
+    }
+
+    .mode-stage {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
     /* Chat Container */
     #chat-container {
       flex: 1;
@@ -751,6 +804,8 @@
             appendThought('action', `Tool [${data.name}]: ${data.status} (${data.latency}ms)`);
           } else if (e.type === 'rag') {
             appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados`);
+          } else if (e.type === 'execution_mode') {
+            appendExecutionModeEvent(data);
           }
 
           // Simula o tempo real do agente "pensando"
@@ -973,6 +1028,48 @@
       thoughtLog.scrollTop = thoughtLog.scrollHeight;
     }
 
+    function executionModeLabel(mode) {
+      if (mode === 'strict') return 'Seguro';
+      if (mode === 'aggressive') return 'Livre';
+      return 'Equilibrado';
+    }
+
+    function appendExecutionModeEvent(data) {
+      const mode = data.selected || data.executionMode || 'balanced';
+      const stage = data.stage || 'runtime';
+
+      const item = document.createElement('div');
+      item.className = 'thought-item t-thought thought-mode';
+
+      const main = document.createElement('div');
+      main.className = 'thought-mode-main';
+
+      const prefix = document.createElement('span');
+      prefix.innerText = '[MODE]';
+      main.appendChild(prefix);
+
+      const pill = document.createElement('span');
+      pill.className = `mode-pill ${mode}`;
+      pill.innerText = executionModeLabel(mode);
+      main.appendChild(pill);
+
+      const detail = document.createElement('span');
+      const confidence = typeof data.confidence === 'number' ? ` conf=${data.confidence.toFixed(2)}` : '';
+      detail.innerText = data.validation_mode
+        ? `validacao ${data.validation_mode}`
+        : `executor em ${stage}${confidence}`;
+      main.appendChild(detail);
+
+      const stageEl = document.createElement('span');
+      stageEl.className = 'mode-stage';
+      stageEl.innerText = stage;
+
+      item.appendChild(main);
+      item.appendChild(stageEl);
+      thoughtLog.appendChild(item);
+      thoughtLog.scrollTop = thoughtLog.scrollHeight;
+    }
+
     function updateDebugLog(jsonObj) {
       const current = debugLog.innerText;
       const newEntry = JSON.stringify(jsonObj, null, 2);
@@ -1189,6 +1286,7 @@
 
     eventSource.addEventListener('execution_mode', (event) => {
       const data = JSON.parse(event.data);
+      appendExecutionModeEvent(data);
       updateDebugLog(data);
     });
 

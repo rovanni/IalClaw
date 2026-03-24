@@ -17,6 +17,7 @@ export class DashboardServer {
         this.app = express();
         this.app.use(cors());
         this.app.use(express.json());
+        this.initializeAgentConfig();
 
         // Serve static files from public
         this.app.use(express.static(path.join(__dirname, 'public')));
@@ -135,6 +136,7 @@ export class DashboardServer {
             }
 
             const snapshot = agentConfig.setExecutionMode(mode);
+            this.persistAgentConfig(snapshot.executionMode);
             debugBus.emit('agent_config', {
                 source: 'dashboard',
                 ...snapshot,
@@ -254,6 +256,32 @@ export class DashboardServer {
 
     public setController(controller: AgentController) {
         this.controller = controller;
+    }
+
+    private initializeAgentConfig() {
+        try {
+            const row = this.db.prepare('SELECT value FROM app_config WHERE key = ?').get('execution_mode') as { value?: string } | undefined;
+
+            if (row?.value && isExecutionMode(row.value)) {
+                agentConfig.setExecutionMode(row.value);
+            }
+        } catch (error: any) {
+            console.warn('[Dashboard] Falha ao carregar execution_mode persistido:', error.message);
+        }
+    }
+
+    private persistAgentConfig(mode: string) {
+        try {
+            this.db.prepare(`
+                INSERT INTO app_config (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+            `).run('execution_mode', mode, new Date().toISOString());
+        } catch (error: any) {
+            console.warn('[Dashboard] Falha ao persistir execution_mode:', error.message);
+        }
     }
 
     public start(port: number = 3000) {

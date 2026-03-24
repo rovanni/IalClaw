@@ -91,6 +91,34 @@
       font-size: var(--font-sm);
     }
 
+    .mode-select {
+      background: var(--bg-input);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      cursor: pointer;
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      font-family: inherit;
+      min-width: 160px;
+    }
+
+    .mode-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      white-space: nowrap;
+    }
+
+    .mode-behavior {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     .nav {
       margin-left: auto;
       display: flex;
@@ -168,6 +196,12 @@
       color: var(--text-muted);
       font-size: var(--font-xs);
       line-height: 1.5;
+    }
+
+    .sidebar-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
 
     .btn-primary {
@@ -352,6 +386,12 @@
     }
 
     @media (max-width: 980px) {
+      #status-bar {
+        height: auto;
+        flex-wrap: wrap;
+        padding: 12px var(--space-lg);
+      }
+
       #workspace {
         flex-direction: column;
       }
@@ -368,8 +408,13 @@
 <body>
   <header id="status-bar">
     <div class="brand">IalClaw</div>
-    <div class="mode-badge">MODO SIMPLES</div>
+    <div class="mode-status">Modo atual: <span id="mode-badge" class="mode-badge">Equilibrado</span></div>
     <div class="nav">
+      <select id="execution-mode" class="mode-select" aria-label="Modo de execução">
+        <option value="strict">Seguro</option>
+        <option value="balanced" selected>Equilibrado</option>
+        <option value="aggressive">Livre</option>
+      </select>
       <a href="/simple" class="current">Modo simples</a>
       <a href="/advanced">Modo avançado</a>
       <a href="/help">Ajuda</a>
@@ -384,7 +429,10 @@
         <span id="conversation-count">0</span>
       </div>
       <div class="sidebar-body">
-        <div class="sidebar-note">Continue uma conversa anterior ou comece uma nova sem sair do modo simples.</div>
+        <div class="sidebar-block">
+          <div class="sidebar-note">Continue uma conversa anterior ou comece uma nova sem sair do modo simples.</div>
+          <div id="mode-behavior" class="mode-behavior">Fallback ativo, validacao leve.</div>
+        </div>
         <button class="btn-primary" id="new-chat-btn" type="button">+ Nova conversa</button>
       </div>
       <div id="conversation-list">
@@ -429,6 +477,55 @@
     const conversationCount = document.getElementById('conversation-count');
     const newChatBtn = document.getElementById('new-chat-btn');
     const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const executionModeSelect = document.getElementById('execution-mode');
+    const modeBadge = document.getElementById('mode-badge');
+    const modeBehavior = document.getElementById('mode-behavior');
+
+    function applyExecutionConfig(config) {
+      if (!config) return;
+
+      executionModeSelect.value = config.executionMode;
+      modeBadge.innerText = config.label;
+      modeBadge.dataset.mode = config.executionMode;
+      modeBehavior.innerText = config.behavior;
+    }
+
+    async function loadExecutionConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+
+        if (res.ok && data?.config) {
+          applyExecutionConfig(data.config);
+        }
+      } catch (_error) {
+        // Mantem a configuracao padrao se a API nao responder.
+      }
+    }
+
+    async function updateExecutionMode(nextMode, previousMode) {
+      executionModeSelect.disabled = true;
+
+      try {
+        const res = await fetch('/api/config/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: nextMode })
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data?.config) {
+          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        }
+
+        applyExecutionConfig(data.config);
+      } catch (err) {
+        executionModeSelect.value = previousMode;
+        alert('Nao foi possivel atualizar o modo de execucao: ' + (err.message || err));
+      } finally {
+        executionModeSelect.disabled = false;
+      }
+    }
 
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
@@ -624,12 +721,17 @@
     sendBtn.addEventListener('click', () => sendMessage());
     newChatBtn.addEventListener('click', startNewConversation);
     themeToggleBtn.addEventListener('click', toggleTheme);
+    executionModeSelect.addEventListener('change', event => {
+      const previousMode = modeBadge.dataset.mode || 'balanced';
+      updateExecutionMode(event.target.value, previousMode);
+    });
 
     document.querySelectorAll('[data-prompt]').forEach(button => {
       button.addEventListener('click', () => sendMessage(button.dataset.prompt));
     });
 
     applyTheme(currentTheme);
+    loadExecutionConfig();
     loadConversationMessages(sessionId);
     loadConversationList();
   </script>
