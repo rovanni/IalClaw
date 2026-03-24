@@ -6,3 +6,8 @@ db.sqlite-wal
 db.sqlite-shm
 *.db
 ialclaw.db
+
+# Diretórios Dinâmicos do Agente
+workspace/
+runtime/
+data/
