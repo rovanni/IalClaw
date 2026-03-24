@@ -127,6 +127,33 @@
       color: var(--stat-warn);
     }
 
+    .mode-select {
+      background: var(--bg-input);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      font-family: inherit;
+      min-width: 180px;
+    }
+
+    .mode-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .mode-meta {
+      color: var(--text-muted);
+      font-size: var(--font-xs);
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* Zoom Controls */
     .zoom-btn {
       background: transparent;
@@ -551,6 +578,14 @@
         min-width: 240px;
       }
     }
+
+    @media (max-width: 1500px) {
+      #status-bar {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 12px 20px;
+      }
+    }
   </style>
 </head>
 
@@ -561,8 +596,17 @@
     <div>|</div>
     <div>Gateway: <span class="stat-ok">ONLINE</span></div>
     <div>Engine: <span class="stat-warn">STANDBY</span></div>
+    <div>|</div>
+    <div class="mode-status">Modo atual: <span id="mode-badge" class="stat-badge">Equilibrado</span></div>
+    <div id="mode-behavior" class="mode-meta">Fallback ativo, validacao leve</div>
 
     <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+      <label for="execution-mode" style="font-size: var(--font-xs); color: var(--text-muted);">MODO</label>
+      <select id="execution-mode" class="mode-select">
+        <option value="strict">Seguro</option>
+        <option value="balanced" selected>Equilibrado</option>
+        <option value="aggressive">Livre</option>
+      </select>
       <a href="/simple" class="zoom-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Modo simples</a>
       <a href="/help" class="zoom-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Ajuda</a>
       <span style="color: #666; font-size: var(--font-xs);">ZOOM</span>
@@ -643,6 +687,9 @@
     const conversationList = document.getElementById('conversation-list');
     const conversationCount = document.getElementById('conversation-count');
     const newChatBtn = document.getElementById('new-chat-btn');
+    const executionModeSelect = document.getElementById('execution-mode');
+    const modeBadge = document.getElementById('mode-badge');
+    const modeBehavior = document.getElementById('mode-behavior');
     let network = null;
 
     // --- Controle de Zoom Persistente ---
@@ -872,6 +919,51 @@
         .replace(/'/g, '&#39;');
     }
 
+    function applyExecutionConfig(config) {
+      if (!config) return;
+
+      executionModeSelect.value = config.executionMode;
+      modeBadge.innerText = config.label;
+      modeBehavior.innerText = config.behavior;
+      modeBadge.dataset.mode = config.executionMode;
+    }
+
+    async function loadExecutionConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (res.ok && data?.config) {
+          applyExecutionConfig(data.config);
+        }
+      } catch (_err) {
+        // Mantem o modo padrao renderizado no HTML se a API falhar.
+      }
+    }
+
+    async function updateExecutionMode(nextMode, previousMode) {
+      executionModeSelect.disabled = true;
+
+      try {
+        const res = await fetch('/api/config/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: nextMode })
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data?.config) {
+          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        }
+
+        applyExecutionConfig(data.config);
+      } catch (err) {
+        executionModeSelect.value = previousMode;
+        alert('Nao foi possivel atualizar o modo de execucao: ' + (err.message || err));
+      } finally {
+        executionModeSelect.disabled = false;
+      }
+    }
+
     function appendThought(type, text) {
       const el = document.createElement('div');
       el.classList.add('thought-item');
@@ -939,6 +1031,10 @@
 
     sendBtn.addEventListener('click', sendMessage);
     newChatBtn.addEventListener('click', startNewConversation);
+    executionModeSelect.addEventListener('change', (event) => {
+      const previousMode = modeBadge.dataset.mode || 'balanced';
+      updateExecutionMode(event.target.value, previousMode);
+    });
 
     // Variáveis globais para o Grafo utilizando DataSet
     const nodesData = new vis.DataSet([]);
@@ -1023,6 +1119,7 @@
     loadGraph();
     loadConversationMessages(sessionId);
     loadConversationList();
+    loadExecutionConfig();
 
     // Refresh a cada 10 segundos
     setInterval(loadGraph, 10000);
@@ -1087,6 +1184,17 @@
     eventSource.addEventListener('repair:tool_input:normalized', (event) => {
       const data = JSON.parse(event.data);
       appendThought('obs', `Repair normalizado para ${data.normalized_step?.tool}`);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('execution_mode', (event) => {
+      const data = JSON.parse(event.data);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('agent_config', (event) => {
+      const data = JSON.parse(event.data);
+      applyExecutionConfig(data);
       updateDebugLog(data);
     });
   </script>

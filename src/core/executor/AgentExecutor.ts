@@ -16,12 +16,13 @@ import { buildWorkspaceContext, formatWorkspaceForRepair } from '../planner/work
 import { formatTargetFileBlock, rankFiles, selectWithConfidence } from '../planner/fileTargeting';
 import { workspaceService } from '../../services/WorkspaceService';
 import { DiffOperation, validateDiffOperations } from '../../tools/workspaceDiff';
-import { estimateChangeSize, selectDiffStrategy } from './diffStrategy';
+import { estimateChangeSize, resolveExecutionMode, selectDiffStrategy, selectValidationMode } from './diffStrategy';
 import { getContext } from '../../shared/TraceContext';
 import { getRequiredCapabilities } from '../../capabilities/taskCapabilities';
 import { handleCapabilityFallback } from '../../capabilities/capabilityFallback';
 import { skillManager } from '../../capabilities';
 import { SkillPolicy } from '../../capabilities/SkillManager';
+import { agentConfig } from './AgentConfig';
 import {
     getRequiredCapabilitiesForStep,
     requiresDOM,
@@ -45,6 +46,11 @@ class StepExecutionError extends Error {
         this.stepTool = stepTool;
     }
 }
+
+type SaveExecutionDecision = {
+    handled: boolean;
+    blocked?: string;
+};
 
 export class AgentExecutor {
     private llm: LLMProvider;
@@ -84,7 +90,17 @@ export class AgentExecutor {
             this.applyFileTargeting(step, plan.goal, session);
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
 
-            if (await this.tryApplyDiffAwareSave(step, plan.goal, session)) {
+            const saveDecision = await this.tryApplyDiffAwareSave(step, plan.goal, session);
+            if (saveDecision.blocked) {
+                throw new StepExecutionError(
+                    saveDecision.blocked,
+                    stepIndex,
+                    step.id,
+                    step.tool
+                );
+            }
+
+            if (saveDecision.handled) {
                 if (session) {
                     session.last_error = undefined;
                     session.last_error_type = undefined;
@@ -326,43 +342,76 @@ export class AgentExecutor {
                 return { success: true };
             }
 
-            const validation = await executeToolCall('workspace_validate_project', {
-                project_id: session.current_project_id
+            const configuredMode = agentConfig.getExecutionMode();
+            const validationMode = selectValidationMode(configuredMode);
+
+            debugBus.emit('execution_mode', {
+                stage: 'validation',
+                configured: configuredMode,
+                selected: configuredMode,
+                validation_mode: validationMode,
+                trace_id: getTraceIdSafe()
             });
 
-            if (!validation.success) {
-                const validationError = ('data' in validation && validation.data?.errors?.length)
-                    ? validation.data.errors.join('\n')
-                    : validation.error || 'Falha desconhecida na validacao.';
-                lastError = validationError;
-                session.last_error = validationError;
-                session.last_error_type = 'structure';
-                session.last_error_hash = undefined;
-                session.last_error_fingerprint = undefined;
-                session._tool_input_attempts = undefined;
-                session._input_history = [];
-
-                debugBus.emit('self_healing', {
-                    error: validationError,
-                    error_type: 'structure',
-                    stage: 'validation',
-                    attempt
+            if (validationMode === 'minimal') {
+                debugBus.emit('thought', {
+                    type: 'thought',
+                    content: '[EXECUTOR] Validacao estrutural pulada pelo modo aggressive.'
+                });
+                debugBus.emit('executor:success', { skipped_validation: true, reason: 'execution_mode_minimal' });
+            } else {
+                const validation = await executeToolCall('workspace_validate_project', {
+                    project_id: session.current_project_id
                 });
 
-                if (attempt === MAX_RETRIES) {
-                    return {
-                        success: false,
-                        error: `Falha na validacao apos ${MAX_RETRIES} tentativas: ${lastError}`
-                    };
+                if (!validation.success) {
+                    const validationError = ('data' in validation && validation.data?.errors?.length)
+                        ? validation.data.errors.join('\n')
+                        : validation.error || 'Falha desconhecida na validacao.';
+
+                    if (validationMode === 'soft') {
+                        debugBus.emit('validation_soft_failed', {
+                            error: validationError,
+                            stage: 'validation',
+                            attempt,
+                            trace_id: getTraceIdSafe()
+                        });
+                        debugBus.emit('thought', {
+                            type: 'thought',
+                            content: `[EXECUTOR] Validacao leve detectou problemas, mas o modo balanced manteve o progresso: ${validationError}`
+                        });
+                    } else {
+                        lastError = validationError;
+                        session.last_error = validationError;
+                        session.last_error_type = 'structure';
+                        session.last_error_hash = undefined;
+                        session.last_error_fingerprint = undefined;
+                        session._tool_input_attempts = undefined;
+                        session._input_history = [];
+
+                        debugBus.emit('self_healing', {
+                            error: validationError,
+                            error_type: 'structure',
+                            stage: 'validation',
+                            attempt
+                        });
+
+                        if (attempt === MAX_RETRIES) {
+                            return {
+                                success: false,
+                                error: `Falha na validacao apos ${MAX_RETRIES} tentativas: ${lastError}`
+                            };
+                        }
+
+                        debugBus.emit('executor:replan', {
+                            attempt,
+                            reason: 'validation_error'
+                        });
+                        plan = await this.replan(plan, validationError, session);
+                        attempt++;
+                        continue;
+                    }
                 }
-
-                debugBus.emit('executor:replan', {
-                    attempt,
-                    reason: 'validation_error'
-                });
-                plan = await this.replan(plan, validationError, session);
-                attempt++;
-                continue;
             }
 
             const workspaceContextForRuntime = buildWorkspaceContext(session.current_project_id);
@@ -717,9 +766,9 @@ JSON valido`
         }
     }
 
-    private async tryApplyDiffAwareSave(step: PlanStep, goal: string, session?: Session): Promise<boolean> {
+    private async tryApplyDiffAwareSave(step: PlanStep, goal: string, session?: Session): Promise<SaveExecutionDecision> {
         if (!session?.current_project_id || step.tool !== 'workspace_save_artifact') {
-            return false;
+            return { handled: false };
         }
 
         const workspaceContext = buildWorkspaceContext(session.current_project_id);
@@ -729,24 +778,44 @@ JSON valido`
             files: workspaceContext
         }));
 
-        if (!fileSelection || fileSelection.confidence < 0.8) {
-            return false;
+        const filename = step.input.filename || fileSelection?.target;
+        if (!filename) {
+            return { handled: false };
         }
 
-        const filename = step.input.filename || fileSelection.target;
+        const targetingConfidence = fileSelection?.confidence ?? 1;
+        const configuredMode = agentConfig.getExecutionMode();
+        const selectedMode = resolveExecutionMode(configuredMode, targetingConfidence);
+
+        debugBus.emit('execution_mode', {
+            stage: 'save_artifact',
+            configured: configuredMode,
+            selected: selectedMode,
+            confidence: targetingConfidence,
+            file: filename,
+            trace_id: getTraceIdSafe()
+        });
+
+        if (selectedMode !== 'strict' && (!fileSelection || fileSelection.confidence < 0.8)) {
+            return { handled: false };
+        }
+
         const desiredContent = typeof step.input.content === 'string' ? step.input.content : '';
         const currentContent = workspaceService.readArtifact(session.current_project_id, filename);
         const changeSizeEstimate = currentContent ? estimateChangeSize(currentContent, desiredContent) : 'large';
         const strategy = selectDiffStrategy({
-            confidence: fileSelection.confidence,
+            confidence: targetingConfidence,
             fileExists: currentContent !== null,
             changeSizeEstimate,
-            errorContext: Boolean(session.last_error)
+            errorContext: Boolean(session.last_error),
+            executionMode: selectedMode
         });
 
         debugBus.emit('diff_strategy_selected', {
             strategy,
-            confidence: fileSelection.confidence,
+            configured_mode: configuredMode,
+            selected_mode: selectedMode,
+            confidence: targetingConfidence,
             file: filename,
             change_size_estimate: changeSizeEstimate,
             trace_id: getTraceIdSafe()
@@ -756,14 +825,16 @@ JSON valido`
             debugBus.emit('diff_fallback_triggered', {
                 reason: 'strategy_selected_overwrite',
                 file: filename,
-                confidence: fileSelection.confidence,
+                configured_mode: configuredMode,
+                selected_mode: selectedMode,
+                confidence: targetingConfidence,
                 trace_id: getTraceIdSafe()
             });
-            return false;
+            return { handled: false };
         }
 
         if (!currentContent || !desiredContent || currentContent === desiredContent) {
-            return false;
+            return { handled: false };
         }
 
         const operations = await this.generateDiffOperations(filename, currentContent, desiredContent);
@@ -777,12 +848,18 @@ JSON valido`
                 type: 'thought',
                 content: `[EXECUTOR] Diff-aware editing nao encontrou patch confiavel para ${filename}. Fallback para overwrite.`
             });
+            if (selectedMode === 'strict') {
+                return {
+                    handled: false,
+                    blocked: `Modo strict bloqueou overwrite completo em ${filename} porque nao houve patch confiavel.`
+                };
+            }
             debugBus.emit('diff_fallback_triggered', {
                 reason: 'invalid_operations',
                 file: filename,
                 trace_id: getTraceIdSafe()
             });
-            return false;
+            return { handled: false };
         }
 
         const diffResult = await executeToolCall('workspace_apply_diff', {
@@ -805,25 +882,31 @@ JSON valido`
                 type: 'thought',
                 content: `[EXECUTOR] workspace_apply_diff falhou em ${filename}. Fallback para overwrite completo.`
             });
+            if (selectedMode === 'strict') {
+                return {
+                    handled: false,
+                    blocked: `Modo strict bloqueou overwrite completo em ${filename} porque o diff falhou: ${diffResult.error || 'unknown_diff_failure'}`
+                };
+            }
             debugBus.emit('diff_fallback_triggered', {
                 reason: diffResult.error || 'unknown_diff_failure',
                 file: filename,
                 trace_id: getTraceIdSafe()
             });
-            return false;
+            return { handled: false };
         }
 
         debugBus.emit('diff_applied', {
             file: filename,
             operationsCount: operations.length,
-            confidence: fileSelection.confidence,
+            confidence: targetingConfidence,
             trace_id: getTraceIdSafe()
         });
         debugBus.emit('thought', {
             type: 'thought',
             content: `[EXECUTOR] Diff-aware editing aplicado em ${filename} com ${operations.length} operacao(oes).`
         });
-        return true;
+        return { handled: true };
     }
 
     private async ensureBrowserCapability(session: Session, goal: string): Promise<{

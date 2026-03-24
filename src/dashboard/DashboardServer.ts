@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import cors from 'cors';
 import { AgentController } from '../core/AgentController';
+import { agentConfig, isExecutionMode } from '../core/executor/AgentConfig';
 import { debugBus } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
 
@@ -122,6 +123,27 @@ export class DashboardServer {
             }
         });
 
+        this.app.get('/api/config', (_req, res) => {
+            res.json({ success: true, config: agentConfig.getSnapshot() });
+        });
+
+        this.app.post('/api/config/mode', (req, res) => {
+            const mode = req.body?.mode;
+
+            if (!isExecutionMode(mode)) {
+                return res.status(400).json({ error: 'Modo de execucao invalido.' });
+            }
+
+            const snapshot = agentConfig.setExecutionMode(mode);
+            debugBus.emit('agent_config', {
+                source: 'dashboard',
+                ...snapshot,
+                timestamp: Date.now()
+            });
+
+            res.json({ success: true, config: snapshot });
+        });
+
         this.app.get('/api/conversations/:conversationId', (req, res) => {
             try {
                 const messages = this.db.prepare(`
@@ -191,6 +213,8 @@ export class DashboardServer {
             const repairBaselineListener = (payload: any) => forwardEvent('repair:tool_input:baseline', payload);
             const repairRawListener = (payload: any) => forwardEvent('repair:tool_input:raw', payload);
             const repairNormalizedListener = (payload: any) => forwardEvent('repair:tool_input:normalized', payload);
+            const executionModeListener = (payload: any) => forwardEvent('execution_mode', payload);
+            const agentConfigListener = (payload: any) => forwardEvent('agent_config', payload);
 
             debugBus.on('gateway', gatewayListener);
             debugBus.on('thought', thoughtListener);
@@ -202,6 +226,8 @@ export class DashboardServer {
             debugBus.on('repair:tool_input:baseline', repairBaselineListener);
             debugBus.on('repair:tool_input:raw', repairRawListener);
             debugBus.on('repair:tool_input:normalized', repairNormalizedListener);
+            debugBus.on('execution_mode', executionModeListener);
+            debugBus.on('agent_config', agentConfigListener);
 
             const heartbeat = setInterval(() => {
                 res.write(': ping\n\n');
@@ -219,6 +245,8 @@ export class DashboardServer {
                 debugBus.off('repair:tool_input:baseline', repairBaselineListener);
                 debugBus.off('repair:tool_input:raw', repairRawListener);
                 debugBus.off('repair:tool_input:normalized', repairNormalizedListener);
+                debugBus.off('execution_mode', executionModeListener);
+                debugBus.off('agent_config', agentConfigListener);
                 res.end();
             });
         });

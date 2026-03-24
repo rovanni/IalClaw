@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
+import { getExecutionModeSnapshot } from '../core/executor/AgentConfig';
+import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
 import { requiresDOM, resolveRuntimeModeForPlan, sanitizeStep } from '../capabilities/stepCapabilities';
 import { createWebProjectTemplate } from '../core/planner/templates/planTemplates';
 import { ExecutionPlan } from '../core/planner/types';
@@ -18,6 +20,36 @@ class FakeProvider implements LLMProvider {
 }
 
 async function run() {
+    assert.deepEqual(getExecutionModeSnapshot('balanced'), {
+        executionMode: 'balanced',
+        label: 'Equilibrado',
+        behavior: 'Fallback ativo, validacao leve',
+        description: 'Tenta diff primeiro, aceita fallback inteligente e entrega progresso sem travar o fluxo.'
+    });
+
+    assert.equal(resolveExecutionMode('strict', 0.2), 'strict');
+    assert.equal(resolveExecutionMode('balanced', 0.9), 'balanced');
+    assert.equal(resolveExecutionMode('balanced', 0.3), 'aggressive');
+
+    assert.equal(selectDiffStrategy({
+        confidence: 0.2,
+        fileExists: true,
+        changeSizeEstimate: 'large',
+        errorContext: true,
+        executionMode: 'strict'
+    }), 'diff');
+
+    assert.equal(selectDiffStrategy({
+        confidence: 0.9,
+        fileExists: true,
+        changeSizeEstimate: 'small',
+        executionMode: 'aggressive'
+    }), 'overwrite');
+
+    assert.equal(selectValidationMode('strict'), 'hard');
+    assert.equal(selectValidationMode('balanced'), 'soft');
+    assert.equal(selectValidationMode('aggressive'), 'minimal');
+
     assert.deepEqual(getRequiredCapabilitiesForPlanStep({
         id: 1,
         type: 'tool',
