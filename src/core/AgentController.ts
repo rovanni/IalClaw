@@ -8,7 +8,7 @@ import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
 import { AgentGateway } from '../engine/AgentGateway';
 import { SessionManager } from '../shared/SessionManager';
-import { AgentRuntime } from './runtime/AgentRuntime';
+import { AgentRuntime } from './AgentRuntime';
 
 export class AgentController {
     private memory: CognitiveMemory;
