@@ -5,6 +5,18 @@ import { emitDebug } from '../shared/DebugBus';
 import { workspaceValidateProjectTool } from './workspaceValidateProject';
 import { workspaceRunProjectTool } from './workspaceRunProject';
 
+function normalizeCreateProjectInput(input: any) {
+    const normalizedName = input?.project_name || input?.name || `project_${Date.now()}`;
+    const normalizedType = input?.type || 'code';
+    const normalizedPrompt = input?.prompt || input?.goal || normalizedName;
+
+    return {
+        name: normalizedName,
+        type: normalizedType,
+        prompt: normalizedPrompt
+    };
+}
+
 export const workspaceCreateProjectTool: ToolDefinition = {
     name: 'workspace_create_project',
     description: 'Cria um novo projeto estruturado no disco. OBRIGATORIO chamar antes de salvar arquivos.',
@@ -12,22 +24,24 @@ export const workspaceCreateProjectTool: ToolDefinition = {
         type: 'object',
         properties: {
             name: { type: 'string', description: 'Nome do projeto' },
+            project_name: { type: 'string', description: 'Alias aceito para nome do projeto' },
             type: { type: 'string', description: 'code | slides | game | document | automation' },
             prompt: { type: 'string', description: 'O que o projeto deve fazer' }
         },
-        required: ['name', 'type', 'prompt']
+        required: ['type', 'prompt']
     },
     execute: async (input: any, context?: any) => {
         const trace_id = context?.trace_id || getContext().trace_id;
+        const normalizedInput = normalizeCreateProjectInput(input);
 
-        emitDebug('tool', { name: 'workspace_create:start', trace_id, input });
+        emitDebug('tool', { name: 'workspace_create:start', trace_id, input: normalizedInput });
 
         try {
             const projectId = workspaceService.createProject(
-                input.name,
-                input.type as ProjectType,
+                normalizedInput.name,
+                normalizedInput.type as ProjectType,
                 context?.agent_id || 'agent_core',
-                input.prompt
+                normalizedInput.prompt
             );
 
             emitDebug('tool', { name: 'workspace_create:success', trace_id, project_id: projectId });

@@ -24,6 +24,7 @@ export class AgentRuntime {
 
             try {
                 const plan = await this.planner.createPlan(userInput);
+                emitDebug('plan_generated', { plan });
                 const session = SessionManager.getCurrentSession();
 
                 if (!session) {

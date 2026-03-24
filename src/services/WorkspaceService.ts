@@ -21,7 +21,6 @@ export class WorkspaceService {
     private basePath: string;
 
     constructor() {
-        // Base do workspace na raiz do projeto
         this.basePath = path.join(process.cwd(), 'workspace');
         this.initWorkspace();
     }
@@ -29,22 +28,34 @@ export class WorkspaceService {
     private initWorkspace() {
         const dirs = ['projects', 'assets', 'exports', 'temp'];
 
-        if (!fs.existsSync(this.basePath)) fs.mkdirSync(this.basePath, { recursive: true });
+        if (!fs.existsSync(this.basePath)) {
+            fs.mkdirSync(this.basePath, { recursive: true });
+        }
 
         for (const dir of dirs) {
             const dirPath = path.join(this.basePath, dir);
-            if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
         }
     }
 
     public createProject(name: string, type: ProjectType, agent: string, prompt: string): string {
-        // Gera um ID limpo e único para nome de pasta (ex: "aula-redes-1710000000")
+        if (typeof name !== 'string' || !name.trim()) {
+            throw new Error('Invalid project name');
+        }
+
+        if (typeof prompt !== 'string' || !prompt.trim()) {
+            throw new Error('Invalid project prompt');
+        }
+
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-        const projectId = `${slug}-${Date.now()}`;
+        const safeSlug = slug || `project-${Date.now()}`;
+        const projectId = `${safeSlug}-${Date.now()}`;
         const projectPath = path.join(this.basePath, 'projects', projectId);
 
         if (fs.existsSync(projectPath)) {
-            throw new Error(`Projeto ${projectId} já existe.`);
+            throw new Error(`Projeto ${projectId} ja existe.`);
         }
 
         fs.mkdirSync(projectPath, { recursive: true });
@@ -53,17 +64,18 @@ export class WorkspaceService {
         fs.mkdirSync(path.join(projectPath, 'logs'));
 
         const metadata: ProjectMetadata = {
-            name, type, agent, prompt,
-            trace_id: getTraceId(), // 🔥 Link mágico com o raciocínio atual!
+            name,
+            type,
+            agent,
+            prompt,
+            trace_id: getTraceId(),
             created_at: Date.now(),
             status: 'in_progress'
         };
 
-        // Salva o metadado que permitirá retomar o projeto depois
         fs.writeFileSync(path.join(projectPath, 'project.json'), JSON.stringify(metadata, null, 2), 'utf8');
         fs.writeFileSync(path.join(projectPath, 'prompt.md'), `# ${name}\n\n**Trace ID:** ${metadata.trace_id}\n\n## Prompt\n${prompt}`, 'utf8');
 
-        // 🔥 ATUALIZA A SESSÃO DA CONVERSA
         const session = SessionManager.getCurrentSession();
         if (session) {
             session.current_project_id = projectId;
@@ -78,7 +90,10 @@ export class WorkspaceService {
 
     public updateStatus(projectId: string, status: ProjectMetadata['status']) {
         const file = path.join(this.basePath, 'projects', projectId, 'project.json');
-        if (!fs.existsSync(file)) throw new Error(`Metadados do projeto ${projectId} não encontrados.`);
+        if (!fs.existsSync(file)) {
+            throw new Error(`Metadados do projeto ${projectId} nao encontrados.`);
+        }
+
         const data = JSON.parse(fs.readFileSync(file, 'utf8'));
         data.status = status;
         fs.writeFileSync(file, JSON.stringify(data, null, 2));
@@ -86,16 +101,19 @@ export class WorkspaceService {
 
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
         const projectPath = path.join(this.basePath, 'projects', projectId);
-        if (!fs.existsSync(projectPath)) throw new Error(`Projeto ${projectId} não encontrado.`);
+        if (!fs.existsSync(projectPath)) {
+            throw new Error(`Projeto ${projectId} nao encontrado.`);
+        }
 
         const safePath = sanitizePath(filename);
         const outputPath = path.join(projectPath, 'output', safePath);
         const dir = path.dirname(outputPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
 
         fs.writeFileSync(outputPath, content);
 
-        // 🔥 ATUALIZA ARTEFATOS NA SESSÃO
         const session = SessionManager.getCurrentSession();
         if (session && !session.last_artifacts.includes(filename)) {
             session.last_artifacts.push(filename);
@@ -107,5 +125,4 @@ export class WorkspaceService {
     }
 }
 
-// Exporta como Singleton para uso em toda a aplicação
 export const workspaceService = new WorkspaceService();

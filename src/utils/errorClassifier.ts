@@ -1,6 +1,7 @@
 export function classifyError(error: string): string {
     if (!error) return 'unknown';
 
+    if (error.includes('Invalid input for tool') || error.includes('tool_input_error')) return 'tool_input';
     if (error.includes('Unexpected token')) return 'syntax';
     if (error.includes('is not defined')) return 'reference';
     if (error.includes('Cannot read')) return 'null_access';

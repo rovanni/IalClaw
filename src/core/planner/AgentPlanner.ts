@@ -94,6 +94,7 @@ REGRAS DE OURO:
 4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact", o sistema injeta em runtime.
 5. Forneca o codigo funcional completo no campo "content" ao salvar artefatos.
 6. CRITICAL: Return ONLY valid JSON. Do NOT use markdown. Do NOT wrap in code fences.
+7. When calling "workspace_create_project", ALWAYS include "name", "type" and "prompt" as strings.
 
 FORMATO JSON ESPERADO:
 {
