@@ -37,8 +37,15 @@ if ($NodeMajorVersion -lt 18) {
 # -------------------------
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    Write-Host "[INFO] Ollama nao encontrado localmente (opcional)." -ForegroundColor Cyan
-    Write-Host "Voce pode configurar outro provedor (.env) ou instalar o Ollama depois." -ForegroundColor Cyan
+    Write-Host "[INFO] Ollama nao encontrado localmente." -ForegroundColor Cyan
+    $installOllama = Read-Host "Deseja instalar o Ollama agora para rodar modelos locais? [S/n]"
+    if ($installOllama -eq "" -or $installOllama -match "^[sS]") {
+        Write-Host "Baixando e instalando Ollama (Windows)..." -ForegroundColor Green
+        irm https://ollama.com/install.ps1 | iex
+    }
+    else {
+        Write-Host "Instalacao do Ollama ignorada. Voce pode configurar outro provedor (.env) ou instalar depois." -ForegroundColor Cyan
+    }
 }
 else {
     Write-Host "Ollama encontrado ✔" -ForegroundColor Green
