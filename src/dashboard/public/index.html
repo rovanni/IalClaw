@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>IalClaw v3.0 - Memória Cognitiva</title>
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    body { background-color: #1e1e1e; color: white; font-family: sans-serif; margin: 0; overflow: hidden; }
+    h1 { padding: 20px; margin: 0; text-align: center; border-bottom: 1px solid #333; font-weight: 300; letter-spacing: 2px;}
+    #mynetwork { width: 100vw; height: calc(100vh - 80px); }
+  </style>
+</head>
+<body>
+  <h1>IalClaw Grafo Cognitivo (Tempo Real)</h1>
+  <div id="mynetwork"></div>
+  <script type="text/javascript">
+    function loadGraph() {
+      fetch('/api/graph')
+        .then(res => res.json())
+        .then(data => {
+          var container = document.getElementById('mynetwork');
+          var graphData = { nodes: data.nodes, edges: data.edges };
+          var options = {
+            nodes: {
+              shape: 'dot',
+              size: 20,
+              font: { color: '#ffffff', face: 'monospace' },
+              borderWidth: 2,
+              color: { border: '#444', background: '#00ccff', highlight: { background: '#ff0099' } }
+            },
+            edges: {
+              width: 1.5,
+              color: { color: '#555', highlight: '#00ccff' },
+              font: { color: '#aaaaaa', align: 'middle', size: 10 },
+              arrows: { to: { enabled: true, scaleFactor: 0.5 } }
+            },
+            physics: {
+              barnesHut: { gravitationalConstant: -2000, centralGravity: 0.1, springLength: 150 },
+              stabilization: { iterations: 150 }
+            }
+          };
+          new vis.Network(container, graphData, options);
+        })
+        .catch(console.error);
+    }
+    loadGraph();
+    // Refresh a cada 10 segundos
+    setInterval(loadGraph, 10000);
+  </script>
+</body>
+</html>

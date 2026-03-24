@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+db.sqlite
+db.sqlite-wal
+db.sqlite-shm
+*.db
+ialclaw.db
