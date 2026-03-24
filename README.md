@@ -38,8 +38,8 @@ irm https://openclaw.ai/install.ps1 | iex
 1. Certifique-se de ter o **Node.js (>= 18)**.
 2. Clone o repo:
    ```bash
-   git clone https://github.com/SEU_USUARIO/ialclaw.git
-   cd ialclaw
+   git clone https://github.com/rovanni/IalClaw.git
+   cd IalClaw
    ```
 3. Instale pacotes (e visualize os pacotes Express/Ollama):
    ```bash

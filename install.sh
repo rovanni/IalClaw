@@ -5,7 +5,7 @@ echo "=========================================="
 echo "    Instalando IalClaw Cognitive Agent    "
 echo "=========================================="
 
-REPO_URL=${1:-"https://github.com/SEU_USUARIO/ialclaw.git"}
+REPO_URL=${1:-"https://github.com/rovanni/IalClaw.git"}
 
 # -------------------------
 # CHECKS

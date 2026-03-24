@@ -1,5 +1,5 @@
 param (
-    [string]$RepoUrl = "https://github.com/SEU_USUARIO/ialclaw.git"
+    [string]$RepoUrl = "https://github.com/rovanni/IalClaw.git"
 )
 
 $ErrorActionPreference = "Stop"
