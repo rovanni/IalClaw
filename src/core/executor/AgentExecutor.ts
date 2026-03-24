@@ -12,6 +12,8 @@ import { isMinimalChange } from '../../utils/minimalChange';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 import { PlanStep } from '../planner/types';
 import { toolRegistry } from '../tools/ToolRegistry';
+import { buildWorkspaceContext, formatWorkspaceForRepair } from '../planner/workspaceContext';
+import { formatTargetFileBlock, rankFiles, selectWithConfidence } from '../planner/fileTargeting';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -43,6 +45,7 @@ export class AgentExecutor {
         debugBus.emit('thought', { type: 'action', content: `[EXECUTOR] Iniciando meta: ${plan.goal}` });
 
         for (const [stepIndex, step] of plan.steps.entries()) {
+            this.applyFileTargeting(step, plan.goal, session);
             debugBus.emit('thought', { type: 'thought', content: `[EXECUTOR] Executando Step ${step.id}: ${step.tool}` });
 
             let result;
@@ -420,6 +423,14 @@ export class AgentExecutor {
 
     async replan(previousPlan: ExecutionPlan, error: string, session: Session) {
         const strictToolPrompt = this.buildStrictToolPrompt();
+        const workspaceContext = buildWorkspaceContext(session.current_project_id);
+        const workspaceRepairPrompt = formatWorkspaceForRepair(workspaceContext);
+        const fileSelection = selectWithConfidence(rankFiles({
+            goal: session.current_goal || previousPlan.goal,
+            error: this.safeParseErrorPayload(session.last_error),
+            files: workspaceContext
+        }));
+        const targetFilePrompt = formatTargetFileBlock(fileSelection);
         const activeProjectRule = session.current_project_id
             ? `PROJETO ATIVO:
 - Ja existe um projeto ativo com ID ${session.current_project_id}.
@@ -439,11 +450,16 @@ Gere apenas os passos necessarios para corrigir a falha.
 ${strictToolPrompt}
 
 ${activeProjectRule}
+${workspaceRepairPrompt}
+${targetFilePrompt}
 
 REGRAS:
 - Nao invente tools.
 - Nao use "execute_command" nem qualquer tool fora da lista permitida.
-- Se houver projeto ativo, nao recrie o projeto.`
+- Se houver projeto ativo, nao recrie o projeto.
+- Se o projeto ja tiver arquivos, reutilize-os.
+- Modifique arquivos existentes quando isso resolver o erro.
+- Modifique SOMENTE o arquivo-alvo quando isso for suficiente.`
             },
             {
                 role: 'user',
@@ -481,6 +497,14 @@ Novo ExecutionPlan JSON`
     }
 
     private async replanToolInputStep(currentStep: PlanStep, session: Session): Promise<PlanStep> {
+        const workspaceContext = buildWorkspaceContext(session.current_project_id);
+        const workspaceRepairPrompt = formatWorkspaceForRepair(workspaceContext);
+        const fileSelection = selectWithConfidence(rankFiles({
+            goal: session.current_goal,
+            error: this.safeParseErrorPayload(session.last_error),
+            files: workspaceContext
+        }));
+        const targetFilePrompt = formatTargetFileBlock(fileSelection);
         const messages: MessagePayload[] = [
             {
                 role: 'system',
@@ -488,7 +512,9 @@ Novo ExecutionPlan JSON`
 Retorne apenas JSON valido.
 Nao altere o nome da tool.
 Nao recrie o projeto.
-Corrija somente os campos invalidos.`
+Corrija somente os campos invalidos.
+${workspaceRepairPrompt}
+${targetFilePrompt}`
             },
             {
                 role: 'user',
@@ -543,6 +569,40 @@ JSON valido`
         return normalized;
     }
 
+    private applyFileTargeting(step: PlanStep, goal: string, session?: Session) {
+        if (!session?.current_project_id || step.tool !== 'workspace_save_artifact') {
+            return;
+        }
+
+        const workspaceContext = buildWorkspaceContext(session.current_project_id);
+        const fileSelection = selectWithConfidence(rankFiles({
+            goal,
+            error: this.safeParseErrorPayload(session.last_error),
+            files: workspaceContext
+        }));
+
+        if (!fileSelection) {
+            return;
+        }
+
+        debugBus.emit('thought', {
+            type: 'thought',
+            content: `[EXECUTOR] File ranking: ${fileSelection.target} (conf=${fileSelection.confidence.toFixed(2)}, gap=${fileSelection.top2Gap})`
+        });
+
+        if (fileSelection.confidence < 0.7) {
+            return;
+        }
+
+        if (step.input.filename !== fileSelection.target) {
+            debugBus.emit('thought', {
+                type: 'thought',
+                content: `[EXECUTOR] File targeting ajustou workspace_save_artifact para ${fileSelection.target}`
+            });
+            step.input.filename = fileSelection.target;
+        }
+    }
+
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
     }
@@ -572,6 +632,18 @@ JSON valido`
         }
 
         throw new Error('Resposta invalida para correcao de tool_input.');
+    }
+
+    private safeParseErrorPayload(raw?: string): any | null {
+        if (!raw) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return null;
+        }
     }
 
     private buildStructuredErrorPrompt(lastError?: string, lastErrorType?: string): string {

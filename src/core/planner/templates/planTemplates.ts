@@ -1,10 +1,13 @@
 import { LLMProvider, MessagePayload } from '../../../engine/ProviderFactory';
 import { ExecutionPlan, PlanStep } from '../types';
+import { WorkspaceFileContext, formatWorkspaceContext } from '../workspaceContext';
+import { formatTargetFileBlock, rankFiles, selectWithConfidence } from '../fileTargeting';
 
 export interface PlanTemplateContext {
     goal: string;
     provider: LLMProvider;
     hasActiveProject: boolean;
+    workspaceContext: WorkspaceFileContext[];
 }
 
 export interface PlanTemplate {
@@ -76,7 +79,12 @@ function fallbackHtml(goal: string): string {
 </html>`;
 }
 
-async function generateHtmlFromGoal(goal: string, provider: LLMProvider): Promise<string> {
+async function generateHtmlFromGoal(goal: string, provider: LLMProvider, workspaceContext: WorkspaceFileContext[]): Promise<string> {
+    const workspaceBlock = formatWorkspaceContext(workspaceContext);
+    const existingIndex = workspaceContext.find(file => file.relative_path === 'index.html');
+    const rankedFiles = rankFiles({ goal, files: workspaceContext });
+    const fileSelection = selectWithConfidence(rankedFiles);
+    const targetBlock = formatTargetFileBlock(fileSelection);
     const messages: MessagePayload[] = [
         {
             role: 'system',
@@ -84,7 +92,9 @@ async function generateHtmlFromGoal(goal: string, provider: LLMProvider): Promis
 Return ONLY valid HTML.
 Use inline CSS and inline JavaScript when needed.
 Do not include markdown fences.
-The output must be immediately runnable as index.html.`
+The output must be immediately runnable as index.html.
+If index.html already exists, update it instead of inventing a parallel structure.
+Prefer preserving working parts and extending the current file.`
         },
         {
             role: 'user',
@@ -95,7 +105,10 @@ Requirements:
 - include full <!DOCTYPE html>
 - include all CSS inline in <style>
 - include all JavaScript inline in <script>
-- make it functional, not a placeholder`
+- make it functional, not a placeholder
+${workspaceBlock ? `\n\nCurrent workspace:\n${workspaceBlock}` : ''}
+${targetBlock ? `\n\n${targetBlock}` : ''}
+${existingIndex ? '\n\nIMPORTANT: index.html already exists. Return an updated full replacement for that same file.' : ''}`
         }
     ];
 
@@ -123,8 +136,11 @@ export const createWebProjectTemplate: PlanTemplate = {
             || g.includes('landing')
         );
     },
-    build: async ({ goal, provider, hasActiveProject }: PlanTemplateContext): Promise<ExecutionPlan> => {
+    build: async ({ goal, provider, hasActiveProject, workspaceContext }: PlanTemplateContext): Promise<ExecutionPlan> => {
         const steps: PlanStep[] = [];
+        const rankedFiles = rankFiles({ goal, files: workspaceContext });
+        const fileSelection = selectWithConfidence(rankedFiles);
+        const targetFile = fileSelection?.target || 'index.html';
 
         if (!hasActiveProject) {
             steps.push(buildStep(1, 'workspace_create_project', {
@@ -135,10 +151,10 @@ export const createWebProjectTemplate: PlanTemplate = {
         }
 
         const nextId = steps.length + 1;
-        const html = await generateHtmlFromGoal(goal, provider);
+        const html = await generateHtmlFromGoal(goal, provider, workspaceContext);
 
         steps.push(buildStep(nextId, 'workspace_save_artifact', {
-            filename: 'index.html',
+            filename: targetFile,
             content: html
         }));
 

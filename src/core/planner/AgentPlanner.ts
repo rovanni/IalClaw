@@ -9,6 +9,8 @@ import { SessionManager } from '../../shared/SessionManager';
 import { ProviderFactory } from '../../engine/ProviderFactory';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 import { selectTemplate } from './templates/planTemplates';
+import { buildWorkspaceContext, formatWorkspaceContext } from './workspaceContext';
+import { formatTargetFileBlock, rankFiles, selectWithConfidence } from './fileTargeting';
 
 export class AgentPlanner {
     constructor(private memory: CognitiveMemory) { }
@@ -26,6 +28,22 @@ export class AgentPlanner {
         const memoryNodes = await this.memory.retrieveWithTraversal(userInput, queryEmbedding, 3);
         const memoryContext = this.buildMemoryContext(memoryNodes);
         const session = SessionManager.getCurrentSession();
+        const workspaceContext = buildWorkspaceContext(session?.current_project_id);
+        const workspacePrompt = formatWorkspaceContext(workspaceContext);
+        const rankedFiles = rankFiles({
+            goal: userInput,
+            error: session?.last_error_type === 'tool_input' && session.last_error ? this.safeParseErrorPayload(session.last_error) : null,
+            files: workspaceContext
+        });
+        const fileSelection = selectWithConfidence(rankedFiles);
+        const targetFilePrompt = formatTargetFileBlock(fileSelection);
+
+        if (fileSelection) {
+            emitDebug('thought', {
+                type: 'thought',
+                content: `[PLANNER] File targeting: ${fileSelection.target} (conf=${fileSelection.confidence.toFixed(2)}, gap=${fileSelection.top2Gap})`
+            });
+        }
 
         const selectedTemplate = selectTemplate(userInput);
         if (selectedTemplate) {
@@ -37,7 +55,8 @@ export class AgentPlanner {
             const templatePlan = await selectedTemplate.build({
                 goal: userInput,
                 provider,
-                hasActiveProject: Boolean(session?.current_project_id)
+                hasActiveProject: Boolean(session?.current_project_id),
+                workspaceContext
             });
 
             validatePlan(templatePlan);
@@ -50,7 +69,7 @@ export class AgentPlanner {
 
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Elaborando plano de execucao estruturado...' });
 
-        const prompt = this.buildPrompt(userInput, memoryContext);
+        const prompt = this.buildPrompt(userInput, memoryContext, workspacePrompt, targetFilePrompt);
 
         try {
             const response = await ollama.chat({
@@ -90,7 +109,7 @@ export class AgentPlanner {
         return `MEMORIA ESTRUTURAL RELEVANTE (Projetos e Conceitos Passados):\n${hints.join('\n')}\n\nRECOMENDACAO: Reutilize essas abordagens e estruturas conhecidas para garantir consistencia.`;
     }
 
-    private buildPrompt(input: string, memoryContext: string): string {
+    private buildPrompt(input: string, memoryContext: string, workspacePrompt: string, targetFilePrompt: string): string {
         const registeredTools = toolRegistry.list();
         const tools = registeredTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n');
         const toolNames = registeredTools.map(tool => tool.name);
@@ -163,6 +182,8 @@ Do NOT invent tools.
 Do NOT use unknown tools.
 
 ${memoryContext}
+${workspacePrompt}
+${targetFilePrompt}
 ${sessionPrompt}
 
 REGRAS DE OURO:
@@ -184,6 +205,18 @@ FORMATO JSON ESPERADO:
 
 RESTRICAO DE SCHEMA:
 - Cada step.tool DEVE ser um destes valores: [${strictToolEnum}]`;
+    }
+
+    private safeParseErrorPayload(raw?: string): any | null {
+        if (!raw) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return null;
+        }
     }
 
     private isInvalidToolError(error: any): boolean {

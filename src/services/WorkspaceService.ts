@@ -44,6 +44,14 @@ export class WorkspaceService {
         return path.join(this.basePath, 'projects', projectId);
     }
 
+    public getProjectRootPath(projectId: string): string {
+        return this.getProjectPath(projectId);
+    }
+
+    public getProjectOutputPath(projectId: string): string {
+        return path.join(this.getProjectPath(projectId), 'output');
+    }
+
     public projectExists(projectId: string): boolean {
         if (!projectId || typeof projectId !== 'string') {
             return false;
