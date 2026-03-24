@@ -2,7 +2,7 @@ import { AgentPlanner } from '../../dashboard/public/AgentPlanner';
 import { AgentExecutor } from '../../dashboard/public/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { runWithTrace } from '../../shared/TraceContext';
-import { CognitiveMemory } from '../../../../specs/lib/CognitiveMemory'; // Ajuste o path da sua lib
+import { CognitiveMemory } from '../../memory/CognitiveMemory';
 
 export class AgentRuntime {
     private planner: AgentPlanner;

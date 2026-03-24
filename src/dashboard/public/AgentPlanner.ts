@@ -4,8 +4,7 @@ import { validatePlan } from './PlanValidator';
 import { toolRegistry } from '../tools/ToolRegistry';
 import { getContext } from '../../shared/TraceContext';
 import { emitDebug } from '../../shared/DebugBus';
-// Importe a classe da sua memória cognitiva (ajuste o caminho se necessário)
-import { CognitiveMemory } from '../../../specs/lib/CognitiveMemory'; 
+import { CognitiveMemory } from '../../memory/CognitiveMemory';
 
 export class AgentPlanner {
     constructor(private memory: CognitiveMemory) {}

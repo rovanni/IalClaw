@@ -15,7 +15,7 @@ export const workspaceCreateProjectTool: ToolDefinition = {
         },
         required: ['name', 'type', 'prompt']
     },
-    execute: async (input, context) => {
+    execute: async (input: any, context?: any) => {
         const trace_id = context?.trace_id || getContext().trace_id;
         
         emitDebug('tool', { name: 'workspace_create:start', trace_id, input });
@@ -49,7 +49,7 @@ export const workspaceSaveArtifactTool: ToolDefinition = {
         },
         required: ['project_id', 'filename', 'content']
     },
-    execute: async (input, context) => {
+    execute: async (input: any, context?: any) => {
         const trace_id = context?.trace_id || getContext().trace_id;
         
         if (!input.project_id) return { success: false, error: "project_id é obrigatório" };
