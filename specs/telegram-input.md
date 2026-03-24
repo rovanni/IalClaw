@@ -1,105 +1,62 @@
+[🇧🇷 Ver versão em Português](#-versão-em-português)
+
 # 📥 Spec: Telegram Input Handler (Cognitive Input Layer)
 
-**Versão:** 2.0
-**Status:** Atualizado com Cognição
-**Autor:** Luciano + IalClaw Agent
-**Data:** 23 de março de 2026
+**Version:** 3.0  
+**Status:** Unified Cognitive Pipeline  
+**Author:** Luciano + IalClaw Agent  
+**Date:** March 24, 2026  
 
 ---
 
-# 1. 🎯 Propósito
+## 1. 🎯 Purpose
 
-O módulo Telegram Input é responsável por:
-
-* Receber eventos do Telegram
-* Validar segurança (whitelist)
-* Processar diferentes tipos de entrada (texto, áudio, documentos)
-* Converter tudo em **texto estruturado**
-* Enriquecer com metadados
-* Encaminhar para o pipeline cognitivo
-
----
-
-# 2. 🧠 Papel na Arquitetura
-
-```text
-Telegram → InputHandler → CognitiveMemory → AgentLoop
-```
-
-O InputHandler é o ponto de entrada do sistema cognitivo.
+The Telegram Input module is responsible for:
+* Receiving raw Telegram events
+* Validating security (whitelist)
+* Processing different content types (Text, Audio, Documents/Images)
+* Converting everything into **structured text**
+* Enriching with metadata
+* Forwarding parsed inputs to the Semantic Gateway
 
 ---
 
-# 3. 📦 Tipos de Entrada Suportados
+## 2. 🧠 Role in Architecture
+
+`Telegram → InputHandler → Semantic Gateway → AgentPlanner`
+
+The InputHandler is the physical entry point to the cognitive system.
 
 ---
 
-## 3.1 Texto
+## 3. 📦 Supported Input Types
 
-* Entrada direta do usuário
-* Fluxo mais simples
+### 3.1 Text
+Direct user interaction, basic flow.
 
----
+### 3.2 Documents
+Supported: `.pdf`, `.md`, `.txt`
+Flow: Download → Extract Text → Clean → Forward
 
-## 3.2 Documentos
-
-Suportados:
-
-* `.pdf`
-* `.md`
-
-Processo:
-
-1. Download
-2. Extração de texto
-3. Limpeza
-4. Encaminhamento
+### 3.3 Audio / Voice (`message:voice`, `message:audio`)
+Flow: Download → Transcribe via Local Whisper → Convert to text → Set `requires_audio_reply` flag
 
 ---
 
-## 3.3 Áudio / Voz
-
-* `message:voice`
-* `message:audio`
-
-Processo:
-
-1. Download
-2. Transcrição via Whisper local
-3. Conversão para texto
-4. Marcação de preferência de resposta em áudio
+## 4. 🔐 Security
+* Whitelist validation (`TELEGRAM_ALLOWED_USER_IDS`)
+* Silent rejection of unauthorized users
+* Zero exposure of sensitive data
 
 ---
 
-# 4. 🔐 Segurança
-
-* Validação via whitelist (`TELEGRAM_ALLOWED_USER_IDS`)
-* Rejeição silenciosa de usuários não autorizados
-* Nenhum dado sensível exposto
+## 5. ⚙️ Processing Pipeline
+`Receive Message → Validate User → Identify Type → Extract Content → Normalize → Enrich Metadata → Send to Gateway`
 
 ---
 
-# 5. ⚙️ Pipeline de Processamento
-
-```text
-Receber mensagem
-→ Validar usuário
-→ Identificar tipo
-→ Extrair conteúdo
-→ Normalizar
-→ Enriquecer metadados
-→ Enviar para Controller
-```
-
----
-
-# 6. 🧠 Enriquecimento Cognitivo
-
-Antes de enviar para o sistema:
-
-* Detectar origem (texto, áudio, doc)
-* Definir flags:
-
+## 6. 🧠 Cognitive Enrichment
+Before sending to the Gateway, it flags requirements:
 ```json
 {
   "requires_audio_reply": true/false,
@@ -109,93 +66,77 @@ Antes de enviar para o sistema:
 
 ---
 
-# 7. ⚡ Feedback ao Usuário
-
-Durante processamento:
-
-* `typing` → texto
-* `record_voice` → áudio
+## 7. ⚡ User Feedback
+While processing:
+* `typing` → text
+* `record_voice` → audio/TTS processing
 
 ---
 
-# 8. 📁 Gerenciamento de Arquivos
-
-* Diretório temporário: `/tmp`
-* Exclusão obrigatória após uso
-* Evitar vazamento de arquivos
+## 8. 📁 File Management
+* Temp directory: `/tmp` or local workspace
+* Mandatory deletion of tmp files after processing to prevent leaks.
 
 ---
 
-# 9. 🚫 Tratamento de Erros
+<br><br>
+
+# 🇧🇷 Versão em Português
+
+# 📥 Spec: Telegram Input Handler (Cognitive Input Layer)
+
+**Versão:** 3.0  
+**Status:** Unified Cognitive Pipeline  
+**Autor:** Luciano + IalClaw Agent  
+**Data:** 24 de março de 2026  
 
 ---
 
-## Entrada inválida
+## 1. 🎯 Propósito
 
-Resposta:
-
-```text
-Formato não suportado.
-```
-
----
-
-## Falha de download
-
-```text
-Falha ao baixar arquivo. Tente novamente.
-```
+O módulo Telegram Input é responsável por:
+* Receber eventos do Telegram
+* Validar segurança (whitelist)
+* Processar diferentes tipos de entrada (texto, áudio, documentos)
+* Converter tudo em **texto estruturado**
+* Enriquecer com metadados
+* Encaminhar para o Semantic Gateway
 
 ---
 
-## Falha no Whisper
+## 2. 🧠 Papel na Arquitetura
 
-```text
-Não foi possível processar o áudio.
-```
+`Telegram → InputHandler → Semantic Gateway → AgentPlanner`
 
----
-
-## Arquivo muito grande
-
-```text
-Arquivo excede limite suportado.
-```
+O InputHandler é o ponto de entrada do sistema cognitivo.
 
 ---
 
-# 10. ⚡ Performance
+## 3. 📦 Tipos de Entrada Suportados
 
-* IO assíncrono
-* Processamento não bloqueante
-* Exclusão imediata de arquivos
+### 3.1 Texto
+Entrada direta do usuário; fluxo mais simples.
 
----
+### 3.2 Documentos
+Suportados: `.pdf`, `.md`, `.txt`
+Processo: Download → Extração de texto → Limpeza → Encaminhamento
 
-# 11. 🧠 Integração com Sistema Cognitivo
-
-O InputHandler:
-
-* NÃO toma decisões
-* NÃO interpreta profundamente
-* Apenas prepara dados para o CognitiveMemory
+### 3.3 Áudio / Voz
+Processo: Download → Transcrição via Whisper local → Conversão para texto → Marcação de preferência de resposta em áudio (`requires_audio_reply`)
 
 ---
 
-# 12. 🔄 Fluxo Final
-
-```text
-Input → Normalização → Metadados → Controller → CognitiveMemory
-```
+## 4. 🔐 Segurança
+* Validação via whitelist (`TELEGRAM_ALLOWED_USER_IDS`)
+* Rejeição silenciosa de usuários não autorizados
 
 ---
 
-# 13. 📌 Conclusão
+## 5. ⚙️ Pipeline de Processamento
+`Receber mensagem → Validar usuário → Identificar tipo → Extrair conteúdo → Normalizar → Enriquecer metadados → Enviar para Gateway`
 
-O InputHandler garante:
+---
 
-* Entrada confiável
-* Dados padronizados
-* Integração com pipeline cognitivo
-
-Sem ele, o sistema não possui base consistente para raciocínio.
+## 6. 📁 Gerenciamento de Arquivos
+* Diretório temporário: `/tmp` ou no workspace
+* Exclusão obrigatória de lixo temp após processamento para evitar vazamentos.

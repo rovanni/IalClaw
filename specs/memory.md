@@ -1,25 +1,148 @@
+[🇧🇷 Ver versão em Português](#-versão-em-português)
+
 # 🧠 Memory System — IalClaw
 
-**Versão:** 3.0
-**Status:** Definição Cognitiva
-**Autor:** Luciano + IA
-**Data:** 2026-03-23
+**Version:** 3.0  
+**Status:** Cognitive Definition  
+**Author:** Luciano + IA  
+**Date:** March 24, 2026  
 
 ---
 
-# 1. Visão Geral
+## 1. Overview
+
+IalClaw's memory system is not merely a persistence engine, but an **active cognitive system** responsible for storing, retrieving, relating, and evolving knowledge over time.
+
+Memory is structured into three complementary layers:
+
+* Episodic Memory
+* Semantic Memory (with Embeddings)
+* Relational Memory (Graph)
+
+---
+
+## 2. Fundamental Principles
+
+* Memory is active, not passive
+* Knowledge is reusable
+* Relationships are as important as data
+* The system must learn through usage
+* Context must be built and injected before inference
+
+---
+
+## 3. Memory Types
+
+### 3.1 Episodic Memory
+Represents the history of interactions with the user.
+
+**Characteristics:** Sequential, Temporal, Contextual  
+**Structure:** `conversations`, `messages`  
+**Function:** Maintain dialogue continuity and provide recent context.
+
+### 3.2 Semantic Memory
+Represents the system's persistent knowledge.
+
+**Origin:** `.md` files, system docs, configuration  
+**Structure:** `documents` (with vector embeddings)  
+**Function:** Reusable knowledge base, primary source of context.
+
+### 3.3 Relational Memory (Graph)
+Represents connections between knowledge.
+
+**Structure:** `nodes` (with embeddings), `edges`  
+**Function:** Semantic navigation, indirect inference, concept association.
+
+---
+
+## 4. Cognitive Pipeline (v3.0)
+
+All user input follows this flow:
+
+User Input → Semantic Gateway (Intent Embedding) → Cache Check → Graph Traversal (Cosine Sim) → Document Retrieval → Context Ranking → Agent Planner (ReAct) → Action Execution → Response → Learning / Dreamer Decay
+
+---
+
+## 5. Memory Retrieval (Search)
+
+Context retrieval follows a **GRAPH_FIRST Hybrid** strategy.
+
+**Execution Order:**
+1. Query Cache
+2. Graph Traversal (Vector Embeddings + Cosine Similarity)
+3. Document Retrieval
+4. Context Ranking
+5. Context Builder
+
+---
+
+## 6. Context Building
+The context sent to the LLM must be: Relevant, Token-limited, Non-redundant, and Prioritize higher scores.
+
+---
+
+## 7. Scoring System
+
+Each element possesses a dynamic score updated frequently:
+`final_score = (cosine_similarity * relevance) * freshness * graph_weight`
+
+---
+
+## 8. Continuous Learning & Decay (MemoryDreamer)
+
+### Learning
+After each interaction:
+* Update score of used nodes
+* Increase weight of traversed edges
+* Register event in `learning_events`
+
+### Decay
+To avoid obsolescence, the `MemoryDreamer` gradually prunes the graph:
+* Edges decay slightly every cycle
+* Unused episodic nodes are archived
+
+---
+
+## 9. Integration with AgentLoop
+
+**Before execution:** `context = cognitiveMemory.search(input)`  
+**After execution:** `cognitiveMemory.learn(input, context)`
+
+---
+
+## 10. Conclusion
+
+IalClaw's memory system transforms the agent from a pure "prompt executor" into a **"cognitive system with learning, context, and structural knowledge navigation"**.
+
+---
+---
+
+<br><br>
+
+# 🇧🇷 Versão em Português
+
+# 🧠 Memory System — IalClaw
+
+**Versão:** 3.0  
+**Status:** Definição Cognitiva  
+**Autor:** Luciano + IA  
+**Data:** 24 de março de 2026  
+
+---
+
+## 1. Visão Geral
 
 O sistema de memória do IalClaw não é apenas um mecanismo de persistência, mas um **sistema cognitivo ativo**, responsável por armazenar, recuperar, relacionar e evoluir conhecimento ao longo do tempo.
 
 A memória é estruturada em três camadas complementares:
 
 * Memória Episódica
-* Memória Semântica
+* Memória Semântica (com Embeddings)
 * Memória Relacional (Grafo)
 
 ---
 
-# 2. Princípios Fundamentais
+## 2. Princípios Fundamentais
 
 * Memória é ativa, não passiva
 * Conhecimento é reutilizável
@@ -29,305 +152,77 @@ A memória é estruturada em três camadas complementares:
 
 ---
 
-# 3. Tipos de Memória
+## 3. Tipos de Memória
 
----
+### 3.1 Memória Episódica
+Representa o histórico de interações.
 
-## 3.1 Memória Episódica
+**Características:** Sequencial, Temporal, Contextual  
+**Estrutura:** `conversations`, `messages`  
+**Função:** Continuidade de diálogo.
 
-Representa o histórico de interações com o usuário.
+### 3.2 Memória Semântica
+Representa conhecimento persistente.
 
-### Características:
+**Origem:** Arquivos `.md`, configurações  
+**Estrutura:** `documents` (agora com vector embeddings)  
+**Função:** Base de conhecimento reutilizável.
 
-* Sequencial
-* Temporal
-* Contextual
-
-### Estrutura:
-
-* conversations
-* messages
-
-### Função:
-
-* Manter continuidade de diálogo
-* Fornecer contexto recente ao AgentLoop
-
----
-
-## 3.2 Memória Semântica
-
-Representa conhecimento persistente do sistema.
-
-### Origem:
-
-* Arquivos `.md`
-* Documentação do sistema
-* Skills
-* Configurações
-
-### Estrutura:
-
-* documents
-
-### Função:
-
-* Base de conhecimento reutilizável
-* Fonte primária de contexto
-* Redução de dependência do LLM
-
----
-
-## 3.3 Memória Relacional (Grafo)
-
+### 3.3 Memória Relacional (Grafo)
 Representa conexões entre conhecimentos.
 
-### Estrutura:
-
-* nodes
-* edges
-
-### Função:
-
-* Navegação semântica
-* Inferência indireta
-* Associação de conceitos
+**Estrutura:** `nodes` (com embeddings), `edges`  
+**Função:** Navegação semântica e associação de conceitos.
 
 ---
 
-# 4. Pipeline Cognitivo
+## 4. Pipeline Cognitivo (v3.0)
 
-Todo input do usuário segue o seguinte fluxo:
+Todo input do usuário segue o fluxo:
 
-User Input
-→ Normalização
-→ Cache
-→ Grafo
-→ Documentos
-→ Ranking
-→ Construção de Contexto
-→ AgentLoop
-→ Resposta
-→ Aprendizado
+User Input → Gateway Semântico (Embeddings) → Cache → Grafo (Cosine Sim) → Documentos → Ranking → Agent Planner (ReAct) → Execução → Resposta → Aprendizado / Decaimento (Dreamer)
 
 ---
 
-# 5. Recuperação de Memória (Search)
+## 5. Recuperação de Memória (Search)
 
-A recuperação de contexto segue estratégia **GRAPH_FIRST**.
+A recuperação de contexto segue estratégia **Híbrida GRAPH_FIRST**.
 
-## Ordem de execução:
-
+**Ordem:**
 1. Query Cache
-2. Graph Traversal
+2. Graph Traversal (Similaridade Cosseno)
 3. Document Retrieval
-4. Ranking
+4. Context Ranking
 5. Context Builder
 
 ---
 
-## Pseudocódigo:
-
-```ts id="memcode1"
-search(query):
-  normalized = normalize(query)
-
-  if cache.hit(normalized):
-    return cache.result
-
-  nodes = graph.traverse(query)
-  docs = documents.fetch(nodes)
-
-  ranked = rank(docs)
-
-  return buildContext(ranked)
-```
+## 6. Construção de Contexto
+O contexto enviado ao LLM deve: Ser relevante, Limitado em tokens, Evitar redundância e Priorizar maior score.
 
 ---
 
-# 6. Construção de Contexto
-
-O contexto enviado ao LLM deve:
-
-* Ser relevante
-* Ser limitado em tokens
-* Evitar redundância
-* Priorizar maior score
-
----
-
-## Estrutura:
-
-```text id="memcode2"
-CONTEXTO COGNITIVO:
-
-- conceito A
-- conceito B
-- documento relevante X
-```
-
----
-
-# 7. Sistema de Score
+## 7. Sistema de Score
 
 Cada elemento possui um score dinâmico:
-
-```text id="memcode3"
-final_score =
-  relevance *
-  importance *
-  freshness *
-  usage_frequency *
-  graph_weight
-```
+`final_score = (similaridade_cosseno * relevancia) * frescor * peso_do_grafo`
 
 ---
 
-# 8. Aprendizado Contínuo
+## 8. Aprendizado Contínuo & Decaimento (MemoryDreamer)
 
-Após cada interação, o sistema deve:
-
+### Aprendizado
+Após cada interação:
 * Atualizar score dos nodes utilizados
 * Incrementar peso das edges percorridas
-* Registrar evento em learning_events
-* Atualizar cache de consulta
+
+### Decaimento
+O `MemoryDreamer` limpa o grafo de tempos em tempos:
+* Pesos de arestas decaem lentamente
+* Memórias não utilizadas são oxidadas e podadas
 
 ---
 
-## Pseudocódigo:
+## 9. Conclusão
 
-```ts id="memcode4"
-learn(query, nodes):
-  for node in nodes:
-    node.score += 0.1
-
-  for edge in used_edges:
-    edge.weight += 0.05
-```
-
----
-
-# 9. Cache Cognitivo
-
-Antes de qualquer processamento:
-
-```text id="memcode5"
-if cache_hit:
-  return resultado direto
-```
-
----
-
-## Benefícios:
-
-* Redução de latência
-* Redução de tokens
-* Respostas mais consistentes
-
----
-
-# 10. Decaimento de Memória
-
-Para evitar obsolescência:
-
-```text id="memcode6"
-score = score * 0.98 por dia
-```
-
----
-
-# 11. Ingestão de Conhecimento
-
-Processo de indexação de `.md`:
-
-1. Leitura do arquivo
-2. Extração de título e conteúdo
-3. Criação em documents
-4. Criação de node
-5. Detecção de relações → edges
-
----
-
-# 12. Tipos de Nós
-
-* document
-* concept
-* skill
-* memory
-* rule
-
----
-
-# 13. Tipos de Relações
-
-* references
-* depends_on
-* uses
-* extends
-* related_to
-
----
-
-# 14. Atualização de Memória
-
-A memória é atualizada em dois momentos:
-
-### Durante ingestão
-
-* criação de nodes e edges
-
-### Durante uso
-
-* ajuste de scores
-* reforço de conexões
-
----
-
-# 15. Integração com AgentLoop
-
----
-
-## Antes da execução
-
-```ts id="memcode7"
-context = cognitiveMemory.search(input)
-inject(context)
-```
-
----
-
-## Após execução
-
-```ts id="memcode8"
-cognitiveMemory.learn(input, context)
-```
-
----
-
-# 16. Limitações Atuais
-
-* Sem embeddings vetoriais
-* Busca baseada em heurística textual
-* Grafo ainda dependente de regras
-
----
-
-# 17. Evolução Futura
-
-* Vector embeddings
-* Similaridade semântica real
-* Auto-descoberta de relações
-* Clustering de conhecimento
-* Memória hierárquica
-
----
-
-# 18. Conclusão
-
-O sistema de memória do IalClaw transforma o agente de:
-
-"executor de prompts"
-
-para:
-
-"sistema cognitivo com aprendizado, contexto e estrutura de conhecimento"
+O sistema de memória evoluiu e transforma o agente em um **sistema cognitivo com estrutura de conhecimento vetorial e base em grafo realista**.
