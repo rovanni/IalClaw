@@ -7,11 +7,16 @@
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     :root {
-      --font-xs: 0.75rem;   /* 12px */
-      --font-sm: 0.875rem;  /* 14px */
-      --font-md: 1rem;      /* 16px */
-      --font-lg: 1.125rem;  /* 18px */
-      --font-xl: 1.25rem;   /* 20px */
+      --font-xs: 0.75rem;
+      /* 12px */
+      --font-sm: 0.875rem;
+      /* 14px */
+      --font-md: 1rem;
+      /* 16px */
+      --font-lg: 1.125rem;
+      /* 18px */
+      --font-xl: 1.25rem;
+      /* 20px */
       --font-family: 'Google Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
 
@@ -25,8 +30,8 @@
       --border-color: #dadce0;
       --accent: #1a73e8;
       --accent-hover: #174ea6;
-      --shadow-sm: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-      
+      --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+
       /* Component Colors */
       --chat-user-bg: #e8f0fe;
       --chat-user-text: #1967d2;
@@ -55,8 +60,8 @@
       --border-color: #3c4043;
       --accent: #8ab4f8;
       --accent-hover: #aecbfa;
-      --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.3), 0 1px 3px 1px rgba(0,0,0,0.15);
-      
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+
       /* Component Colors */
       --chat-user-bg: #4285f4;
       --chat-user-text: #ffffff;
@@ -74,7 +79,10 @@
       --stat-warn: #fde293;
     }
 
-    html { font-size: 16px; transition: font-size 0.2s ease-out; }
+    html {
+      font-size: 16px;
+      transition: font-size 0.2s ease-out;
+    }
 
     body {
       background-color: var(--bg-base);
@@ -101,12 +109,22 @@
       color: var(--text-muted);
       gap: 20px;
       z-index: 100;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
       transition: background-color 0.3s, border-color 0.3s;
     }
-    .stat-badge { color: var(--accent); font-weight: bold; }
-    .stat-ok { color: var(--stat-ok); }
-    .stat-warn { color: var(--stat-warn); }
+
+    .stat-badge {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .stat-ok {
+      color: var(--stat-ok);
+    }
+
+    .stat-warn {
+      color: var(--stat-warn);
+    }
 
     /* Zoom Controls */
     .zoom-btn {
@@ -120,9 +138,22 @@
       font-weight: 600;
       transition: all 0.2s;
     }
-    .zoom-btn:hover { background: var(--bg-input); color: var(--text-main); }
-    .btn-primary { background: var(--accent); color: #fff; border: none; }
-    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+
+    .zoom-btn:hover {
+      background: var(--bg-input);
+      color: var(--text-main);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: #fff;
+    }
 
     /* Main Workspace */
     #workspace {
@@ -158,14 +189,17 @@
       background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
       background-size: 24px 24px;
     }
+
     #mynetwork {
-      width: 100%; height: 100%;
+      width: 100%;
+      height: 100%;
     }
 
     /* System Debug / Gateway Panel */
     #debug-panel {
       height: 250px;
     }
+
     .panel-header {
       background: var(--bg-surface);
       padding: 12px 16px;
@@ -179,11 +213,13 @@
       justify-content: space-between;
       align-items: center;
     }
+
     #debug-log {
       flex: 1;
       padding: 12px 16px;
       overflow-y: auto;
-      min-height: 0; /* 🔥 Flexbox Magic - Evita estourar o container pai */
+      min-height: 0;
+      /* 🔥 Flexbox Magic - Evita estourar o container pai */
       font-family: var(--font-mono);
       font-size: var(--font-sm);
       color: var(--log-text);
@@ -202,10 +238,12 @@
       height: 40%;
       border-bottom: 1px solid var(--border-color);
     }
+
     #thought-log {
       flex: 1;
       overflow-y: auto;
-      min-height: 0; /* 🔥 Flexbox Magic */
+      min-height: 0;
+      /* 🔥 Flexbox Magic */
       padding: 12px;
       font-family: var(--font-mono);
       font-size: var(--font-sm);
@@ -214,12 +252,35 @@
       flex-direction: column;
       gap: 8px;
     }
-    .thought-item { padding: 8px 12px; border-radius: 6px; background: var(--thought-bg); border-left: 4px solid var(--thought-border); color: var(--text-main); }
-    .t-thought { border-color: var(--t-thought); }
-    .t-action { border-color: var(--t-action); }
-    .t-obs { border-color: var(--t-obs); }
-    .t-final { border-color: var(--t-final); font-weight: bold; }
-    .t-rag { border-color: var(--t-rag); }
+
+    .thought-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: var(--thought-bg);
+      border-left: 4px solid var(--thought-border);
+      color: var(--text-main);
+    }
+
+    .t-thought {
+      border-color: var(--t-thought);
+    }
+
+    .t-action {
+      border-color: var(--t-action);
+    }
+
+    .t-obs {
+      border-color: var(--t-obs);
+    }
+
+    .t-final {
+      border-color: var(--t-final);
+      font-weight: bold;
+    }
+
+    .t-rag {
+      border-color: var(--t-rag);
+    }
 
     /* Chat Container */
     #chat-container {
@@ -229,7 +290,8 @@
     #chat-messages {
       flex: 1;
       overflow-y: auto;
-      min-height: 0; /* 🔥 Flexbox Magic */
+      min-height: 0;
+      /* 🔥 Flexbox Magic */
       padding: 16px;
       display: flex;
       flex-direction: column;
@@ -237,10 +299,23 @@
     }
 
     /* Custom Scrollbar */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
 
     .chat-bubble {
       padding: 12px 18px;
@@ -248,15 +323,23 @@
       max-width: 85%;
       line-height: 1.5;
       word-break: break-word;
-      white-space: pre-wrap; /* Garante que os '\n' do LLM sejam respeitados */
+      white-space: pre-wrap;
+      /* Garante que os '\n' do LLM sejam respeitados */
       font-size: var(--font-md);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
       animation: fadeIn 0.3s ease-in-out;
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .bubble-meta {
@@ -296,6 +379,7 @@
       background: var(--bg-surface);
       border-top: 1px solid var(--border-color);
     }
+
     #chat-input {
       width: 100%;
       box-sizing: border-box;
@@ -309,10 +393,11 @@
       font-family: inherit;
       transition: all 0.2s;
     }
+
     #chat-input:focus {
       border: 1px solid var(--accent);
       background: var(--bg-surface);
-      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
     }
   </style>
 </head>
@@ -324,7 +409,7 @@
     <div>|</div>
     <div>Gateway: <span class="stat-ok">ONLINE</span></div>
     <div>Engine: <span class="stat-warn">STANDBY</span></div>
-    
+
     <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
       <span style="color: #666; font-size: var(--font-xs);">ZOOM</span>
       <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
@@ -381,7 +466,7 @@
 
     // --- Controle de Zoom Persistente ---
     let currentZoom = parseFloat(localStorage.getItem('ialclaw_zoom')) || 1.0;
-    
+
     function applyZoom() {
       // Alterar a base no HTML escala todos os tamanhos (rem) automaticamente
       document.documentElement.style.fontSize = `${16 * currentZoom}px`;
@@ -393,12 +478,12 @@
       currentZoom = Math.max(0.5, Math.min(2.0, currentZoom + delta));
       applyZoom();
     }
-    
+
     applyZoom(); // Inicializa na primeira carga
 
     // --- Controle de Temas (Google Clean UI) ---
     let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
-    
+
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? '🌙 Escuro' : '☀️ Claro';
@@ -410,14 +495,14 @@
       localStorage.setItem('ialclaw_theme', currentTheme);
       applyTheme(currentTheme);
     }
-    
+
     applyTheme(currentTheme); // Inicializa Tema
 
     // --- Replay Cognitivo ---
     async function promptReplay() {
       const traceId = prompt("Cole o ID do Trace (trace_id) para reproduzir o raciocínio:");
       if (!traceId) return;
-      
+
       try {
         thoughtLog.innerHTML = '';
         debugLog.innerText = `// Carregando replay para o trace: ${traceId}...\n`;
@@ -429,7 +514,7 @@
 
         for (const e of events) {
           const data = JSON.parse(e.payload);
-          
+
           if (e.type === 'gateway') {
             updateDebugLog(data);
           } else if (e.type === 'thought') {
@@ -439,7 +524,7 @@
           } else if (e.type === 'rag') {
             appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados`);
           }
-          
+
           // Simula o tempo real do agente "pensando"
           await new Promise(r => setTimeout(r, 400));
         }
@@ -453,7 +538,7 @@
       const el = document.createElement('div');
       el.classList.add('chat-bubble');
       el.classList.add(role === 'user' ? 'bubble-user' : 'bubble-bot');
-      
+
       if (meta && role === 'bot') {
         const metaEl = document.createElement('span');
         metaEl.className = 'bubble-meta';
@@ -473,7 +558,7 @@
         expandBtn.style.cssText = 'background: transparent; border: 1px solid var(--border-color); color: var(--accent); cursor: pointer; font-size: var(--font-xs); font-weight: 600; padding: 6px 12px; border-radius: 16px; display: block; margin-top: 10px; width: fit-content; transition: all 0.2s; font-family: inherit;';
         expandBtn.onmouseover = () => expandBtn.style.background = 'var(--bg-input)';
         expandBtn.onmouseout = () => expandBtn.style.background = 'transparent';
-        
+
         expandBtn.onclick = () => {
           textContainer.innerText = text;
           expandBtn.style.display = 'none';
@@ -513,7 +598,7 @@
         appendMessage('user', text);
         typingIndicator.style.display = 'block';
         chatMsgs.scrollTop = chatMsgs.scrollHeight;
-        
+
 
         try {
           const res = await fetch('/api/chat', {
@@ -522,14 +607,14 @@
             body: JSON.stringify({ message: text })
           });
           const data = await res.json();
-          
+
           typingIndicator.style.display = 'none';
-            if (data.answer) {
+          if (data.answer) {
             appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
-              loadGraph();
+            loadGraph();
           } else if (data.error) {
             appendMessage('bot', 'Erro: ' + data.error);
-            }
+          }
         } catch (err) {
           typingIndicator.style.display = 'none';
           appendMessage('bot', 'Erro de rede ao falar com IalClaw.');
@@ -559,10 +644,10 @@
           size: 20,
           font: { color: textColor, face: 'Google Sans, Segoe UI, sans-serif', size: 14 },
           borderWidth: 2,
-          color: { 
-            border: nodeBorder, 
-            background: nodeBg, 
-            highlight: { border: textColor, background: '#ea4335' } 
+          color: {
+            border: nodeBorder,
+            background: nodeBg,
+            highlight: { border: textColor, background: '#ea4335' }
           },
           shadow: { enabled: true, color: 'rgba(0,0,0,0.15)', size: 5, x: 0, y: 2 }
         },
@@ -618,11 +703,11 @@
         })
         .catch(console.error);
     }
-    
+
     // Inicializar e carregar primeiro estado
     initGraph();
     loadGraph();
-    
+
     // Refresh a cada 10 segundos
     setInterval(loadGraph, 10000);
 
@@ -648,7 +733,7 @@
 
     eventSource.addEventListener('rag', (event) => {
       const data = JSON.parse(event.data);
-      appendThought('rag', `Graph-RAG: ${data.nodes.length} nós recuperados (Top Score: ${data.nodes[0]?.score || 0})`);
+      appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados (Top Score: ${data.nodes?.[0]?.score || 0})`);
     });
   </script>
 </body>

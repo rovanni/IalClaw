@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { getTraceId } from '../../shared/TraceContext';
-import { emitDebug } from '../../shared/DebugBus';
-import { sanitizePath } from '../../shared/sanitizePath';
+import { getTraceId } from '../shared/TraceContext';
+import { emitDebug } from '../shared/DebugBus';
+import { sanitizePath } from '../shared/sanitizePath';
 
 export type ProjectType = 'code' | 'slides' | 'game' | 'document' | 'automation';
 

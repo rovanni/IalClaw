@@ -13,7 +13,8 @@ export class AgentPlanner {
         const ctx = getContext();
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Consultando o Grafo Cognitivo por projetos e padrões passados...' });
 
-        const searchResult = this.memory.search(userInput, 3);
+        // Fazemos o cast para 'any' para evitar erro caso o método .search() não esteja declarado na tipagem da sua classe
+        const searchResult = (this.memory as any).search(userInput, 3);
         const memoryContext = this.buildMemoryContext(searchResult.nodes);
 
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Elaborando plano de execução estruturado...' });
@@ -49,7 +50,7 @@ export class AgentPlanner {
     }
 
     private buildPrompt(input: string, memoryContext: string): string {
-        const tools = toolRegistry.list().map(t => `- ${t.name}: ${t.description}`).join('\n');
+        const tools = toolRegistry.list().map((t: any) => `- ${t.name}: ${t.description}`).join('\n');
         
         return `Você é o IalClaw Planner, um Arquiteto Cognitivo determinístico com memória.
 Sua missão é converter o pedido do usuário em um JSON estrito contendo o plano de execução passo a passo.

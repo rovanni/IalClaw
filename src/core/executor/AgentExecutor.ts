@@ -1,4 +1,4 @@
-import { executeToolCall } from '../../dashboard/public/executeTool';
+import { executeToolCall } from '../agent/executeTool';
 import { ExecutionPlan } from '../planner/types';
 import { getContext } from '../../shared/TraceContext';
 import { emitDebug } from '../../shared/DebugBus';
