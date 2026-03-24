@@ -249,6 +249,46 @@ export class CognitiveMemory {
     `).run(conversationId, role, content, toolName || null, toolArgs || null, toolResult || null);
     }
 
+    public async saveExecutionFix(input: {
+        content: string;
+        project_id?: string;
+        error_type?: string;
+        fingerprint?: string;
+        timestamp?: number;
+    }) {
+        const createdAt = new Date(input.timestamp || Date.now()).toISOString();
+        const nodeId = `execution-fix:${this.hash(`${input.project_id || 'global'}:${input.fingerprint || createdAt}:${createdAt}`)}`;
+        const embedding = await this.provider.embed(input.content);
+        const preview = input.content.slice(0, 280);
+        const tags = JSON.stringify([
+            'execution_fix',
+            input.project_id || 'global',
+            input.error_type || 'unknown'
+        ]);
+
+        this.db.prepare(`
+      INSERT OR REPLACE INTO nodes
+      (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+            nodeId,
+            'memory',
+            'execution_fix',
+            `Execution fix ${input.error_type || 'unknown'}`,
+            input.content,
+            preview,
+            JSON.stringify(embedding),
+            'execution_fix',
+            tags,
+            0.85,
+            0.75,
+            1.0,
+            1,
+            createdAt,
+            createdAt
+        );
+    }
+
     public getConversationHistory(conversationId: string, limit: number = 20): any[] {
         return this.db.prepare(`
       SELECT * FROM messages

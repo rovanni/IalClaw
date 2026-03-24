@@ -2,17 +2,21 @@ import { executeToolCall } from '../agent/executeTool';
 import { validatePlan } from '../planner/PlanValidator';
 import { ExecutionPlan } from '../planner/types';
 import { debugBus } from '../../shared/DebugBus';
+import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { Session } from '../../shared/SessionManager';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
 import { classifyError } from '../../utils/errorClassifier';
+import { normalizeError } from '../../utils/errorFingerprint';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 
 const MAX_RETRIES = 5;
 
 export class AgentExecutor {
     private llm: LLMProvider;
+    private memory: CognitiveMemory;
 
-    constructor() {
+    constructor(memory: CognitiveMemory) {
+        this.memory = memory;
         this.llm = ProviderFactory.getProvider();
     }
 
@@ -127,17 +131,19 @@ export class AgentExecutor {
                     || 'Unknown runtime error';
                 const runtimeHash = runtimeData?.error_hash;
                 const errorType = classifyError(runtimeError);
+                const normalizedError = normalizeError(runtimeError);
 
-                if (session.last_error_hash && runtimeHash && session.last_error_hash === runtimeHash) {
+                if (session.last_error_fingerprint && session.last_error_fingerprint === normalizedError) {
                     debugBus.emit('self_healing_abort', {
-                        reason: 'repeated_error',
+                        reason: 'equivalent_error_loop',
                         error: runtimeError,
-                        error_hash: runtimeHash
+                        error_hash: runtimeHash,
+                        normalized: normalizedError
                     });
 
                     return {
                         success: false,
-                        error: `Self-healing aborted: repeated error (${runtimeError})`
+                        error: `Self-healing aborted: equivalent error loop (${runtimeError})`
                     };
                 }
 
@@ -145,10 +151,12 @@ export class AgentExecutor {
                 session.last_error = runtimeError;
                 session.last_error_type = errorType;
                 session.last_error_hash = runtimeHash;
+                session.last_error_fingerprint = normalizedError;
 
                 debugBus.emit('self_healing', {
                     error: runtimeError,
                     error_type: errorType,
+                    normalized: normalizedError,
                     stage: 'runtime',
                     attempt
                 });
@@ -172,6 +180,22 @@ export class AgentExecutor {
             debugBus.emit('execution_success', {
                 project_id: session.current_project_id
             });
+
+            if (session.last_error && session.last_error.length < 5000) {
+                await this.memory.saveExecutionFix({
+                    content: `Erro anterior:\n${session.last_error}\n\nTipo:\n${session.last_error_type || 'unknown'}\n\nFingerprint:\n${session.last_error_fingerprint || 'unknown'}\n\nCorrecao aplicada:\n${JSON.stringify(plan)}`,
+                    project_id: session.current_project_id,
+                    error_type: session.last_error_type,
+                    fingerprint: session.last_error_fingerprint,
+                    timestamp: Date.now()
+                });
+            }
+
+            session.last_error = undefined;
+            session.last_error_type = undefined;
+            session.last_error_hash = undefined;
+            session.last_error_fingerprint = undefined;
+
             debugBus.emit('executor:success', {});
             return { success: true };
         }

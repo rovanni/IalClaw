@@ -11,7 +11,7 @@ export class AgentRuntime {
 
     constructor(memory: CognitiveMemory) {
         this.planner = new AgentPlanner(memory);
-        this.executor = new AgentExecutor();
+        this.executor = new AgentExecutor(memory);
     }
 
     async execute(userInput: string, mode: 'react' | 'planner' = 'planner'): Promise<string> {
