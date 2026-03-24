@@ -34,6 +34,7 @@ export class ProviderFactory {
 
 class OllamaProvider implements LLMProvider {
     private client: Ollama;
+    private embeddingsUnavailable = false;
 
     constructor() {
         const host = process.env.OLLAMA_HOST || 'http://localhost:11434';
@@ -42,7 +43,7 @@ class OllamaProvider implements LLMProvider {
         let fetchParams: RequestInit | undefined = undefined;
         if (apiKey) {
             fetchParams = {
-                headers: { 'Authorization': `Bearer ${apiKey}` }
+                headers: { Authorization: `Bearer ${apiKey}` }
             };
         }
 
@@ -55,21 +56,21 @@ class OllamaProvider implements LLMProvider {
     async generate(messages: MessagePayload[], tools?: any[]): Promise<ProviderResponse> {
         const ollamaModel = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
 
-        const ollamaMessages = messages.map(m => {
-            return {
-                role: m.role,
-                content: m.content
-            };
-        });
+        const ollamaMessages = messages.map(message => ({
+            role: message.role,
+            content: message.content
+        }));
 
-        const ollamaTools = tools ? tools.map(t => ({
-            type: 'function',
-            function: {
-                name: t.name,
-                description: t.description,
-                parameters: t.parameters
-            }
-        })) : undefined;
+        const ollamaTools = tools
+            ? tools.map(tool => ({
+                type: 'function',
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters
+                }
+            }))
+            : undefined;
 
         try {
             const response = await this.client.chat({
@@ -89,27 +90,63 @@ class OllamaProvider implements LLMProvider {
             }
 
             return {
-                final_answer: response.message?.content || "Sem resposta do Ollama."
+                final_answer: response.message?.content || 'Sem resposta do Ollama.'
             };
-        } catch (e: any) {
-            console.error("[OllamaProvider] Error calling Ollama:", e);
+        } catch (error: any) {
+            console.error('[OllamaProvider] Error calling Ollama:', error);
             return {
-                final_answer: "Ocorreu um erro de comunicação com o Ollama local/Cloud. Verifique se o serviço está rodando."
+                final_answer: 'Ocorreu um erro de comunicacao com o Ollama local/cloud. Verifique se o servico esta rodando.'
             };
         }
     }
 
     async embed(text: string): Promise<number[]> {
-        // Para RAG rápido em PT-BR sugerimos nomic-embed-text ou o próprio modelo que suporte embeddings
+        if (this.embeddingsUnavailable) {
+            return [];
+        }
+
         const ollamaModel = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
+
         try {
-            const response = await this.client.embeddings({
-                model: ollamaModel,
-                prompt: text
-            });
-            return response.embedding;
-        } catch (e: any) {
-            console.error("[OllamaProvider] Error generation embeddings:", e);
+            const modernClient = this.client as any;
+
+            if (typeof modernClient.embed === 'function') {
+                const response = await modernClient.embed({
+                    model: ollamaModel,
+                    input: text
+                });
+
+                if (Array.isArray(response?.embeddings) && Array.isArray(response.embeddings[0])) {
+                    return response.embeddings[0];
+                }
+
+                if (Array.isArray(response?.embedding)) {
+                    return response.embedding;
+                }
+            }
+
+            if (typeof modernClient.embeddings === 'function') {
+                const response = await modernClient.embeddings({
+                    model: ollamaModel,
+                    prompt: text
+                });
+
+                if (Array.isArray(response?.embedding)) {
+                    return response.embedding;
+                }
+            }
+
+            this.embeddingsUnavailable = true;
+            console.warn('[OllamaProvider] Embeddings API not available in this Ollama client/runtime. Falling back without embeddings.');
+            return [];
+        } catch (error: any) {
+            if (error?.status_code === 404 || String(error?.message || '').includes('/api/embeddings')) {
+                this.embeddingsUnavailable = true;
+                console.warn('[OllamaProvider] Embeddings endpoint unavailable. Continuing without embeddings.');
+                return [];
+            }
+
+            console.error('[OllamaProvider] Error generation embeddings:', error);
             return [];
         }
     }
@@ -117,12 +154,13 @@ class OllamaProvider implements LLMProvider {
 
 class DummyProvider implements LLMProvider {
     async generate(messages: MessagePayload[], tools?: any[]): Promise<ProviderResponse> {
-        const lastUserMsg = messages.filter(m => m.role === 'user').pop();
-        if (lastUserMsg && lastUserMsg.content.includes("ajuda")) {
-            return { final_answer: "Como posso ajudar você usando o meu sistema cognitivo local?" };
+        const lastUserMsg = messages.filter(message => message.role === 'user').pop();
+        if (lastUserMsg && lastUserMsg.content.includes('ajuda')) {
+            return { final_answer: 'Como posso ajudar voce usando o meu sistema cognitivo local?' };
         }
+
         return {
-            final_answer: "Eu sou o IalClaw. Recebi sua mensagem: " + (lastUserMsg?.content || "Vazio")
+            final_answer: 'Eu sou o IalClaw. Recebi sua mensagem: ' + (lastUserMsg?.content || 'Vazio')
         };
     }
 

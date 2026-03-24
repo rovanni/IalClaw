@@ -37,8 +37,18 @@ export class AgentPlanner {
                 options: { temperature: 0.1 }
             });
 
-            const plan = parseLlmJson<ExecutionPlan>(response.message.content);
-            validatePlan(plan);
+            let plan = parseLlmJson<ExecutionPlan>(response.message.content);
+
+            try {
+                validatePlan(plan);
+            } catch (validationError: any) {
+                if (this.isInvalidToolError(validationError)) {
+                    emitDebug('thought', { type: 'thought', content: '[PLANNER] Tool invalida detectada no plano. Tentando reparar com lista estrita de tools...' });
+                    plan = await this.repairInvalidToolPlan(userInput, prompt, plan, validationError.message);
+                } else {
+                    throw validationError;
+                }
+            }
 
             emitDebug('thought', { type: 'thought', content: `[PLANNER] Plano validado: ${plan.goal} (${plan.steps.length} passos).` });
             return plan;
@@ -58,7 +68,11 @@ export class AgentPlanner {
     }
 
     private buildPrompt(input: string, memoryContext: string): string {
-        const tools = toolRegistry.list().map(tool => `- ${tool.name}: ${tool.description}`).join('\n');
+        const registeredTools = toolRegistry.list();
+        const tools = registeredTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n');
+        const toolNames = registeredTools.map(tool => tool.name);
+        const strictToolList = toolNames.map(name => `- ${name}`).join('\n');
+        const strictToolEnum = toolNames.map(name => `"${name}"`).join(', ');
 
         const session = SessionManager.getCurrentSession();
         let sessionPrompt = '';
@@ -117,6 +131,12 @@ Sua missao e converter o pedido do usuario em um JSON estrito contendo o plano d
 FERRAMENTAS DISPONIVEIS:
 ${tools}
 
+AVAILABLE TOOLS (STRICT):
+You MUST use ONLY these tools:
+${strictToolList}
+Do NOT invent tools.
+Do NOT use unknown tools.
+
 ${memoryContext}
 ${sessionPrompt}
 
@@ -135,6 +155,47 @@ FORMATO JSON ESPERADO:
   "steps": [
     { "id": 1, "type": "tool", "tool": "name", "input": { } }
   ]
-}`;
+}
+
+RESTRICAO DE SCHEMA:
+- Cada step.tool DEVE ser um destes valores: [${strictToolEnum}]`;
+    }
+
+    private isInvalidToolError(error: any): boolean {
+        const message = String(error?.message || '');
+        return message.includes('tool alucinada detectada no plano');
+    }
+
+    private async repairInvalidToolPlan(userInput: string, basePrompt: string, invalidPlan: ExecutionPlan, validationMessage: string): Promise<ExecutionPlan> {
+        const response = await ollama.chat({
+            model: process.env.MODEL || 'llama3.2',
+            messages: [
+                { role: 'system', content: basePrompt },
+                {
+                    role: 'user',
+                    content: `O plano anterior usou uma tool invalida.
+
+ERRO:
+${validationMessage}
+
+PLANO INVALIDO:
+${JSON.stringify(invalidPlan, null, 2)}
+
+TAREFA ORIGINAL:
+${userInput}
+
+INSTRUCAO:
+- Use ONLY allowed tools.
+- Corrija o plano.
+- Retorne apenas JSON valido.`
+                }
+            ],
+            format: 'json',
+            options: { temperature: 0.1 }
+        });
+
+        const repairedPlan = parseLlmJson<ExecutionPlan>(response.message.content);
+        validatePlan(repairedPlan);
+        return repairedPlan;
     }
 }
