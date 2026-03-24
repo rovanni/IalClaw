@@ -23,12 +23,12 @@ Apesar de funcional, ainda está em fase de estabilização e validação de com
 
 ### Linux / macOS
 ```bash
-curl -fsSL https://openclaw.ai/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rovanni/IalClaw/main/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 ```powershell
-irm https://openclaw.ai/install.ps1 | iex
+irm https://raw.githubusercontent.com/rovanni/IalClaw/main/install.ps1 | iex
 ```
 
 ---
