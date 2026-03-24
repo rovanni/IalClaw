@@ -10,6 +10,7 @@ import { normalizeError } from '../../utils/errorFingerprint';
 import { detectOscillation, updateHistory } from '../../utils/inputOscillation';
 import { isMinimalChange } from '../../utils/minimalChange';
 import { parseLlmJson } from '../../utils/parseLlmJson';
+import { PlanStep } from '../planner/types';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -138,8 +139,7 @@ export class AgentExecutor {
                     };
                     plan.steps = [repairStep];
 
-                    const newPlan = await this.replan(plan, session.last_error, session);
-                    const newStep = newPlan.steps[0];
+                    const newStep = await this.replanToolInputStep(repairStep, session);
                     const isCorrectionMode = repairStep.is_repair === true
                         && session.last_error_type === 'tool_input'
                         && payload.tool === repairStep.tool;
@@ -204,7 +204,7 @@ export class AgentExecutor {
                         session._input_history = updateHistory(session._input_history, newStep.input);
                     }
                     plan = {
-                        ...newPlan,
+                        ...plan,
                         steps: [{ ...newStep, is_repair: false }]
                     };
                     attempt++;
@@ -421,8 +421,85 @@ Novo ExecutionPlan JSON`
         return repairedPlan;
     }
 
+    private async replanToolInputStep(currentStep: PlanStep, session: Session): Promise<PlanStep> {
+        const messages: MessagePayload[] = [
+            {
+                role: 'system',
+                content: `Voce corrige inputs de tools.
+Retorne apenas JSON valido.
+Nao altere o nome da tool.
+Nao recrie o projeto.
+Corrija somente os campos invalidos.`
+            },
+            {
+                role: 'user',
+                content: `Corrija o step abaixo com base no erro informado.
+
+ERRO:
+${session.last_error || 'Erro de input nao informado'}
+
+STEP ATUAL:
+${JSON.stringify(currentStep, null, 2)}
+
+INSTRUCOES:
+- Mantenha o mesmo "tool".
+- Mantenha o mesmo "id".
+- Corrija apenas os campos invalidos de "input".
+- Voce pode responder de um destes jeitos:
+  1. Um step completo { "id": ..., "type": "tool", "tool": "...", "input": { ... } }
+  2. Apenas o objeto "input" corrigido.
+
+OUTPUT:
+JSON valido`
+            }
+        ];
+
+        const response = await this.llm.generate(messages);
+        const raw = response.final_answer;
+
+        if (!raw) {
+            throw new Error('LLM nao retornou correcao de tool_input.');
+        }
+
+        const parsed = parseLlmJson<any>(raw);
+        const normalized = this.normalizeToolInputRepair(parsed, currentStep);
+
+        if (normalized.tool !== currentStep.tool) {
+            throw new Error(`Tool mismatch during tool_input correction: expected ${currentStep.tool}, received ${normalized.tool}`);
+        }
+
+        return normalized;
+    }
+
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
+    }
+
+    private normalizeToolInputRepair(parsed: any, currentStep: PlanStep): PlanStep {
+        if (parsed && Array.isArray(parsed.steps)) {
+            const matchingStep = parsed.steps.find((step: any) => step?.tool === currentStep.tool) || parsed.steps[0];
+            return this.normalizeToolInputRepair(matchingStep, currentStep);
+        }
+
+        if (parsed && typeof parsed === 'object' && parsed.tool && parsed.input) {
+            return {
+                id: typeof parsed.id === 'number' ? parsed.id : currentStep.id,
+                type: parsed.type === 'tool' ? 'tool' : currentStep.type,
+                tool: parsed.tool,
+                input: parsed.input
+            };
+        }
+
+        if (parsed && typeof parsed === 'object') {
+            return {
+                id: currentStep.id,
+                type: currentStep.type,
+                tool: currentStep.tool,
+                input: parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed
+            };
+        }
+
+        throw new Error('Resposta invalida para correcao de tool_input.');
     }
 
     private buildStructuredErrorPrompt(lastError?: string, lastErrorType?: string): string {
