@@ -1,0 +1,72 @@
+import ollama from 'ollama';
+import { ExecutionPlan } from './types';
+import { validatePlan } from './PlanValidator';
+import { toolRegistry } from '../tools/ToolRegistry';
+import { getContext } from '../../shared/TraceContext';
+import { emitDebug } from '../../shared/DebugBus';
+// Importe a classe da sua memória cognitiva (ajuste o caminho se necessário)
+import { CognitiveMemory } from '../../../specs/lib/CognitiveMemory'; 
+
+export class AgentPlanner {
+    constructor(private memory: CognitiveMemory) {}
+
+    async createPlan(userInput: string): Promise<ExecutionPlan> {
+        const ctx = getContext();
+        emitDebug('thought', { type: 'thought', content: '[PLANNER] Consultando o Grafo Cognitivo por projetos e padrões passados...' });
+
+        const searchResult = this.memory.search(userInput, 3);
+        const memoryContext = this.buildMemoryContext(searchResult.nodes);
+
+        emitDebug('thought', { type: 'thought', content: '[PLANNER] Elaborando plano de execução estruturado...' });
+
+        const prompt = this.buildPrompt(userInput, memoryContext);
+
+        try {
+            const response = await ollama.chat({
+                model: process.env.MODEL || 'llama3.2',
+                messages: [{ role: 'system', content: prompt }, { role: 'user', content: userInput }],
+                format: 'json', // 🔥 Força saída em JSON estrito
+                options: { temperature: 0.1 } // Alto determinismo, menos criatividade fora da caixa
+            });
+
+            const plan: ExecutionPlan = JSON.parse(response.message.content);
+            validatePlan(plan); // Tenta quebrar rápido se for inválido
+
+            emitDebug('thought', { type: 'thought', content: `[PLANNER] Plano validado: ${plan.goal} (${plan.steps.length} passos).` });
+            return plan;
+        } catch (error: any) {
+            emitDebug('agent:error', { trace_id: ctx.trace_id, error: `Falha no planejamento: ${error.message}` });
+            throw error;
+        }
+    }
+
+    private buildMemoryContext(nodes: any[]): string {
+        if (!nodes || nodes.length === 0) {
+            return "Nenhuma memória relevante encontrada. Crie a arquitetura do zero com as melhores práticas.";
+        }
+        
+        const hints = nodes.map(n => `- Padrão extraído de [${n.name}]: ${n.content_preview}`);
+        return `MEMÓRIA ESTRUTURAL RELEVANTE (Projetos e Conceitos Passados):\n${hints.join('\n')}\n\nRECOMENDAÇÃO: Reutilize essas abordagens/estruturas conhecidas para garantir consistência.`;
+    }
+
+    private buildPrompt(input: string, memoryContext: string): string {
+        const tools = toolRegistry.list().map(t => `- ${t.name}: ${t.description}`).join('\n');
+        
+        return `Você é o IalClaw Planner, um Arquiteto Cognitivo determinístico com memória.
+Sua missão é converter o pedido do usuário em um JSON estrito contendo o plano de execução passo a passo.
+
+FERRAMENTAS DISPONÍVEIS:
+${tools}
+
+${memoryContext}
+
+REGRAS DE OURO:
+1. Retorne APENAS um JSON válido. Nenhuma palavra a mais.
+2. Não invente ferramentas.
+3. Se for gerar arquivos, o passo 1 DEVE ser "workspace_create_project".
+4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact". O nosso sistema injetará a ID real em runtime.
+5. Forneça o código funcional completo no campo "content" ao salvar artefatos.
+
+FORMATO JSON ESPERADO:\n{\n  "goal": "Resumo",\n  "steps": [\n    { "id": 1, "type": "tool", "tool": "name", "input": { } }\n  ]\n}`;
+    }
+}

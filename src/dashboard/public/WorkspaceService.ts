@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { getTraceId } from '../dashboard/public/TraceContext';
-import { emitDebug } from '../dashboard/public/DebugBus';
+import { getTraceId } from '../../shared/TraceContext';
+import { emitDebug } from '../../shared/DebugBus';
+import { sanitizePath } from '../../shared/sanitizePath';
 
 export type ProjectType = 'code' | 'slides' | 'game' | 'document' | 'automation';
 
@@ -36,16 +37,19 @@ export class WorkspaceService {
     }
 
     public createProject(name: string, type: ProjectType, agent: string, prompt: string): string {
-        // Gera um ID limpo para nome de pasta (ex: "Aula Redes" -> "aula-redes")
-        const projectId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        // Gera um ID limpo e único para nome de pasta (ex: "aula-redes-1710000000")
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const projectId = `${slug}-${Date.now()}`;
         const projectPath = path.join(this.basePath, 'projects', projectId);
 
-        if (!fs.existsSync(projectPath)) {
-            fs.mkdirSync(projectPath, { recursive: true });
-            fs.mkdirSync(path.join(projectPath, 'output'));
-            fs.mkdirSync(path.join(projectPath, 'assets'));
-            fs.mkdirSync(path.join(projectPath, 'logs'));
+        if (fs.existsSync(projectPath)) {
+            throw new Error(`Projeto ${projectId} já existe.`);
         }
+
+        fs.mkdirSync(projectPath, { recursive: true });
+        fs.mkdirSync(path.join(projectPath, 'output'));
+        fs.mkdirSync(path.join(projectPath, 'assets'));
+        fs.mkdirSync(path.join(projectPath, 'logs'));
 
         const metadata: ProjectMetadata = {
             name, type, agent, prompt,
@@ -62,14 +66,26 @@ export class WorkspaceService {
         return projectId;
     }
 
+    public updateStatus(projectId: string, status: ProjectMetadata['status']) {
+        const file = path.join(this.basePath, 'projects', projectId, 'project.json');
+        if (!fs.existsSync(file)) throw new Error(`Metadados do projeto ${projectId} não encontrados.`);
+        const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+        data.status = status;
+        fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    }
+
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
         const projectPath = path.join(this.basePath, 'projects', projectId);
         if (!fs.existsSync(projectPath)) throw new Error(`Projeto ${projectId} não encontrado.`);
 
-        const outputPath = path.join(projectPath, 'output', filename);
+        const safePath = sanitizePath(filename);
+        const outputPath = path.join(projectPath, 'output', safePath);
+        const dir = path.dirname(outputPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
         fs.writeFileSync(outputPath, content);
 
-        emitDebug('tool', { name: 'workspace_save', status: 'success', file: filename });
+        emitDebug('tool', { name: 'workspace_save', project_id: projectId, file: filename, status: 'success' });
         return outputPath;
     }
 }
