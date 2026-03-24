@@ -84,7 +84,7 @@ if (-not (Test-Path .env)) {
         Copy-Item .env.example .env
     }
     else {
-        Set-Content -Path .env -Value "OLLAMA_BASE_URL=http://localhost:11434`nMODEL=llama3.2`nTELEGRAM_BOT_TOKEN="
+        Set-Content -Path .env -Value "OLLAMA_BASE_URL=http://localhost:11434`nOLLAMA_MODEL=llama3.2`nTELEGRAM_BOT_TOKEN="
     }
 }
 

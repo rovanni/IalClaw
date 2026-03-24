@@ -53,7 +53,7 @@ class OllamaProvider implements LLMProvider {
     }
 
     async generate(messages: MessagePayload[], tools?: any[]): Promise<ProviderResponse> {
-        const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
+        const ollamaModel = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
 
         const ollamaMessages = messages.map(m => {
             return {
@@ -101,7 +101,7 @@ class OllamaProvider implements LLMProvider {
 
     async embed(text: string): Promise<number[]> {
         // Para RAG rápido em PT-BR sugerimos nomic-embed-text ou o próprio modelo que suporte embeddings
-        const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
+        const ollamaModel = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
         try {
             const response = await this.client.embeddings({
                 model: ollamaModel,

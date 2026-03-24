@@ -85,7 +85,7 @@ if [ ! -f .env ]; then
         cp .env.example .env
     else
         echo "OLLAMA_BASE_URL=http://localhost:11434" > .env
-        echo "MODEL=llama3.2" >> .env
+        echo "OLLAMA_MODEL=llama3.2" >> .env
         echo "TELEGRAM_BOT_TOKEN=" >> .env
     fi
 fi
