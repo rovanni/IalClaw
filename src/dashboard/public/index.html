@@ -6,6 +6,16 @@
   <title>IalClaw v3.0 - Memória Cognitiva</title>
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
+    :root {
+      --font-xs: 0.75rem;   /* 12px */
+      --font-sm: 0.875rem;  /* 14px */
+      --font-md: 1rem;      /* 16px */
+      --font-lg: 1.125rem;  /* 18px */
+      --font-xl: 1.25rem;   /* 20px */
+    }
+
+    html { font-size: 16px; transition: font-size 0.2s ease-out; }
+
     body {
       background-color: #121212;
       color: #e0e0e0;
@@ -25,7 +35,7 @@
       display: flex;
       align-items: center;
       padding: 0 20px;
-      font-size: 0.85em;
+      font-size: var(--font-sm);
       font-family: monospace;
       color: #888;
       gap: 20px;
@@ -33,6 +43,19 @@
     .stat-badge { color: #00ccff; font-weight: bold; }
     .stat-ok { color: #00ff66; }
     .stat-warn { color: #ffcc00; }
+
+    /* Zoom Controls */
+    .zoom-btn {
+      background: #1a1a20;
+      border: 1px solid #333;
+      color: #aaa;
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 2px 8px;
+      font-size: var(--font-xs);
+      transition: all 0.2s;
+    }
+    .zoom-btn:hover { background: #333; color: #fff; }
 
     /* Main Workspace */
     #workspace {
@@ -67,9 +90,10 @@
     .panel-header {
       background: #111;
       padding: 6px 15px;
-      font-size: 0.8em;
+      font-size: var(--font-xs);
       text-transform: uppercase;
       letter-spacing: 1px;
+      font-weight: bold;
       color: #aaa;
       border-bottom: 1px solid #222;
       display: flex;
@@ -79,9 +103,10 @@
       flex: 1;
       padding: 10px 15px;
       overflow-y: auto;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.85em;
+      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      font-size: var(--font-sm);
       color: #a3be8c; /* Hacker green/pastel */
+      line-height: 1.5;
       margin: 0;
       white-space: pre-wrap;
     }
@@ -108,8 +133,9 @@
       flex: 1;
       overflow-y: auto;
       padding: 10px;
-      font-family: monospace;
-      font-size: 0.85em;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: var(--font-sm);
+      line-height: 1.5;
       display: flex;
       flex-direction: column;
       gap: 5px;
@@ -151,12 +177,12 @@
     }
 
     .chat-bubble {
-      padding: 10px 14px;
+      padding: 12px 16px;
       border-radius: 8px;
       max-width: 85%;
-      line-height: 1.4;
+      line-height: 1.5;
       word-break: break-word;
-      font-size: 0.9em;
+      font-size: var(--font-md);
       animation: fadeIn 0.3s ease-in-out;
     }
 
@@ -166,7 +192,7 @@
     }
 
     .bubble-meta {
-      font-size: 0.75em;
+      font-size: var(--font-xs);
       opacity: 0.7;
       margin-bottom: 4px;
       font-family: monospace;
@@ -191,7 +217,7 @@
 
     #typing-indicator {
       display: none;
-      font-size: 0.85em;
+      font-size: var(--font-sm);
       color: #888;
       padding: 0 15px 8px 15px;
       font-style: italic;
@@ -206,7 +232,15 @@
     <div>|</div>
     <div>Gateway: <span class="stat-ok">ONLINE</span></div>
     <div>Engine: <span class="stat-warn">STANDBY</span></div>
-    <div style="margin-left: auto;">Nodes: <span id="stat-nodes" class="stat-badge">0</span></div>
+    
+    <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+      <span style="color: #666; font-size: var(--font-xs);">ZOOM</span>
+      <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
+      <span id="zoom-level" style="color: #aaa; width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
+      <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
+    </div>
+    <div>|</div>
+    <div>Nodes: <span id="stat-nodes" class="stat-badge">0</span></div>
     <div>Edges: <span id="stat-edges" class="stat-badge">0</span></div>
   </header>
 
@@ -234,7 +268,7 @@
         <div id="chat-messages"></div>
         <div id="typing-indicator">Agent is thinking...</div>
         <div style="padding: 15px; border-top: 1px solid #222; background: #111;">
-          <input type="text" id="chat-input" placeholder="Comando cognitivo..." style="width: 100%; box-sizing: border-box; padding: 10px; background: #000; border: 1px solid #333; color: white; border-radius: 4px; outline: none; font-size: 0.9em;">
+          <input type="text" id="chat-input" placeholder="Comando cognitivo..." style="width: 100%; box-sizing: border-box; padding: 14px; background: #000; border: 1px solid #333; color: white; border-radius: 4px; outline: none; font-size: var(--font-md); font-family: inherit;">
         </div>
       </div>
     </div>
@@ -246,6 +280,23 @@
     const typingIndicator = document.getElementById('typing-indicator');
     const thoughtLog = document.getElementById('thought-log');
     const debugLog = document.getElementById('debug-log');
+
+    // --- Controle de Zoom Persistente ---
+    let currentZoom = parseFloat(localStorage.getItem('ialclaw_zoom')) || 1.0;
+    
+    function applyZoom() {
+      // Alterar a base no HTML escala todos os tamanhos (rem) automaticamente
+      document.documentElement.style.fontSize = `${16 * currentZoom}px`;
+      document.getElementById('zoom-level').innerText = `${Math.round(currentZoom * 100)}%`;
+      localStorage.setItem('ialclaw_zoom', currentZoom);
+    }
+
+    function changeZoom(delta) {
+      currentZoom = Math.max(0.5, Math.min(2.0, currentZoom + delta));
+      applyZoom();
+    }
+    
+    applyZoom(); // Inicializa na primeira carga
 
     chatInput.addEventListener('focus', () => chatInput.style.borderColor = '#00ccff');
     chatInput.addEventListener('blur', () => chatInput.style.borderColor = '#333');
