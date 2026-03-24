@@ -5,9 +5,10 @@ import { toolRegistry } from '../tools/ToolRegistry';
 import { getContext } from '../../shared/TraceContext';
 import { emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
+import { SessionManager } from '../../shared/SessionManager';
 
 export class AgentPlanner {
-    constructor(private memory: CognitiveMemory) {}
+    constructor(private memory: CognitiveMemory) { }
 
     async createPlan(userInput: string): Promise<ExecutionPlan> {
         const ctx = getContext();
@@ -44,14 +45,30 @@ export class AgentPlanner {
         if (!nodes || nodes.length === 0) {
             return "Nenhuma memória relevante encontrada. Crie a arquitetura do zero com as melhores práticas.";
         }
-        
+
         const hints = nodes.map(n => `- Padrão extraído de [${n.name}]: ${n.content_preview}`);
         return `MEMÓRIA ESTRUTURAL RELEVANTE (Projetos e Conceitos Passados):\n${hints.join('\n')}\n\nRECOMENDAÇÃO: Reutilize essas abordagens/estruturas conhecidas para garantir consistência.`;
     }
 
     private buildPrompt(input: string, memoryContext: string): string {
         const tools = toolRegistry.list().map((t: any) => `- ${t.name}: ${t.description}`).join('\n');
-        
+
+        const session = SessionManager.getCurrentSession();
+        let sessionPrompt = '';
+        if (session && (session.current_goal || session.current_project_id)) {
+            sessionPrompt = `
+CONTEXTO DE SESSÃO ATUAL (CONTINUIDADE DE TAREFA):
+- Objetivo da Sessão: ${session.current_goal || "nenhum"}
+- ID do Projeto Ativo: ${session.current_project_id || "nenhum"}
+- Arquivos já gerados nesta sessão: ${session.last_artifacts.length > 0 ? session.last_artifacts.join(", ") : "nenhum"}
+
+ATENÇÃO À CONTINUIDADE:
+- Se o usuário estiver pedindo algo relacionado a arquivos gerados ou ao objetivo atual, NÃO reinicie nem mude de domínio.
+- Continue a tarefa do projeto existente chamando "workspace_save_artifact".
+- O campo "project_id" pode ser omitido que o sistema injetará automaticamente o projeto correspondente à sessão.
+`;
+        }
+
         return `Você é o IalClaw Planner, um Arquiteto Cognitivo determinístico com memória.
 Sua missão é converter o pedido do usuário em um JSON estrito contendo o plano de execução passo a passo.
 
@@ -59,12 +76,13 @@ FERRAMENTAS DISPONÍVEIS:
 ${tools}
 
 ${memoryContext}
+${sessionPrompt}
 
 REGRAS DE OURO:
 1. Retorne APENAS um JSON válido. Nenhuma palavra a mais.
 2. Não invente ferramentas.
-3. Se for gerar arquivos, o passo 1 DEVE ser "workspace_create_project".
-4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact". O nosso sistema injetará a ID real em runtime.
+3. Se for um *novo* projeto para gerar arquivos, o passo 1 DEVE ser "workspace_create_project". Se for continuação, não crie de novo.
+4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact", o sistema injeta em runtime.
 5. Forneça o código funcional completo no campo "content" ao salvar artefatos.
 
 FORMATO JSON ESPERADO:\n{\n  "goal": "Resumo",\n  "steps": [\n    { "id": 1, "type": "tool", "tool": "name", "input": { } }\n  ]\n}`;

@@ -3,6 +3,7 @@ import path from 'path';
 import { getTraceId } from '../shared/TraceContext';
 import { emitDebug } from '../shared/DebugBus';
 import { sanitizePath } from '../shared/sanitizePath';
+import { SessionManager } from '../shared/SessionManager';
 
 export type ProjectType = 'code' | 'slides' | 'game' | 'document' | 'automation';
 
@@ -62,6 +63,15 @@ export class WorkspaceService {
         fs.writeFileSync(path.join(projectPath, 'project.json'), JSON.stringify(metadata, null, 2), 'utf8');
         fs.writeFileSync(path.join(projectPath, 'prompt.md'), `# ${name}\n\n**Trace ID:** ${metadata.trace_id}\n\n## Prompt\n${prompt}`, 'utf8');
 
+        // 🔥 ATUALIZA A SESSÃO DA CONVERSA
+        const session = SessionManager.getCurrentSession();
+        if (session) {
+            session.current_project_id = projectId;
+            session.current_goal = prompt;
+            session.last_artifacts = [];
+            session.last_action = `Created project: ${name}`;
+        }
+
         emitDebug('tool', { name: 'workspace_create', status: 'success', project_id: projectId });
         return projectId;
     }
@@ -84,6 +94,13 @@ export class WorkspaceService {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         fs.writeFileSync(outputPath, content);
+
+        // 🔥 ATUALIZA ARTEFATOS NA SESSÃO
+        const session = SessionManager.getCurrentSession();
+        if (session && !session.last_artifacts.includes(filename)) {
+            session.last_artifacts.push(filename);
+            session.last_action = `Saved artifact: ${filename}`;
+        }
 
         emitDebug('tool', { name: 'workspace_save', project_id: projectId, file: filename, status: 'success' });
         return outputPath;
