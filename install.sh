@@ -45,7 +45,7 @@ fi
 # -------------------------
 if [ ! -d "ialclaw" ]; then
     echo "Clonando repositório..."
-    git clone "$REPO_URL"
+    git clone "$REPO_URL" ialclaw
     cd ialclaw
 else
     echo "Diretório local. Pulando clone."

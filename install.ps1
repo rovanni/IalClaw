@@ -52,7 +52,7 @@ else {
 
 if (-not (Test-Path "ialclaw")) {
     Write-Host "Clonando repositorio..."
-    git clone $RepoUrl
+    git clone $RepoUrl ialclaw
     Set-Location ialclaw
 }
 else {
