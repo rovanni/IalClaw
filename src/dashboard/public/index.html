@@ -144,6 +144,8 @@
     .t-thought { border-color: #b48ead; color: #b48ead; }
     .t-action { border-color: #ebcb8b; color: #ebcb8b; }
     .t-obs { border-color: #a3be8c; color: #a3be8c; }
+    .t-final { border-color: #81a1c1; color: #81a1c1; font-weight: bold; }
+    .t-rag { border-color: #d08770; color: #d08770; }
 
     /* Chat Container */
     #chat-container {
@@ -257,7 +259,10 @@
     <!-- Right: Agent Panel -->
     <div id="right-col">
       <div id="thought-panel">
-        <div class="panel-header"><span>🧠 Thought Trace (ReAct)</span></div>
+        <div class="panel-header">
+          <span>🧠 Thought Trace (ReAct)</span>
+          <button class="zoom-btn" onclick="promptReplay()" style="background: #5e81ac; color: #fff; font-weight: bold; padding: 2px 10px;">▶ REPLAY</button>
+        </div>
         <div id="thought-log">
           <div class="thought-item t-obs">[SYSTEM] AgentLoop Listening...</div>
         </div>
@@ -297,6 +302,42 @@
     }
     
     applyZoom(); // Inicializa na primeira carga
+
+    // --- Replay Cognitivo ---
+    async function promptReplay() {
+      const traceId = prompt("Cole o ID do Trace (trace_id) para reproduzir o raciocínio:");
+      if (!traceId) return;
+      
+      try {
+        thoughtLog.innerHTML = '';
+        debugLog.innerText = `// Carregando replay para o trace: ${traceId}...\n`;
+        chatMsgs.innerHTML = '';
+
+        const res = await fetch(`/api/trace/${traceId}`);
+        if (!res.ok) throw new Error("Trace não encontrado no banco de dados.");
+        const events = await res.json();
+
+        for (const e of events) {
+          const data = JSON.parse(e.payload);
+          
+          if (e.type === 'gateway') {
+            updateDebugLog(data);
+          } else if (e.type === 'thought') {
+            appendThought(data.type || 'thought', data.content);
+          } else if (e.type === 'tool') {
+            appendThought('action', `Tool [${data.name}]: ${data.status} (${data.latency}ms)`);
+          } else if (e.type === 'rag') {
+            appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados`);
+          }
+          
+          // Simula o tempo real do agente "pensando"
+          await new Promise(r => setTimeout(r, 400));
+        }
+        appendThought('obs', '[SYSTEM] Replay Cognitivo Finalizado.');
+      } catch (err) {
+        alert("Erro no Replay: " + err.message);
+      }
+    }
 
     chatInput.addEventListener('focus', () => chatInput.style.borderColor = '#00ccff');
     chatInput.addEventListener('blur', () => chatInput.style.borderColor = '#333');
@@ -346,14 +387,6 @@
         typingIndicator.style.display = 'block';
         chatMsgs.scrollTop = chatMsgs.scrollHeight;
         
-        // SIMULANDO A TRILHA DE PENSAMENTO (Substituir por WebSocket depois)
-        appendThought('thought', 'Analisando intent do usuário: ' + text);
-        updateDebugLog({
-          query: text,
-          selected_agent: "general_agent",
-          scores: [{ agent: "general", semantic: 0.95 }, { agent: "tools", semantic: 0.1 }],
-          policy: "ALLOWED"
-        });
 
         try {
           const res = await fetch('/api/chat', {
@@ -364,8 +397,6 @@
           const data = await res.json();
           
           typingIndicator.style.display = 'none';
-          appendThought('action', 'Tool executed: respond_user');
-          appendThought('obs', 'Response generated and sent.');
             if (data.answer) {
             appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
               loadGraph();
@@ -456,6 +487,31 @@
     
     // Refresh a cada 10 segundos
     setInterval(loadGraph, 10000);
+
+    // ==========================================
+    // 📡 TELEMETRIA EM TEMPO REAL (SSE)
+    // ==========================================
+    const eventSource = new EventSource('/debug/stream');
+
+    eventSource.addEventListener('gateway', (event) => {
+      const data = JSON.parse(event.data);
+      updateDebugLog(data);
+    });
+
+    eventSource.addEventListener('thought', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought(data.type, data.content);
+    });
+
+    eventSource.addEventListener('tool', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('action', `Tool [${data.name}]: ${data.status} (${data.latency}ms)`);
+    });
+
+    eventSource.addEventListener('rag', (event) => {
+      const data = JSON.parse(event.data);
+      appendThought('rag', `Graph-RAG: ${data.nodes.length} nós recuperados (Top Score: ${data.nodes[0]?.score || 0})`);
+    });
   </script>
 </body>
 
