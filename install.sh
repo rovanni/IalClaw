@@ -35,9 +35,11 @@ fi
 if ! command -v ollama &> /dev/null; then
     echo "[INFO] Ollama não encontrado localmente."
     
-    # Prompt user
-    if [ -t 0 ]; then
-        read -p "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: " install_ollama
+    # Prompt user (handling curl | bash pipe)
+    if command -v tty >/dev/null 2>&1 && [ -c "$(tty 2>/dev/null)" ]; then
+        read -p "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: " install_ollama < "$(tty)"
+    elif [ -c /dev/tty ]; then
+        read -p "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: " install_ollama < /dev/tty
     else
         install_ollama="n" # Fallback em non-interactive
     fi
@@ -47,7 +49,7 @@ if ! command -v ollama &> /dev/null; then
         echo "Baixando e instalando Ollama (Linux/macOS)..."
         curl -fsSL https://ollama.com/install.sh | sh
     else
-        echo "Opcional: Você pode usar provedores em nuvem (OpenAI, Anthropic) ou instalar depois em: https://ollama.com"
+        echo "Instalação do Ollama ignorada. Você pode instalar depois em: https://ollama.com"
     fi
 else
     echo "Ollama encontrado ✔"
