@@ -12,56 +12,137 @@
       --font-md: 1rem;      /* 16px */
       --font-lg: 1.125rem;  /* 18px */
       --font-xl: 1.25rem;   /* 20px */
+      --font-family: 'Google Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+
+      /* Material Light Theme (Base) */
+      --bg-base: #f8f9fa;
+      --bg-surface: #ffffff;
+      --bg-header: #ffffff;
+      --bg-input: #f1f3f4;
+      --text-main: #202124;
+      --text-muted: #5f6368;
+      --border-color: #dadce0;
+      --accent: #1a73e8;
+      --accent-hover: #174ea6;
+      --shadow-sm: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+      
+      /* Component Colors */
+      --chat-user-bg: #e8f0fe;
+      --chat-user-text: #1967d2;
+      --chat-bot-bg: #f1f3f4;
+      --chat-bot-text: #202124;
+      --log-text: #137333;
+      --thought-bg: #f8f9fa;
+      --thought-border: #dadce0;
+      --t-obs: #0d652d;
+      --t-action: #b06000;
+      --t-thought: #681da8;
+      --t-rag: #c5221f;
+      --t-final: #1a73e8;
+      --stat-ok: #1e8e3e;
+      --stat-warn: #f29900;
+    }
+
+    [data-theme="dark"] {
+      /* Material Dark Theme */
+      --bg-base: #202124;
+      --bg-surface: #292a2d;
+      --bg-header: #292a2d;
+      --bg-input: #303134;
+      --text-main: #e8eaed;
+      --text-muted: #9aa0a6;
+      --border-color: #3c4043;
+      --accent: #8ab4f8;
+      --accent-hover: #aecbfa;
+      --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.3), 0 1px 3px 1px rgba(0,0,0,0.15);
+      
+      /* Component Colors */
+      --chat-user-bg: #4285f4;
+      --chat-user-text: #ffffff;
+      --chat-bot-bg: #3c4043;
+      --chat-bot-text: #e8eaed;
+      --log-text: #81c995;
+      --thought-bg: #202124;
+      --thought-border: #5f6368;
+      --t-obs: #81c995;
+      --t-action: #fde293;
+      --t-thought: #d7aefb;
+      --t-rag: #f28b82;
+      --t-final: #8ab4f8;
+      --stat-ok: #81c995;
+      --stat-warn: #fde293;
     }
 
     html { font-size: 16px; transition: font-size 0.2s ease-out; }
 
     body {
-      background-color: #121212;
-      color: #e0e0e0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-family);
       margin: 0;
       overflow: hidden;
       display: flex;
       flex-direction: column;
       height: 100vh;
+      transition: background-color 0.3s, color 0.3s;
     }
 
     /* Top Status Bar */
     #status-bar {
-      height: 35px;
-      background: #0a0a0c;
-      border-bottom: 1px solid #222;
+      height: 48px;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
-      padding: 0 20px;
+      padding: 0 24px;
       font-size: var(--font-sm);
-      font-family: monospace;
-      color: #888;
+      font-weight: 500;
+      color: var(--text-muted);
       gap: 20px;
+      z-index: 100;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: background-color 0.3s, border-color 0.3s;
     }
-    .stat-badge { color: #00ccff; font-weight: bold; }
-    .stat-ok { color: #00ff66; }
-    .stat-warn { color: #ffcc00; }
+    .stat-badge { color: var(--accent); font-weight: bold; }
+    .stat-ok { color: var(--stat-ok); }
+    .stat-warn { color: var(--stat-warn); }
 
     /* Zoom Controls */
     .zoom-btn {
-      background: #1a1a20;
-      border: 1px solid #333;
-      color: #aaa;
-      border-radius: 4px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 6px;
       cursor: pointer;
-      padding: 2px 8px;
+      padding: 4px 10px;
       font-size: var(--font-xs);
+      font-weight: 600;
       transition: all 0.2s;
     }
-    .zoom-btn:hover { background: #333; color: #fff; }
+    .zoom-btn:hover { background: var(--bg-input); color: var(--text-main); }
+    .btn-primary { background: var(--accent); color: #fff; border: none; }
+    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
 
     /* Main Workspace */
     #workspace {
       display: flex;
       flex: 1;
       overflow: hidden;
+      padding: 16px;
+      gap: 16px;
+    }
+
+    /* Panels Base - Google Material Card Style */
+    .panel {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: all 0.3s;
     }
 
     /* Left Column: Graph + Debug */
@@ -69,43 +150,43 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      position: relative;
-      background-image: radial-gradient(#2a2a2a 1px, transparent 1px);
-      background-size: 20px 20px;
+      gap: 16px;
     }
 
-    #mynetwork {
+    #mynetwork-container {
       flex: 1;
-      width: 100%;
+      background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    #mynetwork {
+      width: 100%; height: 100%;
     }
 
     /* System Debug / Gateway Panel */
     #debug-panel {
-      height: 200px;
-      background: rgba(5, 5, 8, 0.95);
-      border-top: 1px solid #333;
-      display: flex;
-      flex-direction: column;
+      height: 250px;
     }
     .panel-header {
-      background: #111;
-      padding: 6px 15px;
-      font-size: var(--font-xs);
+      background: var(--bg-surface);
+      padding: 12px 16px;
+      font-size: var(--font-sm);
       text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: bold;
-      color: #aaa;
-      border-bottom: 1px solid #222;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
       display: flex;
       justify-content: space-between;
+      align-items: center;
     }
     #debug-log {
       flex: 1;
-      padding: 10px 15px;
+      padding: 12px 16px;
       overflow-y: auto;
-      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      min-height: 0; /* 🔥 Flexbox Magic - Evita estourar o container pai */
+      font-family: var(--font-mono);
       font-size: var(--font-sm);
-      color: #a3be8c; /* Hacker green/pastel */
+      color: var(--log-text);
       line-height: 1.5;
       margin: 0;
       white-space: pre-wrap;
@@ -113,78 +194,63 @@
 
     /* Right Column: Agent Panel */
     #right-col {
-      width: 400px;
-      background: rgba(20, 20, 25, 0.98);
-      border-left: 1px solid #333;
-      display: flex;
-      flex-direction: column;
-      box-shadow: -5px 0 20px rgba(0,0,0,0.5);
-      z-index: 10;
+      width: 420px;
     }
 
     /* Thought Trace Panel */
     #thought-panel {
       height: 40%;
-      display: flex;
-      flex-direction: column;
-      border-bottom: 1px solid #333;
+      border-bottom: 1px solid var(--border-color);
     }
     #thought-log {
       flex: 1;
       overflow-y: auto;
-      padding: 10px;
-      font-family: 'JetBrains Mono', Consolas, monospace;
+      min-height: 0; /* 🔥 Flexbox Magic */
+      padding: 12px;
+      font-family: var(--font-mono);
       font-size: var(--font-sm);
       line-height: 1.5;
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 8px;
     }
-    .thought-item { padding: 5px; border-radius: 4px; background: rgba(255,255,255,0.03); border-left: 3px solid #555; }
-    .t-thought { border-color: #b48ead; color: #b48ead; }
-    .t-action { border-color: #ebcb8b; color: #ebcb8b; }
-    .t-obs { border-color: #a3be8c; color: #a3be8c; }
-    .t-final { border-color: #81a1c1; color: #81a1c1; font-weight: bold; }
-    .t-rag { border-color: #d08770; color: #d08770; }
+    .thought-item { padding: 8px 12px; border-radius: 6px; background: var(--thought-bg); border-left: 4px solid var(--thought-border); color: var(--text-main); }
+    .t-thought { border-color: var(--t-thought); }
+    .t-action { border-color: var(--t-action); }
+    .t-obs { border-color: var(--t-obs); }
+    .t-final { border-color: var(--t-final); font-weight: bold; }
+    .t-rag { border-color: var(--t-rag); }
 
     /* Chat Container */
     #chat-container {
       flex: 1;
-      display: flex;
-      flex-direction: column;
     }
 
     #chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 15px;
+      min-height: 0; /* 🔥 Flexbox Magic */
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
     }
 
     /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.4);
-    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
     .chat-bubble {
-      padding: 12px 16px;
-      border-radius: 8px;
+      padding: 12px 18px;
+      border-radius: 16px;
       max-width: 85%;
       line-height: 1.5;
       word-break: break-word;
+      white-space: pre-wrap; /* Garante que os '\n' do LLM sejam respeitados */
       font-size: var(--font-md);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
       animation: fadeIn 0.3s ease-in-out;
     }
 
@@ -195,34 +261,58 @@
 
     .bubble-meta {
       font-size: var(--font-xs);
-      opacity: 0.7;
-      margin-bottom: 4px;
-      font-family: monospace;
+      opacity: 0.8;
+      margin-bottom: 6px;
       display: block;
+      font-weight: 500;
     }
 
     .bubble-user {
-      background: linear-gradient(135deg, #00ccff, #0088ff);
-      color: #fff;
+      background: var(--chat-user-bg);
+      color: var(--chat-user-text);
       align-self: flex-end;
-      border-bottom-right-radius: 0;
-      box-shadow: 0 4px 10px rgba(0, 136, 255, 0.3);
+      border-bottom-right-radius: 4px;
     }
 
     .bubble-bot {
-      background: #2a2a30;
-      color: #e0e0e0;
+      background: var(--chat-bot-bg);
+      color: var(--chat-bot-text);
       align-self: flex-start;
-      border-bottom-left-radius: 0;
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-bottom-left-radius: 4px;
+      border: 1px solid var(--border-color);
     }
 
     #typing-indicator {
       display: none;
       font-size: var(--font-sm);
-      color: #888;
-      padding: 0 15px 8px 15px;
+      color: var(--text-muted);
+      padding: 0 16px 12px;
       font-style: italic;
+    }
+
+    /* Input Container */
+    .input-area {
+      padding: 16px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+    }
+    #chat-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 18px;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      color: var(--text-main);
+      border-radius: 24px;
+      outline: none;
+      font-size: var(--font-md);
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    #chat-input:focus {
+      border: 1px solid var(--accent);
+      background: var(--bg-surface);
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
     }
   </style>
 </head>
@@ -240,6 +330,7 @@
       <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
       <span id="zoom-level" style="color: #aaa; width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
       <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
+      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()" style="margin-left: 8px;">🌓 Theme</button>
     </div>
     <div>|</div>
     <div>Nodes: <span id="stat-nodes" class="stat-badge">0</span></div>
@@ -249,31 +340,33 @@
   <div id="workspace">
     <!-- Left: Graph & Debug -->
     <div id="left-col">
-      <div id="mynetwork"></div>
-      <div id="debug-panel">
+      <div class="panel" id="mynetwork-container">
+        <div id="mynetwork"></div>
+      </div>
+      <div class="panel" id="debug-panel">
         <div class="panel-header"><span>⚙️ Gateway & Policy Debug</span> <span>[LIVE]</span></div>
         <pre id="debug-log">// Aguardando interceptação de rotas e decisões do Gateway...</pre>
       </div>
     </div>
 
     <!-- Right: Agent Panel -->
-    <div id="right-col">
-      <div id="thought-panel">
+    <div class="panel" id="right-col">
+      <div id="thought-panel" style="display:flex; flex-direction:column;">
         <div class="panel-header">
           <span>🧠 Thought Trace (ReAct)</span>
-          <button class="zoom-btn" onclick="promptReplay()" style="background: #5e81ac; color: #fff; font-weight: bold; padding: 2px 10px;">▶ REPLAY</button>
+          <button class="zoom-btn btn-primary" onclick="promptReplay()">▶ REPLAY</button>
         </div>
         <div id="thought-log">
           <div class="thought-item t-obs">[SYSTEM] AgentLoop Listening...</div>
         </div>
       </div>
 
-      <div id="chat-container">
+      <div id="chat-container" style="display:flex; flex-direction:column;">
         <div class="panel-header"><span>💬 Interaction Panel</span></div>
         <div id="chat-messages"></div>
         <div id="typing-indicator">Agent is thinking...</div>
-        <div style="padding: 15px; border-top: 1px solid #222; background: #111;">
-          <input type="text" id="chat-input" placeholder="Comando cognitivo..." style="width: 100%; box-sizing: border-box; padding: 14px; background: #000; border: 1px solid #333; color: white; border-radius: 4px; outline: none; font-size: var(--font-md); font-family: inherit;">
+        <div class="input-area">
+          <input type="text" id="chat-input" placeholder="Comando cognitivo..." autocomplete="off">
         </div>
       </div>
     </div>
@@ -302,6 +395,23 @@
     }
     
     applyZoom(); // Inicializa na primeira carga
+
+    // --- Controle de Temas (Google Clean UI) ---
+    let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
+    
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? '🌙 Escuro' : '☀️ Claro';
+      if (network) network.setOptions(getGraphOptions()); // Atualiza cores do canvas na troca
+    }
+
+    function toggleTheme() {
+      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+      localStorage.setItem('ialclaw_theme', currentTheme);
+      applyTheme(currentTheme);
+    }
+    
+    applyTheme(currentTheme); // Inicializa Tema
 
     // --- Replay Cognitivo ---
     async function promptReplay() {
@@ -339,9 +449,6 @@
       }
     }
 
-    chatInput.addEventListener('focus', () => chatInput.style.borderColor = '#00ccff');
-    chatInput.addEventListener('blur', () => chatInput.style.borderColor = '#333');
-
     function appendMessage(role, text, meta = '') {
       const el = document.createElement('div');
       el.classList.add('chat-bubble');
@@ -354,8 +461,28 @@
         el.appendChild(metaEl);
       }
 
-      const textNode = document.createTextNode(text);
-      el.appendChild(textNode);
+      // --- UX Limitador de Textos Longos ---
+      const MAX_LEN = 600;
+      if (role === 'bot' && text.length > MAX_LEN) {
+        const textContainer = document.createElement('span');
+        textContainer.innerText = text.slice(0, MAX_LEN) + '...';
+        el.appendChild(textContainer);
+
+        const expandBtn = document.createElement('button');
+        expandBtn.innerText = '▼ Expandir resposta completa';
+        expandBtn.style.cssText = 'background: transparent; border: 1px solid var(--border-color); color: var(--accent); cursor: pointer; font-size: var(--font-xs); font-weight: 600; padding: 6px 12px; border-radius: 16px; display: block; margin-top: 10px; width: fit-content; transition: all 0.2s; font-family: inherit;';
+        expandBtn.onmouseover = () => expandBtn.style.background = 'var(--bg-input)';
+        expandBtn.onmouseout = () => expandBtn.style.background = 'transparent';
+        
+        expandBtn.onclick = () => {
+          textContainer.innerText = text;
+          expandBtn.style.display = 'none';
+        };
+        el.appendChild(expandBtn);
+      } else {
+        const textNode = document.createTextNode(text);
+        el.appendChild(textNode);
+      }
 
       chatMsgs.appendChild(el);
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
@@ -418,26 +545,31 @@
     const edgesData = new vis.DataSet([]);
     let network = null;
 
-    function initGraph() {
-      const container = document.getElementById('mynetwork');
-      const data = { nodes: nodesData, edges: edgesData };
-      const options = {
+    function getGraphOptions() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#e8eaed' : '#202124';
+      const nodeBg = isDark ? '#8ab4f8' : '#1a73e8';
+      const nodeBorder = isDark ? '#3c4043' : '#dadce0';
+      const edgeColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
+      const edgeHighlight = isDark ? '#8ab4f8' : '#1a73e8';
+
+      return {
         nodes: {
           shape: 'dot',
           size: 20,
-          font: { color: '#ffffff', face: 'Segoe UI', size: 14 },
+          font: { color: textColor, face: 'Google Sans, Segoe UI, sans-serif', size: 14 },
           borderWidth: 2,
           color: { 
-            border: '#333', 
-            background: '#00ccff', 
-            highlight: { border: '#fff', background: '#ff0099' } 
+            border: nodeBorder, 
+            background: nodeBg, 
+            highlight: { border: textColor, background: '#ea4335' } 
           },
-          shadow: { enabled: true, color: 'rgba(0,204,255,0.4)', size: 10, x: 0, y: 0 }
+          shadow: { enabled: true, color: 'rgba(0,0,0,0.15)', size: 5, x: 0, y: 2 }
         },
         edges: {
           width: 1.5,
-          color: { color: 'rgba(255,255,255,0.2)', highlight: '#00ccff' },
-          font: { color: '#aaaaaa', align: 'middle', size: 11, face: 'Segoe UI' },
+          color: { color: edgeColor, highlight: edgeHighlight },
+          font: { color: textColor, align: 'middle', size: 11, face: 'Google Sans, Segoe UI, sans-serif' },
           arrows: { to: { enabled: true, scaleFactor: 0.5 } },
           smooth: { type: 'continuous' }
         },
@@ -447,6 +579,12 @@
         },
         interaction: { hover: true, tooltipDelay: 200 }
       };
+    }
+
+    function initGraph() {
+      const container = document.getElementById('mynetwork');
+      const data = { nodes: nodesData, edges: edgesData };
+      const options = getGraphOptions();
       network = new vis.Network(container, data, options);
     }
 
