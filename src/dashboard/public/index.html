@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <title>IalClaw v3.0 - Memória Cognitiva</title>
+  <link rel="icon" href="data:,">
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     :root {
@@ -523,7 +524,7 @@
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? '🌙 Escuro' : '☀️ Claro';
-      if (network) network.setOptions(getGraphOptions()); // Atualiza cores do canvas na troca
+      if (typeof network !== 'undefined' && network) network.setOptions(getGraphOptions()); // Atualiza cores do canvas na troca
     }
 
     function toggleTheme() {
