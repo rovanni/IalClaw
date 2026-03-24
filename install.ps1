@@ -60,11 +60,12 @@ else {
 if (-not (Test-Path "ialclaw")) {
     Write-Host "Clonando repositorio..."
     git clone $RepoUrl ialclaw
-    Set-Location ialclaw
 }
 else {
     Write-Host "Diretorio 'ialclaw' ja existe. Pulando clone." -ForegroundColor Yellow
 }
+
+Set-Location ialclaw
 
 # -------------------------
 # INSTALL

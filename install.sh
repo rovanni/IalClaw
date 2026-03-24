@@ -62,10 +62,11 @@ fi
 if [ ! -d "ialclaw" ]; then
     echo "Clonando repositório..."
     git clone "$REPO_URL" ialclaw
-    cd ialclaw
 else
     echo "Diretório local. Pulando clone."
 fi
+
+cd ialclaw || { echo "[ERRO] Não foi possível acessar a pasta ialclaw."; exit 1; }
 
 # -------------------------
 # INSTALL
