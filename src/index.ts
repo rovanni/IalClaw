@@ -50,6 +50,8 @@ const controller = new AgentController(
     outputHandler
 );
 
+dashboard.setController(controller);
+
 const bot = new Bot(BOT_TOKEN);
 
 bot.on('message', async (ctx) => {

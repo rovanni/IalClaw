@@ -2,15 +2,18 @@ import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
 import cors from 'cors';
+import { AgentController } from '../core/AgentController';
 
 export class DashboardServer {
     private app: express.Express;
     private db: Database.Database;
+    private controller?: AgentController;
 
     constructor(db: Database.Database) {
         this.db = db;
         this.app = express();
         this.app.use(cors());
+        this.app.use(express.json());
 
         // Serve static files from public
         this.app.use(express.static(path.join(__dirname, 'public')));
@@ -39,6 +42,26 @@ export class DashboardServer {
                 res.status(500).json({ error: err.message });
             }
         });
+
+        // API route for Web Chat
+        this.app.post('/api/chat', async (req, res) => {
+            if (!this.controller) {
+                return res.status(500).json({ error: 'AgentController not linked' });
+            }
+            try {
+                const { message, sessionId = 'web-session' } = req.body;
+                if (!message) return res.status(400).json({ error: 'Message payload required' });
+
+                const answer = await this.controller.handleWebMessage(sessionId, message);
+                res.json({ answer });
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+    }
+
+    public setController(controller: AgentController) {
+        this.controller = controller;
     }
 
     public start(port: number = 3000) {

@@ -107,4 +107,66 @@ NÃO alucine fatos.\n\n${contextStr}`
             ctx.reply(`⚠️ Ocorreu um erro no pipeline cognitivo:\n${e.message}`);
         }
     }
+
+    public async handleWebMessage(sessionId: string, userQuery: string): Promise<string> {
+        try {
+            const provider = this.loop.getProvider();
+            const queryEmbedding = await provider.embed(userQuery);
+
+            const gateway = new AgentGateway(this.memory, provider);
+            const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
+
+            const memory = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
+            const identity = await this.memory.getIdentityNodes(agentId);
+
+            const policyEngine = new PolicyEngine();
+            const policy = policyEngine.resolvePolicy(identity);
+
+            const contextStr = this.contextBuilder.build({ identity, memory, policy });
+
+            const history = this.memory.getConversationHistory(sessionId, 10);
+            const messages: MessagePayload[] = [];
+
+            messages.push({
+                role: 'system',
+                content: `Você é o IalClaw, um agente cognitivo 100% local.
+Use o contexto abaixo processado usando RAG via Grafo para embasar sua resposta.
+NÃO alucine fatos.\n\n${contextStr}`
+            });
+
+            for (const msg of history) {
+                if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') {
+                    messages.push({ role: msg.role, content: msg.content });
+                }
+            }
+
+            messages.push({ role: 'user', content: userQuery });
+            this.memory.saveMessage(sessionId, 'user', userQuery);
+
+            const result = await this.loop.run(messages, policy);
+
+            for (const nm of result.newMessages) {
+                this.memory.saveMessage(
+                    sessionId,
+                    nm.role,
+                    nm.content,
+                    nm.tool_name,
+                    nm.tool_args ? JSON.stringify(nm.tool_args) : undefined
+                );
+            }
+
+            await this.memory.learn({
+                query: userQuery,
+                nodes_used: memory,
+                success: true,
+                response: result.answer
+            });
+
+            return result.answer;
+
+        } catch (e: any) {
+            console.error("[AgentController] Error executing web flow:", e);
+            throw e;
+        }
+    }
 }
