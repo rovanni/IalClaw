@@ -40,6 +40,18 @@ export class WorkspaceService {
         }
     }
 
+    private getProjectPath(projectId: string): string {
+        return path.join(this.basePath, 'projects', projectId);
+    }
+
+    public projectExists(projectId: string): boolean {
+        if (!projectId || typeof projectId !== 'string') {
+            return false;
+        }
+
+        return fs.existsSync(this.getProjectPath(projectId));
+    }
+
     public createProject(name: string, type: ProjectType, agent: string, prompt: string): string {
         if (typeof name !== 'string' || !name.trim()) {
             throw new Error('Invalid project name');
@@ -49,10 +61,22 @@ export class WorkspaceService {
             throw new Error('Invalid project prompt');
         }
 
+        const session = SessionManager.getCurrentSession();
+        if (session?.current_project_id && this.projectExists(session.current_project_id)) {
+            session.current_goal = prompt;
+            session.last_action = `Reused project: ${session.current_project_id}`;
+            emitDebug('tool', {
+                name: 'workspace_create',
+                status: 'reused',
+                project_id: session.current_project_id
+            });
+            return session.current_project_id;
+        }
+
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
         const safeSlug = slug || `project-${Date.now()}`;
         const projectId = `${safeSlug}-${Date.now()}`;
-        const projectPath = path.join(this.basePath, 'projects', projectId);
+        const projectPath = this.getProjectPath(projectId);
 
         if (fs.existsSync(projectPath)) {
             throw new Error(`Projeto ${projectId} ja existe.`);
@@ -76,7 +100,6 @@ export class WorkspaceService {
         fs.writeFileSync(path.join(projectPath, 'project.json'), JSON.stringify(metadata, null, 2), 'utf8');
         fs.writeFileSync(path.join(projectPath, 'prompt.md'), `# ${name}\n\n**Trace ID:** ${metadata.trace_id}\n\n## Prompt\n${prompt}`, 'utf8');
 
-        const session = SessionManager.getCurrentSession();
         if (session) {
             session.current_project_id = projectId;
             session.current_goal = prompt;

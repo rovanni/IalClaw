@@ -232,12 +232,14 @@
     /* Right Column: Agent Panel */
     #right-col {
       width: 420px;
+      min-height: 0;
     }
 
     /* Thought Trace Panel */
     #thought-panel {
       height: 40%;
       border-bottom: 1px solid var(--border-color);
+      min-height: 0;
     }
 
     #thought-log {
@@ -286,12 +288,14 @@
     /* Chat Container */
     #chat-container {
       flex: 1;
+      min-height: 0;
     }
 
     #chat-messages {
       flex: 1;
       overflow-y: auto;
       min-height: 0;
+      max-height: 100%;
       /* 🔥 Flexbox Magic */
       padding: 16px;
       display: flex;
@@ -376,6 +380,7 @@
 
     /* Input Container */
     .input-area {
+      flex-shrink: 0;
       padding: 16px;
       background: var(--bg-surface);
       border-top: 1px solid var(--border-color);
