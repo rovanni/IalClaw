@@ -5,6 +5,8 @@ export interface SessionContext {
     current_goal?: string;
     current_project_id?: string;
     last_error?: string;
+    last_error_type?: string;
+    last_error_hash?: string;
     last_artifacts: string[];
     last_action?: string;
 }

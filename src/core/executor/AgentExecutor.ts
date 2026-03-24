@@ -4,8 +4,9 @@ import { ExecutionPlan } from '../planner/types';
 import { debugBus } from '../../shared/DebugBus';
 import { Session } from '../../shared/SessionManager';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
+import { classifyError } from '../../utils/errorClassifier';
 
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 5;
 
 export class AgentExecutor {
     private llm: LLMProvider;
@@ -46,10 +47,14 @@ export class AgentExecutor {
                 const failureMessage = error.message || 'Falha desconhecida na execucao do plano.';
                 lastError = failureMessage;
                 session.last_error = failureMessage;
+                session.last_error_type = classifyError(failureMessage);
+                session.last_error_hash = undefined;
 
-                debugBus.emit('executor:validation_failed', {
+                debugBus.emit('self_healing', {
                     error: failureMessage,
-                    stage: 'execution'
+                    error_type: session.last_error_type,
+                    stage: 'execution',
+                    attempt
                 });
 
                 if (attempt === MAX_RETRIES) {
@@ -77,35 +82,97 @@ export class AgentExecutor {
                 project_id: session.current_project_id
             });
 
-            if (validation.success) {
-                debugBus.emit('executor:success', {});
-                return { success: true };
+            if (!validation.success) {
+                const validationError = ('data' in validation && validation.data?.errors?.length)
+                    ? validation.data.errors.join('\n')
+                    : validation.error || 'Falha desconhecida na validacao.';
+                lastError = validationError;
+                session.last_error = validationError;
+                session.last_error_type = 'structure';
+                session.last_error_hash = undefined;
+
+                debugBus.emit('self_healing', {
+                    error: validationError,
+                    error_type: 'structure',
+                    stage: 'validation',
+                    attempt
+                });
+
+                if (attempt === MAX_RETRIES) {
+                    return {
+                        success: false,
+                        error: `Falha na validacao apos ${MAX_RETRIES} tentativas: ${lastError}`
+                    };
+                }
+
+                debugBus.emit('executor:replan', {
+                    attempt,
+                    reason: 'validation_error'
+                });
+                plan = await this.replan(plan, validationError, session);
+                attempt++;
+                continue;
             }
 
-            const validationError = ('data' in validation && validation.data?.errors?.length)
-                ? validation.data.errors.join('\n')
-                : validation.error || 'Falha desconhecida na validacao.';
-            lastError = validationError;
-            session.last_error = validationError;
-
-            debugBus.emit('executor:validation_failed', {
-                error: validationError,
-                stage: 'validation'
+            const runtimeResult = await executeToolCall('workspace_run_project', {
+                project_id: session.current_project_id
             });
 
-            if (attempt === MAX_RETRIES) {
-                return {
-                    success: false,
-                    error: `Falha na validacao apos ${MAX_RETRIES} tentativas: ${lastError}`
-                };
+            if (!runtimeResult.success) {
+                const runtimeData = 'data' in runtimeResult ? runtimeResult.data : undefined;
+                const runtimeError = runtimeResult.error
+                    || runtimeData?.stderr
+                    || runtimeData?.runtime_errors?.join('\n')
+                    || 'Unknown runtime error';
+                const runtimeHash = runtimeData?.error_hash;
+                const errorType = classifyError(runtimeError);
+
+                if (session.last_error_hash && runtimeHash && session.last_error_hash === runtimeHash) {
+                    debugBus.emit('self_healing_abort', {
+                        reason: 'repeated_error',
+                        error: runtimeError,
+                        error_hash: runtimeHash
+                    });
+
+                    return {
+                        success: false,
+                        error: `Self-healing aborted: repeated error (${runtimeError})`
+                    };
+                }
+
+                lastError = runtimeError;
+                session.last_error = runtimeError;
+                session.last_error_type = errorType;
+                session.last_error_hash = runtimeHash;
+
+                debugBus.emit('self_healing', {
+                    error: runtimeError,
+                    error_type: errorType,
+                    stage: 'runtime',
+                    attempt
+                });
+
+                if (attempt === MAX_RETRIES) {
+                    return {
+                        success: false,
+                        error: `Falha de runtime apos ${MAX_RETRIES} tentativas: ${runtimeError}`
+                    };
+                }
+
+                debugBus.emit('executor:replan', {
+                    attempt,
+                    reason: 'runtime_error'
+                });
+                plan = await this.replan(plan, runtimeError, session);
+                attempt++;
+                continue;
             }
 
-            debugBus.emit('executor:replan', {
-                attempt,
-                reason: 'validation_error'
+            debugBus.emit('execution_success', {
+                project_id: session.current_project_id
             });
-            plan = await this.replan(plan, validationError, session);
-            attempt++;
+            debugBus.emit('executor:success', {});
+            return { success: true };
         }
 
         return {

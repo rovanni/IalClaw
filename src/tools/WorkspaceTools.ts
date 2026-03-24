@@ -3,6 +3,7 @@ import { ToolDefinition } from '../core/tools/types';
 import { getContext } from '../shared/TraceContext';
 import { emitDebug } from '../shared/DebugBus';
 import { workspaceValidateProjectTool } from './workspaceValidateProject';
+import { workspaceRunProjectTool } from './workspaceRunProject';
 
 export const workspaceCreateProjectTool: ToolDefinition = {
     name: 'workspace_create_project',
@@ -77,3 +78,4 @@ export const workspaceSaveArtifactTool: ToolDefinition = {
 };
 
 export { workspaceValidateProjectTool };
+export { workspaceRunProjectTool };
