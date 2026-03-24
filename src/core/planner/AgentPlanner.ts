@@ -7,6 +7,7 @@ import { emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory, NodeResult } from '../../memory/CognitiveMemory';
 import { SessionManager } from '../../shared/SessionManager';
 import { ProviderFactory } from '../../engine/ProviderFactory';
+import { parseLlmJson } from '../../utils/parseLlmJson';
 
 export class AgentPlanner {
     constructor(private memory: CognitiveMemory) { }
@@ -36,7 +37,7 @@ export class AgentPlanner {
                 options: { temperature: 0.1 }
             });
 
-            const plan: ExecutionPlan = JSON.parse(response.message.content);
+            const plan = parseLlmJson<ExecutionPlan>(response.message.content);
             validatePlan(plan);
 
             emitDebug('thought', { type: 'thought', content: `[PLANNER] Plano validado: ${plan.goal} (${plan.steps.length} passos).` });
@@ -92,6 +93,7 @@ REGRAS DE OURO:
 3. Se for um novo projeto para gerar arquivos, o passo 1 DEVE ser "workspace_create_project". Se for continuacao, nao crie de novo.
 4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact", o sistema injeta em runtime.
 5. Forneca o codigo funcional completo no campo "content" ao salvar artefatos.
+6. CRITICAL: Return ONLY valid JSON. Do NOT use markdown. Do NOT wrap in code fences.
 
 FORMATO JSON ESPERADO:
 {

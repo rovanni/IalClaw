@@ -5,6 +5,7 @@ import { debugBus } from '../../shared/DebugBus';
 import { Session } from '../../shared/SessionManager';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
 import { classifyError } from '../../utils/errorClassifier';
+import { parseLlmJson } from '../../utils/parseLlmJson';
 
 const MAX_RETRIES = 5;
 
@@ -224,18 +225,6 @@ Novo ExecutionPlan JSON`
     }
 
     private parsePlan(rawPlan: string): ExecutionPlan {
-        const normalized = rawPlan.trim();
-
-        try {
-            return JSON.parse(normalized);
-        } catch {
-            const jsonBlock = normalized.match(/\{[\s\S]*\}/);
-
-            if (!jsonBlock) {
-                throw new Error('Resposta de replan nao contem JSON valido.');
-            }
-
-            return JSON.parse(jsonBlock[0]);
-        }
+        return parseLlmJson<ExecutionPlan>(rawPlan);
     }
 }
