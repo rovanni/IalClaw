@@ -645,7 +645,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text, sessionId })
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        }
 
         typingIndicator.style.display = 'none';
         if (data.answer) {
@@ -656,7 +660,7 @@
         }
       } catch (err) {
         typingIndicator.style.display = 'none';
-        appendMessage('bot', 'Erro de rede ao falar com IalClaw.');
+        appendMessage('bot', 'Erro ao falar com IalClaw: ' + (err.message || err));
       } finally {
         chatInput.disabled = false;
         sendBtn.disabled = false;

@@ -1,21 +1,23 @@
 import { ExecutionPlan } from './types';
 import { toolRegistry } from '../tools/ToolRegistry';
+import { SessionManager } from '../../shared/SessionManager';
 
 export function validatePlan(plan: ExecutionPlan): void {
     if (!plan || !plan.steps || !Array.isArray(plan.steps) || plan.steps.length === 0) {
-        throw new Error("Plano inválido ou vazio.");
+        throw new Error('Plano invalido ou vazio.');
     }
 
-    // Regra de Negócio: Se vai usar ferramentas do workspace, a primeira DEVE ser a criação do projeto.
-    const usesWorkspace = plan.steps.some(s => s.tool.startsWith('workspace_'));
-    if (usesWorkspace && plan.steps[0].tool !== "workspace_create_project") {
-        throw new Error("Validação Falhou: O plano deve obrigatoriamente iniciar com 'workspace_create_project'.");
+    const usesWorkspace = plan.steps.some(step => step.tool.startsWith('workspace_'));
+    const session = SessionManager.getCurrentSession();
+    const hasActiveProject = Boolean(session?.current_project_id);
+
+    if (usesWorkspace && !hasActiveProject && plan.steps[0].tool !== 'workspace_create_project') {
+        throw new Error("Validacao falhou: o plano deve iniciar com 'workspace_create_project' quando nao houver projeto ativo.");
     }
 
-    // Valida se as ferramentas existem no registro (Anti-Alucinação)
     for (const step of plan.steps) {
         if (!toolRegistry.get(step.tool)) {
-            throw new Error(`Validação Falhou: Tool alucinada detectada no plano -> ${step.tool}`);
+            throw new Error(`Validacao falhou: tool alucinada detectada no plano -> ${step.tool}`);
         }
     }
 }

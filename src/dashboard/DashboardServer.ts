@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import cors from 'cors';
 import { AgentController } from '../core/AgentController';
+import { debugBus } from '../shared/DebugBus';
 
 export class DashboardServer {
     private app: express.Express;
@@ -57,6 +58,56 @@ export class DashboardServer {
             } catch (err: any) {
                 res.status(500).json({ error: err.message });
             }
+        });
+
+        this.app.get('/api/trace/:traceId', (req, res) => {
+            try {
+                const events = this.db.prepare(`
+                    SELECT type, payload, created_at
+                    FROM trace_events
+                    WHERE trace_id = ?
+                    ORDER BY id ASC
+                `).all(req.params.traceId);
+
+                res.json(events);
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        this.app.get('/debug/stream', (req, res) => {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+
+            const forwardEvent = (eventName: string, payload: any) => {
+                res.write(`event: ${eventName}\n`);
+                res.write(`data: ${JSON.stringify(payload)}\n\n`);
+            };
+
+            const gatewayListener = (payload: any) => forwardEvent('gateway', payload);
+            const thoughtListener = (payload: any) => forwardEvent('thought', payload);
+            const toolListener = (payload: any) => forwardEvent('tool', payload);
+            const ragListener = (payload: any) => forwardEvent('rag', payload);
+
+            debugBus.on('gateway', gatewayListener);
+            debugBus.on('thought', thoughtListener);
+            debugBus.on('tool', toolListener);
+            debugBus.on('rag', ragListener);
+
+            const heartbeat = setInterval(() => {
+                res.write(': ping\n\n');
+            }, 15000);
+
+            req.on('close', () => {
+                clearInterval(heartbeat);
+                debugBus.off('gateway', gatewayListener);
+                debugBus.off('thought', thoughtListener);
+                debugBus.off('tool', toolListener);
+                debugBus.off('rag', ragListener);
+                res.end();
+            });
         });
     }
 

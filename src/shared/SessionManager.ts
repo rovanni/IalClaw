@@ -4,9 +4,12 @@ export interface SessionContext {
     conversation_id: string;
     current_goal?: string;
     current_project_id?: string;
+    last_error?: string;
     last_artifacts: string[];
     last_action?: string;
 }
+
+export type Session = SessionContext;
 
 const sessionStore = new Map<string, SessionContext>();
 export const sessionAsyncStorage = new AsyncLocalStorage<SessionContext>();

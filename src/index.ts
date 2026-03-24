@@ -9,6 +9,7 @@ import { SkillRegistry } from './engine/SkillRegistry';
 import { TelegramInputHandler } from './telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from './telegram/TelegramOutputHandler';
 import { AgentController } from './core/AgentController';
+import { startTraceRecorder } from './shared/TraceRecorder';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ if (!BOT_TOKEN || BOT_TOKEN === 'your_bot_token_here') {
 
 const dbManager = new DatabaseManager('db.sqlite');
 console.log('[Startup] Banco de dados inicializado com sucesso.');
+startTraceRecorder();
 
 // Iniciar Sonho/Consolidação
 import { MemoryDreamer } from './memory/MemoryDreamer';
@@ -31,7 +33,6 @@ setInterval(() => dreamer.dream(), 1000 * 60 * 60 * 24);
 // Iniciar Dashboard Web
 import { DashboardServer } from './dashboard/DashboardServer';
 const dashboard = new DashboardServer(dbManager.getDb());
-dashboard.start();
 
 const provider = ProviderFactory.getProvider();
 const memory = new CognitiveMemory(dbManager.getDb(), provider);
@@ -51,6 +52,7 @@ const controller = new AgentController(
 );
 
 dashboard.setController(controller);
+dashboard.start();
 
 const bot = new Bot(BOT_TOKEN);
 
