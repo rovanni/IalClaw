@@ -39,43 +39,7 @@ function buildRequiredStringSchema(fields: string[]): ToolSchema {
 }
 
 export const toolSchemas: Record<string, ToolSchema> = {
-    workspace_create_project: {
-        safeParse(input: any): ValidationResult {
-            const candidate = input && typeof input === 'object' ? input : {};
-            const errors: Array<{ path: string[]; message: string }> = [];
-            const nameField = typeof candidate.name === 'string' && candidate.name.trim()
-                ? 'name'
-                : typeof candidate.project_name === 'string' && candidate.project_name.trim()
-                    ? 'project_name'
-                    : null;
-
-            if (!nameField) {
-                errors.push({ path: ['name'], message: 'Expected non-empty string in "name" or "project_name"' });
-            }
-
-            const typeMessage = validateStringField(candidate, 'type');
-            if (typeMessage) {
-                errors.push({ path: ['type'], message: typeMessage });
-            }
-
-            const promptMessage = validateStringField(candidate, 'prompt');
-            if (promptMessage) {
-                errors.push({ path: ['prompt'], message: promptMessage });
-            }
-
-            if (errors.length > 0) {
-                return { success: false, errors };
-            }
-
-            return {
-                success: true,
-                data: {
-                    ...candidate,
-                    name: candidate.name || candidate.project_name
-                }
-            };
-        }
-    },
+    workspace_create_project: buildRequiredStringSchema(['name', 'type', 'prompt']),
     workspace_save_artifact: buildRequiredStringSchema(['project_id', 'filename', 'content']),
     workspace_validate_project: buildRequiredStringSchema(['project_id']),
     workspace_run_project: buildRequiredStringSchema(['project_id'])

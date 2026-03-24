@@ -76,6 +76,39 @@ ATENCAO A CONTINUIDADE:
 - O campo "project_id" pode ser omitido que o sistema injetara automaticamente o projeto correspondente a sessao.
 - Se houver ultimo erro, foque em corrigir o erro sem recriar o projeto.
 `;
+
+            if (session.last_error_type === 'tool_input' && session.last_error) {
+                try {
+                    const payload = JSON.parse(session.last_error);
+                    const issues = Array.isArray(payload.issues)
+                        ? payload.issues.map((issue: any) => `- ${issue.path || ''}: ${issue.message} (expected: ${issue.expected ?? 'unknown'}, received: ${issue.received ?? 'unknown'})`).join('\n')
+                        : '- sem issues estruturadas';
+
+                    sessionPrompt += `
+PREVIOUS ERROR (JSON):
+${session.last_error}
+
+If type == "tool_input":
+- Tool: ${payload.tool || 'unknown'}
+- Issues:
+${issues}
+
+INSTRUCTION:
+- Fix ONLY the invalid input fields reported in "issues".
+- Do NOT change other steps or recreate the project.
+- Keep all valid fields unchanged.
+- Ensure all required fields are present and correctly typed.
+- Return ONLY the corrected "input" object for the SAME tool.
+- Do NOT change tool name.
+- Do NOT modify other steps.
+`;
+                } catch {
+                    sessionPrompt += `
+PREVIOUS ERROR (JSON):
+${session.last_error}
+`;
+                }
+            }
         }
 
         return `Voce e o IalClaw Planner, um arquiteto cognitivo deterministico com memoria.

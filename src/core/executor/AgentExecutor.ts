@@ -7,9 +7,12 @@ import { Session } from '../../shared/SessionManager';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
 import { classifyError } from '../../utils/errorClassifier';
 import { normalizeError } from '../../utils/errorFingerprint';
+import { detectOscillation, updateHistory } from '../../utils/inputOscillation';
+import { isMinimalChange } from '../../utils/minimalChange';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 
 const MAX_RETRIES = 5;
+const MAX_TOOL_INPUT_RETRIES = 2;
 
 export class AgentExecutor {
     private llm: LLMProvider;
@@ -42,6 +45,7 @@ export class AgentExecutor {
     async runWithHealing(plan: ExecutionPlan, session: Session) {
         let attempt = 0;
         let lastError: string | null = null;
+        session._tool_input_attempts = 0;
 
         while (attempt <= MAX_RETRIES) {
             debugBus.emit('executor:attempt', { attempt });
@@ -50,10 +54,114 @@ export class AgentExecutor {
                 await this.run(plan);
             } catch (error: any) {
                 const failureMessage = error.message || 'Falha desconhecida na execucao do plano.';
+
+                if (failureMessage.startsWith('tool_input_error::')) {
+                    let payload: any;
+
+                    try {
+                        payload = JSON.parse(failureMessage.replace('tool_input_error::', ''));
+                    } catch {
+                        payload = { type: 'tool_input', issues: [{ path: '', message: failureMessage, expected: null, received: null }] };
+                    }
+
+                    const toolInputAttempts: number = (session._tool_input_attempts || 0) + 1;
+                    session._tool_input_attempts = toolInputAttempts;
+
+                    if (toolInputAttempts >= MAX_TOOL_INPUT_RETRIES) {
+                        debugBus.emit('self_healing_abort', {
+                            reason: 'tool_input_not_converging',
+                            tool: payload.tool,
+                            issues: payload.issues
+                        });
+
+                        return {
+                            success: false,
+                            error: 'Self-healing aborted: tool_input not converging'
+                        };
+                    }
+
+                    session.last_error = JSON.stringify(payload);
+                    session.last_error_type = 'tool_input';
+                    session.last_error_hash = undefined;
+                    session.last_error_fingerprint = undefined;
+
+                    debugBus.emit('self_healing', {
+                        stage: 'tool_input',
+                        tool: payload.tool,
+                        issues: payload.issues,
+                        attempt
+                    });
+
+                    debugBus.emit('executor:replan', {
+                        attempt,
+                        reason: 'tool_input_error'
+                    });
+
+                    const currentStep = plan.steps[0];
+                    plan.steps = [currentStep];
+
+                    const newPlan = await this.replan(plan, session.last_error, session);
+                    const newStep = newPlan.steps[0];
+
+                    if (JSON.stringify(currentStep.input) === JSON.stringify(newStep?.input)) {
+                        debugBus.emit('self_healing_abort', {
+                            reason: 'noop_correction',
+                            tool: payload.tool,
+                            input: newStep?.input
+                        });
+
+                        return {
+                            success: false,
+                            error: 'No-op correction detected'
+                        };
+                    }
+
+                    if (!isMinimalChange(currentStep, newStep, payload.issues || [])) {
+                        debugBus.emit('self_healing_abort', {
+                            reason: 'non_minimal_change',
+                            tool: payload.tool,
+                            issues: payload.issues,
+                            prev_input: currentStep.input,
+                            new_input: newStep?.input
+                        });
+
+                        return {
+                            success: false,
+                            error: 'Non-minimal correction detected'
+                        };
+                    }
+
+                    session._input_history = session._input_history || [];
+
+                    if (detectOscillation(session._input_history, newStep.input)) {
+                        debugBus.emit('self_healing_abort', {
+                            reason: 'input_oscillation',
+                            tool: payload.tool,
+                            input: newStep.input
+                        });
+
+                        return {
+                            success: false,
+                            error: 'Input oscillation detected'
+                        };
+                    }
+
+                    session._input_history = updateHistory(session._input_history, newStep.input);
+                    plan = {
+                        ...newPlan,
+                        steps: [newStep]
+                    };
+                    attempt++;
+                    continue;
+                }
+
                 lastError = failureMessage;
                 session.last_error = failureMessage;
                 session.last_error_type = classifyError(failureMessage);
                 session.last_error_hash = undefined;
+                session.last_error_fingerprint = undefined;
+                session._tool_input_attempts = undefined;
+                session._input_history = [];
 
                 debugBus.emit('self_healing', {
                     error: failureMessage,
@@ -95,6 +203,9 @@ export class AgentExecutor {
                 session.last_error = validationError;
                 session.last_error_type = 'structure';
                 session.last_error_hash = undefined;
+                session.last_error_fingerprint = undefined;
+                session._tool_input_attempts = undefined;
+                session._input_history = [];
 
                 debugBus.emit('self_healing', {
                     error: validationError,
@@ -152,6 +263,8 @@ export class AgentExecutor {
                 session.last_error_type = errorType;
                 session.last_error_hash = runtimeHash;
                 session.last_error_fingerprint = normalizedError;
+                session._tool_input_attempts = undefined;
+                session._input_history = [];
 
                 debugBus.emit('self_healing', {
                     error: runtimeError,
@@ -195,6 +308,8 @@ export class AgentExecutor {
             session.last_error_type = undefined;
             session.last_error_hash = undefined;
             session.last_error_fingerprint = undefined;
+            session._tool_input_attempts = 0;
+            session._input_history = [];
 
             debugBus.emit('executor:success', {});
             return { success: true };
@@ -228,6 +343,8 @@ Projeto atual: ${session.current_project_id || 'nenhum'}
 Objetivo: ${session.current_goal || 'nao informado'}
 Arquivos gerados: ${session.last_artifacts.length > 0 ? session.last_artifacts.join(', ') : 'nenhum'}
 
+${this.buildStructuredErrorPrompt(session.last_error, session.last_error_type)}
+
 PLANO ANTERIOR:
 ${JSON.stringify(previousPlan, null, 2)}
 
@@ -250,5 +367,38 @@ Novo ExecutionPlan JSON`
 
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
+    }
+
+    private buildStructuredErrorPrompt(lastError?: string, lastErrorType?: string): string {
+        if (lastErrorType !== 'tool_input' || !lastError) {
+            return '';
+        }
+
+        try {
+            const payload = JSON.parse(lastError);
+            const issues = Array.isArray(payload.issues)
+                ? payload.issues.map((issue: any) => `- ${issue.path || ''}: ${issue.message} (expected: ${issue.expected ?? 'unknown'}, received: ${issue.received ?? 'unknown'})`).join('\n')
+                : '- sem issues estruturadas';
+
+            return `PREVIOUS ERROR (JSON):
+${lastError}
+
+If type == "tool_input":
+- Tool: ${payload.tool || 'unknown'}
+- Issues:
+${issues}
+
+INSTRUCTION:
+- Fix ONLY the invalid input fields reported in "issues".
+- Do NOT change other steps or recreate the project.
+- Keep all valid fields unchanged.
+- Ensure all required fields are present and correctly typed.
+- Return ONLY the corrected "input" object for the SAME tool.
+- Do NOT change tool name.
+- Do NOT modify other steps.`;
+        } catch {
+            return `PREVIOUS ERROR (JSON):
+${lastError}`;
+        }
     }
 }

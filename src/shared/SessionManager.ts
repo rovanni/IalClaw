@@ -8,6 +8,8 @@ export interface SessionContext {
     last_error_type?: string;
     last_error_hash?: string;
     last_error_fingerprint?: string;
+    _tool_input_attempts?: number;
+    _input_history?: string[];
     last_artifacts: string[];
     last_action?: string;
 }

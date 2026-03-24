@@ -4,6 +4,10 @@ import { emitDebug } from '../../shared/DebugBus';
 import { SessionManager } from '../../shared/SessionManager';
 import { validateToolInput } from '../../utils/validateToolInput';
 
+function extractIssuesFromMessage(msg: string) {
+    return [{ path: '', message: msg, expected: null, received: null }];
+}
+
 export async function executeToolCall(toolName: string, input: any) {
     const tool = toolRegistry.get(toolName);
     const ctx = getContext();
@@ -25,13 +29,19 @@ export async function executeToolCall(toolName: string, input: any) {
     try {
         validatedInput = validateToolInput(toolName, safeInput);
     } catch (err: any) {
+        const issues = err?.issues || extractIssuesFromMessage(err.message);
+        const errorPayload = {
+            type: 'tool_input',
+            tool: toolName,
+            issues,
+            received_input: safeInput || null
+        };
+
         emitDebug('tool_input_error', {
             trace_id: ctx.trace_id,
-            tool: toolName,
-            input: safeInput,
-            error: err.message
+            ...errorPayload
         });
-        throw new Error(`tool_input_error: ${err.message}`);
+        throw new Error(`tool_input_error::${JSON.stringify(errorPayload)}`);
     }
 
     const start = Date.now();
