@@ -54,7 +54,12 @@ dashboard.setController(controller);
 
 const bot = new Bot(BOT_TOKEN);
 
+bot.command('start', async (ctx) => {
+    await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nPara que eu crie o seu _Núcleo Principal de Identidade_ e lembre de você em nossas sessões, **qual o seu nome e como gostaria de ser chamado?**", { parse_mode: 'Markdown' });
+});
+
 bot.on('message', async (ctx) => {
+    if (ctx.message?.text?.startsWith('/')) return; // ignora comandos aqui
     await controller.handleMessage(ctx);
 });
 
