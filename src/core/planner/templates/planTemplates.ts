@@ -17,12 +17,18 @@ export interface PlanTemplate {
     build: (context: PlanTemplateContext) => Promise<ExecutionPlan>;
 }
 
-function buildStep(id: number, tool: string, input: Record<string, any>): PlanStep {
+function buildStep(
+    id: number,
+    tool: string,
+    input: Record<string, any>,
+    capabilities?: PlanStep['capabilities']
+): PlanStep {
     return {
         id,
         type: 'tool',
         tool,
         input,
+        capabilities,
         is_repair: false
     };
 }
@@ -153,10 +159,17 @@ export const createWebProjectTemplate: PlanTemplate = {
         const nextId = steps.length + 1;
         const html = await generateHtmlFromGoal(goal, provider, workspaceContext);
 
-        steps.push(buildStep(nextId, 'workspace_save_artifact', {
-            filename: targetFile,
-            content: html
-        }));
+        steps.push(buildStep(
+            nextId,
+            'workspace_save_artifact',
+            {
+                filename: targetFile,
+                content: html
+            },
+            {
+                requiresDOM: false
+            }
+        ));
 
         return {
             goal,

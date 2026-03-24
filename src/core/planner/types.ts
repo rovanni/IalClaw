@@ -3,6 +3,9 @@ export interface PlanStep {
     type: 'tool';
     tool: string;
     input: Record<string, any>;
+    capabilities?: {
+        requiresDOM?: boolean;
+    };
     is_repair?: boolean;
 }
 

@@ -68,8 +68,26 @@ function buildWorkspaceApplyDiffSchema(): ToolSchema {
                     }
 
                     if (operation.type !== 'append') {
-                        if (typeof operation.anchor !== 'string' || operation.anchor.length < 1) {
-                            errors.push({ path: ['operations', String(index), 'anchor'], message: 'Expected non-empty anchor string' });
+                        const hasAnchor = typeof operation.anchor === 'string' && operation.anchor.trim().length > 0;
+                        const hasAnchors = Array.isArray(operation.anchors) && operation.anchors.some((anchor: any) => typeof anchor === 'string' && anchor.trim().length > 0);
+
+                        if (!hasAnchor && !hasAnchors) {
+                            errors.push({ path: ['operations', String(index), 'anchor'], message: 'Expected non-empty anchor string or anchors array' });
+                        }
+
+                        if (operation.anchors !== undefined) {
+                            if (!Array.isArray(operation.anchors) || operation.anchors.length === 0) {
+                                errors.push({ path: ['operations', String(index), 'anchors'], message: 'Expected non-empty anchors array' });
+                            } else {
+                                operation.anchors.forEach((anchor: any, anchorIndex: number) => {
+                                    if (typeof anchor !== 'string' || anchor.trim().length < 1) {
+                                        errors.push({
+                                            path: ['operations', String(index), 'anchors', String(anchorIndex)],
+                                            message: 'Expected non-empty anchor string'
+                                        });
+                                    }
+                                });
+                            }
                         }
                     }
 

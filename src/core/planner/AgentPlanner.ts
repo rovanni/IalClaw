@@ -199,12 +199,21 @@ FORMATO JSON ESPERADO:
 {
   "goal": "Resumo",
   "steps": [
-    { "id": 1, "type": "tool", "tool": "name", "input": { } }
+    {
+      "id": 1,
+      "type": "tool",
+      "tool": "name",
+      "input": { },
+      "capabilities": { "requiresDOM": false }
+    }
   ]
 }
 
 RESTRICAO DE SCHEMA:
-- Cada step.tool DEVE ser um destes valores: [${strictToolEnum}]`;
+- Cada step.tool DEVE ser um destes valores: [${strictToolEnum}]
+- Use "capabilities.requiresDOM": true SOMENTE quando a tarefa depender explicitamente de execucao real em browser/DOM.
+- Para gerar ou editar HTML/CSS/JS, criar frontend, criar jogo da cobrinha ou adicionar audio via Web Audio API, use "requiresDOM": false ou omita o campo.
+- Para validar animacao real, medir console no navegador ou testar interacao DOM, use "requiresDOM": true.`;
     }
 
     private safeParseErrorPayload(raw?: string): any | null {

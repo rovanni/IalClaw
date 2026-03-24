@@ -338,8 +338,9 @@ export class AgentExecutor {
             }
 
             const workspaceContextForRuntime = buildWorkspaceContext(session.current_project_id);
-            const requiresBrowser = workspaceContextForRuntime.some(file => file.relative_path.toLowerCase() === 'index.html');
-            if (requiresBrowser) {
+            const runtimeMode = this.resolveRuntimeMode(plan, workspaceContextForRuntime);
+
+            if (runtimeMode.requiresBrowserValidation) {
                 const browserCapability = await this.ensureBrowserCapability(session, plan.goal);
                 if (!browserCapability.available) {
                     const fallback = browserCapability.fallback;
@@ -357,6 +358,38 @@ export class AgentExecutor {
                         fallback
                     };
                 }
+            }
+
+            if (runtimeMode.skipRuntimeExecution) {
+                debugBus.emit('thought', {
+                    type: 'thought',
+                    content: '[EXECUTOR] Projeto HTML detectado sem requiresDOM. Pulando validacao em browser.'
+                });
+                debugBus.emit('execution_success', {
+                    project_id: session.current_project_id,
+                    runtime_skipped: true,
+                    reason: 'html_without_requiresDOM'
+                });
+
+                if (session.last_error && session.last_error.length < 5000) {
+                    await this.memory.saveExecutionFix({
+                        content: `Erro anterior:\n${session.last_error}\n\nTipo:\n${session.last_error_type || 'unknown'}\n\nFingerprint:\n${session.last_error_fingerprint || 'unknown'}\n\nCorrecao aplicada:\n${JSON.stringify(plan)}`,
+                        project_id: session.current_project_id,
+                        error_type: session.last_error_type,
+                        fingerprint: session.last_error_fingerprint,
+                        timestamp: Date.now()
+                    });
+                }
+
+                session.last_error = undefined;
+                session.last_error_type = undefined;
+                session.last_error_hash = undefined;
+                session.last_error_fingerprint = undefined;
+                session._tool_input_attempts = 0;
+                session._input_history = [];
+
+                debugBus.emit('executor:success', { runtime_skipped: true });
+                return { success: true };
             }
 
             const runtimeResult = await executeToolCall('workspace_run_project', {
@@ -806,6 +839,20 @@ Se quiser autorizar, responda:
         return { available: true };
     }
 
+    private resolveRuntimeMode(plan: ExecutionPlan, workspaceContext: ReturnType<typeof buildWorkspaceContext>): {
+        requiresBrowserValidation: boolean;
+        skipRuntimeExecution: boolean;
+    } {
+        const hasHtmlEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.html');
+        const hasNodeEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.js');
+        const requiresDOM = plan.steps.some(step => step.capabilities?.requiresDOM === true);
+
+        return {
+            requiresBrowserValidation: hasHtmlEntry && requiresDOM,
+            skipRuntimeExecution: hasHtmlEntry && !hasNodeEntry && !requiresDOM
+        };
+    }
+
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
     }
@@ -821,7 +868,10 @@ Se quiser autorizar, responda:
                 id: typeof parsed.id === 'number' ? parsed.id : currentStep.id,
                 type: parsed.type === 'tool' ? 'tool' : currentStep.type,
                 tool: parsed.tool,
-                input: parsed.input
+                input: parsed.input,
+                capabilities: parsed.capabilities && typeof parsed.capabilities === 'object'
+                    ? parsed.capabilities
+                    : currentStep.capabilities
             };
         }
 
@@ -830,7 +880,10 @@ Se quiser autorizar, responda:
                 id: currentStep.id,
                 type: currentStep.type,
                 tool: currentStep.tool,
-                input: parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed
+                input: parsed.input && typeof parsed.input === 'object' ? parsed.input : parsed,
+                capabilities: parsed.capabilities && typeof parsed.capabilities === 'object'
+                    ? parsed.capabilities
+                    : currentStep.capabilities
             };
         }
 
@@ -862,12 +915,13 @@ Retorne apenas JSON valido.
 Nao reescreva o arquivo inteiro.
 Use apenas operacoes com ancoras textuais existentes.
 Prefira replace a append quando possivel.
+Quando houver ambiguidade, inclua "anchors" com alternativas da mais especifica para a mais generica.
 
 Formato:
 {
   "operations": [
-    { "type": "replace", "anchor": "ancora existente", "content": "novo conteudo" },
-    { "type": "insert", "anchor": "ancora existente", "position": "before" | "after", "content": "novo conteudo" },
+    { "type": "replace", "anchor": "ancora existente", "anchors": ["ancora mais especifica", "fallback"], "content": "novo conteudo" },
+    { "type": "insert", "anchor": "ancora existente", "anchors": ["ancora mais especifica", "fallback"], "position": "before" | "after", "content": "novo conteudo" },
     { "type": "append", "content": "novo conteudo" }
   ]
 }`
@@ -885,6 +939,7 @@ ${desiredContent.slice(0, 12000)}
 REGRAS:
 - Use mudancas minimas.
 - Use ancoras que ja existam no CONTEUDO ATUAL.
+- Se existir mais de uma ancora viavel, forneca "anchors" em ordem de preferencia.
 - Nao reescreva o arquivo todo.
 - Se nao for possivel fazer patch seguro, retorne {"operations":[]}.
 - Retorne apenas JSON.`

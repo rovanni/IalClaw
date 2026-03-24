@@ -94,7 +94,7 @@ export const workspaceSaveArtifactTool: ToolDefinition = {
 
 export const workspaceApplyDiffTool: ToolDefinition = {
     name: 'workspace_apply_diff',
-    description: 'Aplica um patch textual minimo e seguro em um arquivo existente usando ancoras textuais.',
+    description: 'Aplica um patch textual minimo e seguro em um arquivo existente usando ancora textual unica ou multiplas ancoras ranqueadas.',
     input_schema: {
         type: 'object',
         properties: {
@@ -103,7 +103,7 @@ export const workspaceApplyDiffTool: ToolDefinition = {
             filePath: { type: 'string', description: 'Alias aceito para filename' },
             operations: {
                 type: 'array',
-                description: 'Lista de operacoes de diff por ancora textual'
+                description: 'Lista de operacoes de diff por ancora textual, com suporte a anchors alternativas'
             },
             validation: {
                 type: 'object',

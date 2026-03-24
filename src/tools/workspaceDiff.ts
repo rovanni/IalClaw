@@ -1,15 +1,20 @@
+type AnchorStrategy = 'exact' | 'trim' | 'normalized' | 'fuzzy';
+
+type AnchoredDiffBase = {
+    anchor?: string;
+    anchors?: string[];
+};
+
 export type DiffOperation =
-    | {
+    | ({
         type: 'replace';
-        anchor: string;
         content: string;
-    }
-    | {
+    } & AnchoredDiffBase)
+    | ({
         type: 'insert';
-        anchor: string;
         position: 'before' | 'after';
         content: string;
-    }
+    } & AnchoredDiffBase)
     | {
         type: 'append';
         content: string;
@@ -30,8 +35,17 @@ export interface WorkspaceApplyDiffInput {
 export interface AnchorResolution {
     found: boolean;
     resolved?: string;
-    strategy?: 'exact' | 'trim' | 'normalized' | 'fuzzy';
+    strategy?: AnchorStrategy;
     score?: number;
+}
+
+export interface AnchorCandidateRanking {
+    candidate: string;
+    resolved?: string;
+    strategy?: AnchorStrategy;
+    score?: number;
+    rankScore?: number;
+    found: boolean;
 }
 
 function normalize(input: string): string {
@@ -102,6 +116,87 @@ export function resolveAnchor(anchor: string, original: string): AnchorResolutio
     return { found: false };
 }
 
+function getAnchorsFromOperation(operation: DiffOperation): string[] {
+    if (operation.type === 'append') {
+        return [];
+    }
+
+    const values = [operation.anchor, ...(operation.anchors || [])]
+        .filter((value): value is string => typeof value === 'string')
+        .map(value => value.trim())
+        .filter(value => value.length > 0);
+
+    return Array.from(new Set(values));
+}
+
+function strategyWeight(strategy?: AnchorStrategy): number {
+    switch (strategy) {
+        case 'exact':
+            return 1;
+        case 'trim':
+            return 0.97;
+        case 'normalized':
+            return 0.93;
+        case 'fuzzy':
+            return 0.85;
+        default:
+            return 0;
+    }
+}
+
+function rankResolvedAnchor(candidate: string, resolution: AnchorResolution, original: string): number {
+    const resolved = resolution.resolved || candidate;
+    const occurrences = resolved ? original.split(resolved).length - 1 : 0;
+    const uniquenessBoost = occurrences === 1 ? 0.03 : 0;
+    const specificityBoost = Math.min(0.05, resolved.length / 500);
+    const fuzzyScore = resolution.strategy === 'fuzzy'
+        ? Math.min(0.05, resolution.score || 0)
+        : 0;
+
+    return strategyWeight(resolution.strategy) + uniquenessBoost + specificityBoost + fuzzyScore;
+}
+
+export function rankAnchors(anchors: string[], original: string): {
+    found: boolean;
+    resolved?: string;
+    strategy?: AnchorStrategy;
+    score?: number;
+    originalAnchor?: string;
+    rankings: AnchorCandidateRanking[];
+} {
+    const rankings = anchors.map(candidate => {
+        const resolution = resolveAnchor(candidate, original);
+        const rankScore = resolution.found ? rankResolvedAnchor(candidate, resolution, original) : 0;
+
+        return {
+            candidate,
+            resolved: resolution.resolved,
+            strategy: resolution.strategy,
+            score: resolution.score,
+            rankScore,
+            found: resolution.found
+        };
+    });
+
+    const rankedMatches = rankings
+        .filter(ranking => ranking.found)
+        .sort((left, right) => (right.rankScore || 0) - (left.rankScore || 0));
+
+    const best = rankedMatches[0];
+    if (!best) {
+        return { found: false, rankings };
+    }
+
+    return {
+        found: true,
+        resolved: best.resolved,
+        strategy: best.strategy,
+        score: best.score,
+        originalAnchor: best.candidate,
+        rankings
+    };
+}
+
 export function validateDiffOperations(operations: DiffOperation[]): boolean {
     if (!Array.isArray(operations) || operations.length === 0) {
         return false;
@@ -117,15 +212,13 @@ export function validateDiffOperations(operations: DiffOperation[]): boolean {
         }
 
         if (operation.type === 'replace') {
-            return typeof operation.anchor === 'string'
-                && operation.anchor.length > 0
+            return getAnchorsFromOperation(operation).length > 0
                 && typeof operation.content === 'string'
                 && operation.content.length >= 2;
         }
 
         if (operation.type === 'insert') {
-            return typeof operation.anchor === 'string'
-                && operation.anchor.length > 0
+            return getAnchorsFromOperation(operation).length > 0
                 && (operation.position === 'before' || operation.position === 'after')
                 && typeof operation.content === 'string'
                 && operation.content.length >= 2;
@@ -141,11 +234,13 @@ export function validateDiff(params: {
     validation: DiffValidationOptions;
     onAnchorResolved?: (data: {
         originalAnchor: string;
+        attemptedAnchors: string[];
         resolvedAnchor: string;
         strategy: string;
         score?: number;
+        rankings?: AnchorCandidateRanking[];
     }) => void;
-    onAnchorResolutionFailed?: (data: { anchor: string }) => void;
+    onAnchorResolutionFailed?: (data: { anchor: string; attemptedAnchors: string[] }) => void;
 }) {
     const { original, operations, validation, onAnchorResolved, onAnchorResolutionFailed } = params;
 
@@ -163,26 +258,34 @@ export function validateDiff(params: {
         }
 
         anchoredOperations += 1;
+        const attemptedAnchors = getAnchorsFromOperation(operation);
+        const primaryAnchor = attemptedAnchors[0] || '';
 
-        const resolution = resolveAnchor(operation.anchor, original);
+        const resolution = rankAnchors(attemptedAnchors, original);
 
         if (validation.requireAnchorMatch && !resolution.found) {
-            onAnchorResolutionFailed?.({ anchor: operation.anchor });
-            throw new Error(`ANCHOR_NOT_FOUND:${operation.anchor}`);
+            onAnchorResolutionFailed?.({
+                anchor: primaryAnchor,
+                attemptedAnchors
+            });
+            throw new Error(`ANCHOR_NOT_FOUND:${primaryAnchor}`);
         }
 
-        const resolvedAnchor = resolution.resolved || operation.anchor;
+        const resolvedAnchor = resolution.resolved || primaryAnchor;
         if (resolution.found) {
             onAnchorResolved?.({
-                originalAnchor: operation.anchor,
+                originalAnchor: resolution.originalAnchor || primaryAnchor,
+                attemptedAnchors,
                 resolvedAnchor,
                 strategy: resolution.strategy || 'exact',
-                score: resolution.score
+                score: resolution.score,
+                rankings: resolution.rankings
             });
         }
 
         resolvedOperations.push({
             ...operation,
+            anchors: attemptedAnchors,
             anchor: resolvedAnchor
         } as DiffOperation);
     }
@@ -199,10 +302,19 @@ export function applyDiff(original: string, operations: DiffOperation[]): string
 
     for (const operation of operations) {
         switch (operation.type) {
-            case 'replace':
+            case 'replace': {
+                if (!operation.anchor) {
+                    throw new Error('DIFF_OPERATION_MISSING_ANCHOR');
+                }
+
                 updated = updated.replace(operation.anchor, operation.content);
                 break;
-            case 'insert':
+            }
+            case 'insert': {
+                if (!operation.anchor) {
+                    throw new Error('DIFF_OPERATION_MISSING_ANCHOR');
+                }
+
                 updated = updated.replace(
                     operation.anchor,
                     operation.position === 'before'
@@ -210,6 +322,7 @@ export function applyDiff(original: string, operations: DiffOperation[]): string
                         : `${operation.anchor}${operation.content}`
                 );
                 break;
+            }
             case 'append':
                 updated = `${updated}\n${operation.content}`;
                 break;
