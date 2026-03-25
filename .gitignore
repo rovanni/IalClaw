@@ -9,7 +9,7 @@ ialclaw.db
 
 # Diretórios Dinâmicos do Agente
 workspace/
-runtime/
+/runtime/
 data/
 backups/
 logs/
