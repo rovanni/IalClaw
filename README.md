@@ -90,6 +90,8 @@ To start in debug mode and follow the structured log in the same terminal:
 npm run dev:debug:tail
 ```
 
+This command prints the last log lines already present and then keeps following new entries in real time.
+
 5. **Inspect Structured Logs**:
 Linux / macOS
 ```bash
@@ -277,6 +279,8 @@ Para iniciar em modo debug e acompanhar o log estruturado no mesmo terminal:
 ```bash
 npm run dev:debug:tail
 ```
+
+Esse comando mostra as últimas linhas já existentes no log e depois continua acompanhando as novas entradas em tempo real.
 
 5. **Acompanhe os logs estruturados**:
 Linux / macOS

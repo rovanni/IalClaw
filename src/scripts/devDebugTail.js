@@ -10,6 +10,7 @@ const childCommand = process.platform === 'win32' ? 'cmd.exe' : npmCommand;
 const childArgs = process.platform === 'win32'
     ? ['/d', '/s', '/c', `${npmCommand} run dev:debug`]
     : ['run', 'dev:debug'];
+const INITIAL_TAIL_LINES = 20;
 
 fs.mkdirSync(logDir, { recursive: true });
 fs.closeSync(fs.openSync(logPath, 'a'));
@@ -25,6 +26,8 @@ try {
 }
 
 process.stdout.write(`[dev:debug:tail] acompanhando ${path.relative(cwd, logPath)}\n`);
+
+printInitialTail();
 
 const child = spawn(childCommand, childArgs, {
     cwd,
@@ -55,6 +58,24 @@ function readNewLogContent() {
         stream.on('data', (chunk) => process.stdout.write(chunk));
     } catch {
         // Arquivo pode ainda nao estar pronto entre eventos.
+    }
+}
+
+function printInitialTail() {
+    try {
+        const content = fs.readFileSync(logPath, 'utf8');
+        const lines = content.split(/\r?\n/).filter(Boolean);
+
+        if (lines.length === 0) {
+            process.stdout.write(`[dev:debug:tail] log atual vazio, aguardando novas entradas\n`);
+            return;
+        }
+
+        const tail = lines.slice(-INITIAL_TAIL_LINES);
+        process.stdout.write(`[dev:debug:tail] exibindo ultimas ${tail.length} linha(s) existentes\n`);
+        process.stdout.write(`${tail.join('\n')}\n`);
+    } catch {
+        process.stdout.write(`[dev:debug:tail] nao foi possivel ler o historico inicial do log\n`);
     }
 }
 
