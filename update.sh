@@ -24,7 +24,7 @@ if [ -n "$(git status --porcelain)" ]; then
 	echo "[ERRO] Resolva com commit ou stash antes de continuar. Exemplo:"
 	echo "        git status"
 	echo "        git stash push -u -m 'ialclaw-update'"
-	echo "        ./update.sh"
+	echo "        bash update.sh"
 	exit 1
 fi
 
@@ -51,3 +51,4 @@ echo "O seu IalClaw foi atualizado para a última versão oficial com sucesso."
 echo "Seu banco de dados e suas configurações estão intactos."
 echo ""
 echo "O IalClaw está pronto para uso. Pode iniciá-lo normalmente!"
+echo "Para próximas atualizações no Linux/macOS, prefira: bash update.sh"

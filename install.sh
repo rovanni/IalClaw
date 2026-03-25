@@ -91,6 +91,8 @@ fi
 
 cd ialclaw || { echo "[ERRO] Não foi possível acessar a pasta ialclaw."; exit 1; }
 
+chmod +x update.sh 2>/dev/null || true
+
 # -------------------------
 # INSTALL
 # -------------------------
@@ -143,4 +145,6 @@ echo " 3. Valide o Router Cérebro com:"
 echo "    npx ts-node src/scripts/test-routing.ts"
 echo " 4. Execute:"
 echo "    npm run dev"
+echo " 5. Para futuras atualizações no Linux/macOS, prefira:"
+echo "    bash update.sh"
 echo "=========================================="
