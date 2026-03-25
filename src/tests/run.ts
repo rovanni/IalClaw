@@ -13,7 +13,9 @@ import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/p
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { ExecutionPlan } from '../core/planner/types';
+import { AgentLoop } from '../engine/AgentLoop';
 import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
+import { SkillRegistry } from '../engine/SkillRegistry';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
 import { formatConsoleLogLine } from '../shared/AppLogger';
 import { SessionManager } from '../shared/SessionManager';
@@ -266,6 +268,20 @@ async function run() {
         }
     }, 'aggressive');
     assert.equal(decisionDirect, 'DIRECT_EXECUTION');
+
+    const loopProvider: LLMProvider = {
+        async generate(): Promise<ProviderResponse> {
+            return {
+                final_answer: 'Instalado com sucesso. added 45 packages in 3s'
+            };
+        },
+        async embed(): Promise<number[]> {
+            return [];
+        }
+    };
+    const loop = new AgentLoop(loopProvider, new SkillRegistry());
+    const loopResult = await loop.run([{ role: 'user', content: 'instale essa dependencia' }]);
+    assert.match(loopResult.answer, /Nota: nao executei esses comandos aqui/i);
 
     const directRuntime = new AgentRuntime({} as CognitiveMemory) as any;
     const originalSafeMode = agentConfig.isSafeModeEnabled();

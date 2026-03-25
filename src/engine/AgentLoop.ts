@@ -1,6 +1,20 @@
 import { LLMProvider, MessagePayload } from './ProviderFactory';
 import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
+import { emitDebug } from '../shared/DebugBus';
+
+const EXECUTION_CLAIM_PATTERNS: RegExp[] = [
+    /\binstalled\b/i,
+    /\binstalad[oa]\b/i,
+    /\badded\s+\d+\s+packages\b/i,
+    /\bcreated\s+(file|project|artifact)\b/i,
+    /\bcriad[oa]\s+com\s+sucesso\b/i,
+    /\bexecuted\s+successfully\b/i,
+    /\bexecu(tado|cao)\s+com\s+sucesso\b/i,
+    /\bbuild\s+(successful|completed|ok)\b/i,
+    /\bdeploy\s+(successful|completed|concluido|concluida)\b/i,
+    /\b(npm\s+install|yarn\s+add|pnpm\s+add|pip\s+install)\b/i
+];
 
 export class AgentLoop {
     private llm: LLMProvider;
@@ -120,16 +134,17 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
-                const finalMsg: MessagePayload = { role: 'assistant', content: response.final_answer };
+                const safeAnswer = this.applyExecutionClaimGuard(response.final_answer, toolCallsCount);
+                const finalMsg: MessagePayload = { role: 'assistant', content: safeAnswer };
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
                 this.logger.info('loop_completed', 'AgentLoop finalizado com resposta final.', {
                     duration_ms: Date.now() - startedAt,
                     iterations_used: i + 1,
                     tool_calls_count: toolCallsCount,
-                    answer_length: response.final_answer.length
+                    answer_length: safeAnswer.length
                 });
-                return { answer: response.final_answer, newMessages };
+                return { answer: safeAnswer, newMessages };
             }
         }
 
@@ -139,5 +154,31 @@ export class AgentLoop {
             tool_calls_count: toolCallsCount
         });
         throw new Error("Max iterations reached in AgentLoop.");
+    }
+
+    private applyExecutionClaimGuard(answer: string, toolCallsCount: number): string {
+        if (toolCallsCount > 0) {
+            return answer;
+        }
+
+        if (!this.hasExecutionClaim(answer)) {
+            return answer;
+        }
+
+        emitDebug('execution_claim_blocked', {
+            reason: 'no_tool_call',
+            response_preview: answer.slice(0, 200)
+        });
+
+        return this.injectRealityCheck(answer);
+    }
+
+    private hasExecutionClaim(text: string): boolean {
+        return EXECUTION_CLAIM_PATTERNS.some(pattern => pattern.test(text));
+    }
+
+    private injectRealityCheck(answer: string): string {
+        const suffix = '\n\nNota: nao executei esses comandos aqui. Se quiser, eu te passo os passos para rodar localmente.';
+        return `${answer.trimEnd()}${suffix}`;
     }
 }
