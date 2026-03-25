@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
 import { getExecutionModeSnapshot } from '../core/executor/AgentConfig';
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
@@ -9,8 +11,12 @@ import { computeConfidence, evaluateSessionConsistency } from '../core/planner/p
 import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/planner/templates/planTemplates';
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
 import { decideExecutionPath } from '../core/runtime/decisionGate';
+import { AgentRuntime } from '../core/AgentRuntime';
 import { ExecutionPlan } from '../core/planner/types';
 import { LLMProvider, MessagePayload, ProviderResponse } from '../engine/ProviderFactory';
+import { CognitiveMemory } from '../memory/CognitiveMemory';
+import { SessionManager } from '../shared/SessionManager';
+import { workspaceService } from '../services/WorkspaceService';
 import { parseLlmJsonWithRecovery } from '../utils/parseLlmJson';
 
 class FakeProvider implements LLMProvider {
@@ -302,6 +308,35 @@ async function run() {
     assert.equal(learningBuffer.length, 1);
     assert.equal(learningBuffer[0]?.decision, 'REPAIR_AND_EXECUTE');
     assert.equal(learningBuffer[0]?.inputHash.length, 40);
+
+    const runtime = new AgentRuntime({} as CognitiveMemory) as any;
+    const testProjectId = `slides-test-${Date.now()}`;
+    const projectRoot = workspaceService.getProjectRootPath(testProjectId);
+    fs.mkdirSync(path.join(projectRoot, 'output'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'project.json'), JSON.stringify({
+        name: 'slides-test',
+        type: 'slides',
+        agent: 'test',
+        prompt: 'crie slides',
+        trace_id: 'trace-test',
+        created_at: Date.now(),
+        status: 'completed'
+    }), 'utf8');
+
+    const successMessage = SessionManager.runWithSession('runtime-test', () => {
+        const session = SessionManager.getCurrentSession()!;
+        session.current_project_id = testProjectId;
+        session.last_artifacts = ['index.html'];
+
+        return runtime.buildExecutionSuccessMessage({
+            goal: 'crie slides para aula',
+            steps: [{ id: 1, type: 'tool', tool: 'workspace_save_artifact', input: {} }]
+        }, session);
+    });
+
+    assert.match(successMessage, /Slides gerados com sucesso\./);
+    assert.match(successMessage, new RegExp(testProjectId));
+    assert.match(successMessage, /index\.html/);
 
     console.log('All tests passed.');
 }

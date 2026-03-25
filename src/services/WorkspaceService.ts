@@ -151,6 +151,15 @@ export class WorkspaceService {
         fs.writeFileSync(file, JSON.stringify(data, null, 2));
     }
 
+    public readProjectMetadata(projectId: string): ProjectMetadata | null {
+        const file = path.join(this.getProjectPath(projectId), 'project.json');
+        if (!fs.existsSync(file)) {
+            return null;
+        }
+
+        return JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectMetadata;
+    }
+
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
         const projectPath = path.join(this.basePath, 'projects', projectId);
         if (!fs.existsSync(projectPath)) {

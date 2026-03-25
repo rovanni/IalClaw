@@ -7,7 +7,8 @@ import { SessionManager } from '../shared/SessionManager';
 import { agentConfig } from './executor/AgentConfig';
 import { resolveExecutionMode } from './executor/diffStrategy';
 import { decideExecutionPath, RuntimeDecision } from './runtime/decisionGate';
-import { PlannerOutput } from './planner/types';
+import { ExecutionPlan, PlannerOutput } from './planner/types';
+import { workspaceService } from '../services/WorkspaceService';
 
 export class AgentRuntime {
     private planner: AgentPlanner;
@@ -99,14 +100,49 @@ e eu tento fazer isso para voce.`;
                     return `Falha na execucao do plano: ${result.error}`;
                 }
 
-                return `Plano executado com sucesso.
-Meta: ${plan.goal}
-Passos executados: ${plan.steps.length}
-Os traces completos ficam no Thought Trace e no Interaction Panel deste dashboard.`;
+                return this.buildExecutionSuccessMessage(plan, session, result.answer);
             } catch (error: any) {
                 return `Falha na execucao do plano: ${error.message}`;
             }
         }, 'runtime_core');
+    }
+
+    private buildExecutionSuccessMessage(plan: ExecutionPlan, session: NonNullable<ReturnType<typeof SessionManager.getCurrentSession>>, answer?: string): string {
+        if (answer && answer.trim()) {
+            return answer.trim();
+        }
+
+        const projectId = session.current_project_id;
+        const artifacts = session.last_artifacts || [];
+
+        if (!projectId) {
+            return `Execucao concluida com sucesso.\nPassos executados: ${plan.steps.length}`;
+        }
+
+        const metadata = workspaceService.readProjectMetadata(projectId);
+        const projectType = metadata?.type;
+        const outputPath = workspaceService.getProjectOutputPath(projectId);
+        const artifactLines = artifacts.length > 0
+            ? artifacts.map(file => `- ${outputPath.replace(/\\/g, '/')}/${file}`)
+            : [`- ${outputPath.replace(/\\/g, '/')}`];
+
+        if (projectType === 'slides') {
+            return [
+                'Slides gerados com sucesso.',
+                `Projeto: ${projectId}`,
+                'Arquivos gerados:',
+                ...artifactLines,
+                'Abra o arquivo HTML no output para visualizar a apresentacao.'
+            ].join('\n');
+        }
+
+        return [
+            'Execucao concluida com sucesso.',
+            `Projeto: ${projectId}`,
+            'Arquivos gerados:',
+            ...artifactLines,
+            `Passos executados: ${plan.steps.length}`
+        ].join('\n');
     }
 
     private emitPlannerDecision(stage: 'initial' | 'replan', output: PlannerOutput, selectedMode: string, decision: RuntimeDecision) {
