@@ -22,14 +22,22 @@ export interface LLMProvider {
 }
 
 export class ProviderFactory {
+    private static providerInstance: LLMProvider | null = null;
+
     static getProvider(): LLMProvider {
+        if (this.providerInstance) {
+            return this.providerInstance;
+        }
+
         const providerName = process.env.LLM_PROVIDER || 'ollama';
 
         if (providerName === 'ollama') {
-            return new OllamaProvider();
+            this.providerInstance = new OllamaProvider();
+            return this.providerInstance;
         }
 
-        return new DummyProvider();
+        this.providerInstance = new DummyProvider();
+        return this.providerInstance;
     }
 }
 
@@ -186,7 +194,7 @@ class OllamaProvider implements LLMProvider {
             }
 
             this.embeddingsUnavailable = true;
-            this.warnEmbeddingsUnavailable('[OllamaProvider] Embeddings API not available in this Ollama client/runtime. Falling back without embeddings.');
+            this.warnEmbeddingsUnavailable(ollamaModel, Date.now() - startedAt, 'client_without_embeddings_api');
             return [];
         } catch (error: any) {
             const errorMessage = String(error?.message || '').toLowerCase();
@@ -198,12 +206,7 @@ class OllamaProvider implements LLMProvider {
                 || errorMessage.includes('unauthorized')
             ) {
                 this.embeddingsUnavailable = true;
-                this.warnEmbeddingsUnavailable('[OllamaProvider] Embeddings unavailable or unauthorized. Continuing without embeddings.');
-                this.logger.warn('embedding_unavailable', 'Embeddings indisponiveis; seguindo sem embeddings.', {
-                    model: ollamaModel,
-                    host: this.host,
-                    duration_ms: Date.now() - startedAt
-                });
+                this.warnEmbeddingsUnavailable(ollamaModel, Date.now() - startedAt, 'api_unavailable_or_unauthorized');
                 return [];
             }
 
@@ -266,14 +269,17 @@ class OllamaProvider implements LLMProvider {
         };
     }
 
-    private warnEmbeddingsUnavailable(message: string) {
+    private warnEmbeddingsUnavailable(model: string, durationMs: number, reason: string) {
         if (this.warnedEmbeddingsUnavailable) {
             return;
         }
 
         this.warnedEmbeddingsUnavailable = true;
-        this.logger.warn('embedding_feature_disabled', message, {
-            host: this.host
+        this.logger.warn('embedding_disabled', 'Embeddings indisponiveis; seguindo sem embeddings.', {
+            host: this.host,
+            model,
+            duration_ms: durationMs,
+            reason
         });
     }
 }

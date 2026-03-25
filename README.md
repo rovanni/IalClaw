@@ -106,8 +106,9 @@ Get-Content .\logs\ialclaw.log -Wait
 Main environment variables for observability:
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
+- `LOG_CONSOLE_FORMAT=pretty|json`
 
-The agent now writes JSON line logs with `trace_id`, component, event, duration, and normalized errors so failures like network/provider issues are easier to diagnose.
+The agent now writes JSON line logs to files with `trace_id`, component, event, duration, and normalized errors. For humans reading the terminal, the default console output is `pretty`; use `LOG_CONSOLE_FORMAT=json` if you need raw JSON on stdout/stderr.
 
 ## Troubleshooting
 

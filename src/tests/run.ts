@@ -13,9 +13,11 @@ import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/p
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { ExecutionPlan } from '../core/planner/types';
-import { LLMProvider, MessagePayload, ProviderResponse } from '../engine/ProviderFactory';
+import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
+import { formatConsoleLogLine } from '../shared/AppLogger';
 import { SessionManager } from '../shared/SessionManager';
+import { getTraceId, runWithTrace } from '../shared/TraceContext';
 import { workspaceService } from '../services/WorkspaceService';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { parseLlmJsonWithRecovery } from '../utils/parseLlmJson';
@@ -374,6 +376,35 @@ async function run() {
 
     assert.equal(replyCount > 0, true);
     assert.equal(sentDocument, true);
+
+    const traceBefore = runWithTrace(() => {
+        const outerTraceId = getTraceId();
+        const innerTraceId = runWithTrace(() => getTraceId(), 'runtime_core');
+        assert.equal(innerTraceId, outerTraceId);
+        return outerTraceId;
+    }, 'telegram_controller');
+    assert.equal(typeof traceBefore, 'string');
+
+    const providerInstanceA = ProviderFactory.getProvider();
+    const providerInstanceB = ProviderFactory.getProvider();
+    assert.equal(providerInstanceA, providerInstanceB);
+
+    const consoleLine = formatConsoleLogLine({
+        timestamp: '2026-03-25T21:36:51.718Z',
+        level: 'info',
+        component: 'AgentController',
+        event: 'message_flow_started',
+        message: 'Iniciando processamento de mensagem do Telegram.',
+        trace_id: '67e03695-958e-4538-8819-e9223b34fe5f',
+        pid: 3082,
+        conversation_id: '8071707790',
+        channel: 'telegram',
+        telegram_user_id: 8071707790,
+        update_id: 429398611
+    });
+    assert.match(consoleLine, /INFO AgentController:message_flow_started/);
+    assert.match(consoleLine, /trace=67e03695/);
+    assert.match(consoleLine, /channel=telegram/);
 
     console.log('All tests passed.');
 }

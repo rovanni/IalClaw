@@ -13,6 +13,11 @@ export const traceStorage = new AsyncLocalStorage<TraceStore>();
  * Envolve a execução principal. Tudo rodado aqui dentro compartilha o mesmo traceId.
  */
 export function runWithTrace<T>(callback: () => T, agent_id: string = 'system_core'): T {
+    const currentStore = traceStorage.getStore();
+    if (currentStore?.trace_id) {
+        return callback();
+    }
+
     const traceId = randomUUID();
     return traceStorage.run({ trace_id: traceId, agent_id }, callback);
 }

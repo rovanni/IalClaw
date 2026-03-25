@@ -6,6 +6,16 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type LogMeta = Record<string, unknown>;
 type SerializableLogValue = string | number | boolean | null | undefined | SerializableLogObject | SerializableLogValue[];
 type SerializableLogObject = { [key: string]: SerializableLogValue };
+type LogPayload = {
+    timestamp: string;
+    level: LogLevel;
+    component: string;
+    event: string;
+    message?: string;
+    trace_id?: string;
+    pid: number;
+    error?: SerializableLogValue;
+} & SerializableLogObject;
 
 const LEVEL_WEIGHT: Record<LogLevel, number> = {
     debug: 10,
@@ -15,11 +25,17 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
 };
 
 const configuredLevel = parseLevel(process.env.LOG_LEVEL);
+const consoleFormat = parseConsoleFormat(process.env.LOG_CONSOLE_FORMAT);
 const logDirectory = path.join(process.cwd(), process.env.LOG_DIR || 'logs');
 const applicationLogPath = path.join(logDirectory, 'ialclaw.log');
 const errorLogPath = path.join(logDirectory, 'ialclaw-error.log');
 
 let initialized = false;
+
+function parseConsoleFormat(value?: string): 'pretty' | 'json' {
+    const normalized = String(value || 'pretty').trim().toLowerCase();
+    return normalized === 'json' ? 'json' : 'pretty';
+}
 
 function parseLevel(value?: string): LogLevel {
     const normalized = String(value || 'info').trim().toLowerCase();
@@ -152,6 +168,101 @@ function appendLine(filePath: string, line: string) {
     });
 }
 
+function compactTraceId(traceId?: string): string | undefined {
+    if (!traceId) {
+        return undefined;
+    }
+
+    return traceId.slice(0, 8);
+}
+
+function formatValue(value: SerializableLogValue): string {
+    if (value === null) {
+        return 'null';
+    }
+
+    if (value === undefined) {
+        return 'undefined';
+    }
+
+    if (typeof value === 'string') {
+        return value.length > 140 ? `${value.slice(0, 137)}...` : value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+    }
+
+    return JSON.stringify(value);
+}
+
+function formatConsoleError(error?: SerializableLogValue): string | null {
+    if (!error || typeof error !== 'object' || Array.isArray(error)) {
+        return error ? formatValue(error) : null;
+    }
+
+    const normalized = error as SerializableLogObject;
+    const pieces: string[] = [];
+
+    if (typeof normalized.name === 'string') {
+        pieces.push(normalized.name);
+    }
+
+    if (typeof normalized.message === 'string') {
+        pieces.push(normalized.message);
+    }
+
+    if (typeof normalized.code === 'string') {
+        pieces.push(`code=${normalized.code}`);
+    }
+
+    const cause = normalized.cause;
+    if (cause && typeof cause === 'object' && !Array.isArray(cause)) {
+        const causeObj = cause as SerializableLogObject;
+        const causeName = typeof causeObj.name === 'string' ? causeObj.name : 'cause';
+        const causeMessage = typeof causeObj.message === 'string' ? causeObj.message : formatValue(cause);
+        pieces.push(`cause=${causeName}: ${causeMessage}`);
+    }
+
+    return pieces.length > 0 ? pieces.join(' | ') : JSON.stringify(normalized);
+}
+
+export function formatConsoleLogLine(payload: LogPayload): string {
+    const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
+    const header = `${payload.timestamp} ${payload.level.toUpperCase()} ${payload.component}:${payload.event}`;
+    const scopeBits = [traceLabel ? `trace=${traceLabel}` : null].filter(Boolean) as string[];
+
+    const interestingKeys = [
+        'conversation_id',
+        'channel',
+        'telegram_user_id',
+        'telegram_chat_id',
+        'update_id',
+        'project_id',
+        'model',
+        'host',
+        'duration_ms',
+        'messages_count',
+        'tools_count',
+        'response_length',
+        'diagnostic_code',
+        'reason'
+    ];
+
+    for (const key of interestingKeys) {
+        const value = payload[key];
+        if (value !== undefined) {
+            scopeBits.push(`${key}=${formatValue(value)}`);
+        }
+    }
+
+    const messagePart = payload.message ? ` - ${payload.message}` : '';
+    const metaPart = scopeBits.length > 0 ? ` (${scopeBits.join(' ')})` : '';
+    const errorPart = formatConsoleError(payload.error);
+
+    return `${header}${messagePart}${metaPart}${errorPart ? `\n  error: ${errorPart}` : ''}`;
+}
+
 function writeLog(level: LogLevel, component: string, event: string, message?: string, meta?: LogMeta, error?: unknown) {
     if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[configuredLevel]) {
         return;
@@ -160,7 +271,7 @@ function writeLog(level: LogLevel, component: string, event: string, message?: s
     ensureLogDirectory();
 
     const traceId = getTraceId();
-    const payload = {
+    const payload: LogPayload = {
         timestamp: new Date().toISOString(),
         level,
         component,
@@ -173,13 +284,14 @@ function writeLog(level: LogLevel, component: string, event: string, message?: s
     };
 
     const line = JSON.stringify(payload);
+    const consoleLine = consoleFormat === 'json' ? line : formatConsoleLogLine(payload);
     if (level === 'error') {
-        console.error(line);
+        console.error(consoleLine);
         appendLine(errorLogPath, line);
     } else if (level === 'warn') {
-        console.warn(line);
+        console.warn(consoleLine);
     } else {
-        console.log(line);
+        console.log(consoleLine);
     }
 
     appendLine(applicationLogPath, line);
