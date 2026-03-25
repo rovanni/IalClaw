@@ -1,5 +1,5 @@
 import ollama from 'ollama';
-import { ExecutionPlan } from './types';
+import { ExecutionPlan, PlannerDiagnostics, PlannerOutput } from './types';
 import { validatePlan } from './PlanValidator';
 import { toolRegistry } from '../tools/ToolRegistry';
 import { getContext } from '../../shared/TraceContext';
@@ -7,15 +7,33 @@ import { emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory, NodeResult } from '../../memory/CognitiveMemory';
 import { SessionManager } from '../../shared/SessionManager';
 import { ProviderFactory } from '../../engine/ProviderFactory';
-import { parseLlmJson } from '../../utils/parseLlmJson';
+import { parseLlmJson, parseLlmJsonWithRecovery } from '../../utils/parseLlmJson';
 import { selectTemplate } from './templates/planTemplates';
 import { buildWorkspaceContext, formatWorkspaceContext } from './workspaceContext';
 import { formatTargetFileBlock, rankFiles, selectWithConfidence } from './fileTargeting';
+import { createLogger } from '../../shared/AppLogger';
+import { buildPlannerFallbackPlan } from './planningRecovery';
+import { computeConfidence, evaluateSessionConsistency } from './plannerDiagnostics';
 
 export class AgentPlanner {
+    private logger = createLogger('AgentPlanner');
+
     constructor(private memory: CognitiveMemory) { }
 
     async createPlan(userInput: string): Promise<ExecutionPlan> {
+        const output = await this.createPlanWithDiagnostics(userInput);
+
+        if (!output.plan) {
+            throw new Error('Planner nao conseguiu produzir um plano utilizavel.');
+        }
+
+        return output.plan;
+    }
+
+    async createPlanWithDiagnostics(userInput: string, options?: {
+        supplementalInstruction?: string;
+        bypassTemplates?: boolean;
+    }): Promise<PlannerOutput> {
         const ctx = getContext();
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Consultando o Grafo Cognitivo por projetos e padroes passados...' });
 
@@ -37,6 +55,15 @@ export class AgentPlanner {
         });
         const fileSelection = selectWithConfidence(rankedFiles);
         const targetFilePrompt = formatTargetFileBlock(fileSelection);
+        const fileTargetConfidence = fileSelection?.confidence ?? 1;
+        const sessionConsistency = evaluateSessionConsistency(
+            userInput,
+            session?.current_goal,
+            Boolean(session?.continue_project_only)
+        );
+        let parseRecovered = false;
+        let validationPassed = false;
+        let hallucinatedToolDetected = false;
 
         if (fileSelection) {
             emitDebug('thought', {
@@ -45,7 +72,7 @@ export class AgentPlanner {
             });
         }
 
-        const selectedTemplate = selectTemplate(userInput);
+        const selectedTemplate = options?.bypassTemplates ? null : selectTemplate(userInput);
         if (selectedTemplate) {
             emitDebug('thought', {
                 type: 'thought',
@@ -61,16 +88,26 @@ export class AgentPlanner {
             });
 
             validatePlan(templatePlan);
+            validationPassed = true;
             emitDebug('thought', {
                 type: 'thought',
                 content: `[PLANNER] Plano gerado por template: ${templatePlan.goal} (${templatePlan.steps.length} passos).`
             });
-            return templatePlan;
+            return {
+                plan: templatePlan,
+                diagnostics: this.buildDiagnostics({
+                    parseRecovered,
+                    validationPassed,
+                    hallucinatedToolDetected,
+                    sessionConsistency,
+                    fileTargetConfidence
+                })
+            };
         }
 
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Elaborando plano de execucao estruturado...' });
 
-        const prompt = this.buildPrompt(userInput, memoryContext, workspacePrompt, targetFilePrompt);
+        const prompt = this.buildPrompt(userInput, memoryContext, workspacePrompt, targetFilePrompt, options?.supplementalInstruction);
 
         try {
             const response = await ollama.chat({
@@ -80,24 +117,111 @@ export class AgentPlanner {
                 options: { temperature: 0.1 }
             });
 
-            let plan = parseLlmJson<ExecutionPlan>(response.message.content);
+            let plan: ExecutionPlan;
+
+            try {
+                const parsed = parseLlmJsonWithRecovery<ExecutionPlan>(response.message.content);
+                plan = parsed.value;
+
+                if (parsed.meta.repaired) {
+                    parseRecovered = true;
+                    emitDebug('thought', {
+                        type: 'thought',
+                        content: '[PLANNER] JSON recuperado localmente por heuristica antes da validacao.'
+                    });
+
+                    this.logger.info('planner_json_recovered', 'Planner retornou JSON recuperavel por heuristica local.', {
+                        truncated_likely: parsed.meta.truncatedLikely,
+                        removed_trailing_commas: parsed.meta.removedTrailingCommas,
+                        balanced_closers: parsed.meta.balancedClosers,
+                        closed_open_string: parsed.meta.closedOpenString,
+                        pruned_dangling_tail: parsed.meta.prunedDanglingTail
+                    });
+                }
+            } catch (parseError: any) {
+                if (!this.isJsonParseFailure(parseError)) {
+                    throw parseError;
+                }
+
+                emitDebug('thought', {
+                    type: 'thought',
+                    content: '[PLANNER] JSON invalido ou truncado detectado. Tentando regenerar um plano compacto...'
+                });
+
+                this.logger.warn('planner_json_parse_failed', 'Planner retornou JSON invalido; iniciando retry compacto.', {
+                    response_length: response.message.content?.length || 0,
+                    error_message: parseError.message
+                });
+
+                try {
+                    plan = await this.repairMalformedPlan(userInput, prompt, response.message.content || '', parseError.message);
+                    parseRecovered = true;
+                } catch (repairError: any) {
+                    return this.buildFallbackOutput(userInput, `planner_parse_failed: ${repairError.message}`, {
+                        parseRecovered,
+                        validationPassed,
+                        hallucinatedToolDetected,
+                        sessionConsistency,
+                        fileTargetConfidence
+                    });
+                }
+            }
 
             try {
                 validatePlan(plan);
+                validationPassed = true;
             } catch (validationError: any) {
                 if (this.isInvalidToolError(validationError)) {
+                    hallucinatedToolDetected = true;
                     emitDebug('thought', { type: 'thought', content: '[PLANNER] Tool invalida detectada no plano. Tentando reparar com lista estrita de tools...' });
-                    plan = await this.repairInvalidToolPlan(userInput, prompt, plan, validationError.message);
+                    try {
+                        plan = await this.repairInvalidToolPlan(userInput, prompt, plan, validationError.message);
+                        validationPassed = true;
+                    } catch (repairError: any) {
+                        return this.buildFallbackOutput(userInput, `planner_validation_failed: ${repairError.message}`, {
+                            parseRecovered,
+                            validationPassed: false,
+                            hallucinatedToolDetected,
+                            sessionConsistency,
+                            fileTargetConfidence
+                        });
+                    }
                 } else {
-                    throw validationError;
+                    return this.buildFallbackOutput(userInput, `planner_validation_failed: ${validationError.message}`, {
+                        parseRecovered,
+                        validationPassed: false,
+                        hallucinatedToolDetected,
+                        sessionConsistency,
+                        fileTargetConfidence
+                    });
                 }
             }
 
             emitDebug('thought', { type: 'thought', content: `[PLANNER] Plano validado: ${plan.goal} (${plan.steps.length} passos).` });
-            return plan;
+            return {
+                plan,
+                diagnostics: this.buildDiagnostics({
+                    parseRecovered,
+                    validationPassed,
+                    hallucinatedToolDetected,
+                    sessionConsistency,
+                    fileTargetConfidence
+                })
+            };
         } catch (error: any) {
             emitDebug('agent:error', { trace_id: ctx.trace_id, error: `Falha no planejamento: ${error.message}` });
-            throw error;
+            this.logger.error('planner_unexpected_failure', error, 'Falha inesperada durante a criacao do plano.', {
+                session_consistency: sessionConsistency,
+                file_target_confidence: fileTargetConfidence
+            });
+
+            return this.buildFallbackOutput(userInput, `planner_unexpected_failure: ${error.message}`, {
+                parseRecovered,
+                validationPassed: false,
+                hallucinatedToolDetected,
+                sessionConsistency,
+                fileTargetConfidence
+            });
         }
     }
 
@@ -110,7 +234,7 @@ export class AgentPlanner {
         return `MEMORIA ESTRUTURAL RELEVANTE (Projetos e Conceitos Passados):\n${hints.join('\n')}\n\nRECOMENDACAO: Reutilize essas abordagens e estruturas conhecidas para garantir consistencia.`;
     }
 
-    private buildPrompt(input: string, memoryContext: string, workspacePrompt: string, targetFilePrompt: string): string {
+    private buildPrompt(input: string, memoryContext: string, workspacePrompt: string, targetFilePrompt: string, supplementalInstruction?: string): string {
         const registeredTools = toolRegistry.list();
         const tools = registeredTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n');
         const toolNames = registeredTools.map(tool => tool.name);
@@ -214,7 +338,8 @@ RESTRICAO DE SCHEMA:
 - Cada step.tool DEVE ser um destes valores: [${strictToolEnum}]
 - Use "capabilities.requiresDOM": true SOMENTE quando a tarefa depender explicitamente de execucao real em browser/DOM.
 - Para gerar ou editar HTML/CSS/JS, criar frontend, criar jogo da cobrinha ou adicionar audio via Web Audio API, use "requiresDOM": false ou omita o campo.
-- Para validar animacao real, medir console no navegador ou testar interacao DOM, use "requiresDOM": true.`;
+- Para validar animacao real, medir console no navegador ou testar interacao DOM, use "requiresDOM": true.
+${supplementalInstruction ? `\nINSTRUCAO ADICIONAL:\n${supplementalInstruction}` : ''}`;
     }
 
     private safeParseErrorPayload(raw?: string): any | null {
@@ -232,6 +357,10 @@ RESTRICAO DE SCHEMA:
     private isInvalidToolError(error: any): boolean {
         const message = String(error?.message || '');
         return message.includes('tool alucinada detectada no plano');
+    }
+
+    private isJsonParseFailure(error: any): boolean {
+        return String(error?.message || '').includes('Failed to parse LLM JSON');
     }
 
     private async repairInvalidToolPlan(userInput: string, basePrompt: string, invalidPlan: ExecutionPlan, validationMessage: string): Promise<ExecutionPlan> {
@@ -265,5 +394,87 @@ INSTRUCAO:
         const repairedPlan = parseLlmJson<ExecutionPlan>(response.message.content);
         validatePlan(repairedPlan);
         return repairedPlan;
+    }
+
+    private async repairMalformedPlan(userInput: string, basePrompt: string, rawResponse: string, parseErrorMessage: string): Promise<ExecutionPlan> {
+        const response = await ollama.chat({
+            model: process.env.MODEL || 'llama3.2',
+            messages: [
+                { role: 'system', content: basePrompt },
+                {
+                    role: 'user',
+                    content: `A resposta anterior nao era um JSON valido.
+
+ERRO:
+${parseErrorMessage}
+
+RESPOSTA INVALIDA/PARCIAL:
+${rawResponse.slice(0, 2000)}
+
+TAREFA ORIGINAL:
+${userInput}
+
+INSTRUCAO:
+- Retorne um JSON VALIDO e COMPACTO.
+- Use no maximo 4 steps.
+- Use strings curtas e objetivas nos campos textuais.
+- Se usar workspace_create_project, use "prompt" igual a tarefa original sem expandir desnecessariamente.
+- Nao inclua markdown.
+- Nao inclua explicacoes.
+- Retorne apenas JSON.`
+                }
+            ],
+            format: 'json',
+            options: { temperature: 0 }
+        });
+
+        const repairedPlan = parseLlmJson<ExecutionPlan>(response.message.content);
+        validatePlan(repairedPlan);
+        return repairedPlan;
+    }
+
+    private buildFallbackPlan(userInput: string, reason: string): ExecutionPlan {
+        const session = SessionManager.getCurrentSession();
+        const fallbackPlan = buildPlannerFallbackPlan(userInput, Boolean(session?.current_project_id), reason);
+
+        emitDebug('thought', {
+            type: 'thought',
+            content: '[PLANNER] Ativando fallback resiliente apos falha de parse/validacao.'
+        });
+
+        this.logger.warn('planner_fallback_plan_activated', 'Planner entrou em modo fallback resiliente.', {
+            reason,
+            goal: fallbackPlan.goal,
+            steps: fallbackPlan.steps.map(step => ({
+                id: step.id,
+                tool: step.tool
+            }))
+        });
+
+        validatePlan(fallbackPlan);
+        return fallbackPlan;
+    }
+
+    private buildFallbackOutput(
+        userInput: string,
+        reason: string,
+        baseDiagnostics: Omit<PlannerDiagnostics, 'confidenceScore'>
+    ): PlannerOutput {
+        const fallbackPlan = this.buildFallbackPlan(userInput, reason);
+
+        return {
+            plan: fallbackPlan,
+            diagnostics: this.buildDiagnostics({
+                ...baseDiagnostics,
+                validationPassed: false
+            })
+        };
+    }
+
+    private buildDiagnostics(base: Omit<PlannerDiagnostics, 'confidenceScore'>): PlannerDiagnostics {
+        return {
+            ...base,
+            confidenceScore: computeConfidence(base)
+        };
     }
 }

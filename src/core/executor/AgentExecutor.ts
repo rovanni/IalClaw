@@ -1,7 +1,7 @@
 import { executeToolCall } from '../agent/executeTool';
 import { validatePlan } from '../planner/PlanValidator';
 import { ExecutionPlan } from '../planner/types';
-import { debugBus } from '../../shared/DebugBus';
+import { debugBus, emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { Session } from '../../shared/SessionManager';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
@@ -29,6 +29,9 @@ import {
     resolveRuntimeModeForPlan,
     sanitizeStep
 } from '../../capabilities/stepCapabilities';
+import { cloneExecutionPlan, RepairResult, repairPlanStructure } from './repairPipeline';
+import { hashLearningInput, pushLearningRecord } from './operationalLearning';
+import { RuntimeDecision } from '../runtime/decisionGate';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -50,6 +53,18 @@ class StepExecutionError extends Error {
 type SaveExecutionDecision = {
     handled: boolean;
     blocked?: string;
+};
+
+type ExecutionTrace = {
+    decision: RuntimeDecision;
+    confidence: number;
+    success: boolean;
+    retries: number;
+    durationMs: number;
+    errorType?: string;
+    repairUsed?: boolean;
+    repairSuccess?: boolean;
+    planSize?: number;
 };
 
 export class AgentExecutor {
@@ -149,6 +164,75 @@ export class AgentExecutor {
         }
 
         debugBus.emit('thought', { type: 'final', content: '[EXECUTOR] Plano finalizado com sucesso.' });
+    }
+
+    async executePlanned(
+        plan: ExecutionPlan,
+        session: Session,
+        input: string,
+        decision: RuntimeDecision,
+        confidence: number
+    ) {
+        return this.executeWithTrace({
+            plan,
+            session,
+            input,
+            decision,
+            confidence,
+            repairUsed: false,
+            runner: (candidatePlan, candidateSession) => this.runWithHealing(candidatePlan, candidateSession)
+        });
+    }
+
+    async repairAndExecute(
+        plan: ExecutionPlan,
+        session: Session,
+        input: string,
+        confidence: number
+    ) {
+        const startedAt = Date.now();
+        const planCopy = cloneExecutionPlan(plan);
+        const repairResult = this.runRepairPipeline(planCopy, session);
+
+        emitDebug('repair_metrics', {
+            actions: repairResult.repairActions,
+            success: repairResult.success,
+            error: repairResult.error,
+            plan_size: plan.steps.length
+        });
+
+        if (!repairResult.success || !repairResult.repairedPlan) {
+            const failure = {
+                success: false,
+                error: repairResult.error || 'Repair pipeline falhou.',
+                error_type: 'repair'
+            };
+
+            this.emitExecutionResult({
+                decision: 'REPAIR_AND_EXECUTE',
+                confidence,
+                success: false,
+                retries: 0,
+                durationMs: Date.now() - startedAt,
+                errorType: 'repair',
+                repairUsed: true,
+                repairSuccess: false,
+                planSize: plan.steps.length
+            });
+            this.recordLearning(input, 'REPAIR_AND_EXECUTE', confidence, false, 'repair', repairResult.repairActions);
+            return failure;
+        }
+
+        return this.executeWithTrace({
+            plan: repairResult.repairedPlan,
+            session,
+            input,
+            decision: 'REPAIR_AND_EXECUTE',
+            confidence,
+            repairUsed: true,
+            repairActions: repairResult.repairActions,
+            runner: (candidatePlan, candidateSession) => this.runWithHealing(candidatePlan, candidateSession)
+        });
     }
 
     async runWithHealing(plan: ExecutionPlan, session: Session) {
@@ -581,6 +665,73 @@ export class AgentExecutor {
         return {
             success: false,
             error: `Loop de healing excedeu o numero maximo de tentativas. Ultimo erro: ${lastError}`
+        };
+    }
+
+    async executeDirect(userInput: string, session?: Session, confidenceScore?: number): Promise<{
+        success: boolean;
+        answer?: string;
+        error?: string;
+    }> {
+        const startedAt = Date.now();
+        debugBus.emit('thought', {
+            type: 'thought',
+            content: '[EXECUTOR] Confidence baixo detectado. Executando caminho direto sem depender do planner.'
+        });
+
+        debugBus.emit('direct_execution', {
+            confidence: confidenceScore,
+            project_id: session?.current_project_id,
+            trace_id: getTraceIdSafe()
+        });
+
+        const contextBlock = session
+            ? `CONTEXTO DE SESSAO:\n- Projeto atual: ${session.current_project_id || 'nenhum'}\n- Objetivo atual: ${session.current_goal || 'nenhum'}\n- Ultimo erro: ${session.last_error || 'nenhum'}`
+            : 'CONTEXTO DE SESSAO: indisponivel';
+
+        const response = await this.llm.generate([
+            {
+                role: 'system',
+                content: `Voce esta em modo de execucao direta.\nNao dependa de um plano estruturado.\nResponda de forma objetiva, acionavel e honesta.\nSe a tarefa normalmente exigiria edicao de arquivos ou ferramentas, explique o proximo passo mais util sem fingir que executou algo que nao foi executado.\n${contextBlock}`
+            },
+            {
+                role: 'user',
+                content: userInput
+            }
+        ]);
+
+        if (!response.final_answer || !response.final_answer.trim()) {
+            this.emitExecutionResult({
+                decision: 'DIRECT_EXECUTION',
+                confidence: confidenceScore || 0,
+                success: false,
+                retries: 0,
+                durationMs: Date.now() - startedAt,
+                errorType: 'direct_execution',
+                repairUsed: false,
+                planSize: 0
+            });
+            this.recordLearning(userInput, 'DIRECT_EXECUTION', confidenceScore || 0, false, 'direct_execution');
+            return {
+                success: false,
+                error: 'LLM nao retornou resposta na execucao direta.'
+            };
+        }
+
+        this.emitExecutionResult({
+            decision: 'DIRECT_EXECUTION',
+            confidence: confidenceScore || 0,
+            success: true,
+            retries: 0,
+            durationMs: Date.now() - startedAt,
+            repairUsed: false,
+            planSize: 0
+        });
+        this.recordLearning(userInput, 'DIRECT_EXECUTION', confidenceScore || 0, true);
+
+        return {
+            success: true,
+            answer: response.final_answer.trim()
         };
     }
 
@@ -1052,6 +1203,62 @@ Se quiser autorizar, responda:
 
     private parsePlan(rawPlan: string): ExecutionPlan {
         return parseLlmJson<ExecutionPlan>(rawPlan);
+    }
+
+    private runRepairPipeline(plan: ExecutionPlan, session: Session): RepairResult {
+        return repairPlanStructure(plan, session);
+    }
+
+    private async executeWithTrace(input: {
+        plan: ExecutionPlan;
+        session: Session;
+        runner: (plan: ExecutionPlan, session: Session) => Promise<any>;
+        decision: RuntimeDecision;
+        input: string;
+        confidence: number;
+        repairUsed: boolean;
+        repairActions?: string[];
+    }) {
+        const startedAt = Date.now();
+        const result = await input.runner(input.plan, input.session);
+        const errorType = result.success ? undefined : result.error_type || classifyError(result.error || 'execution_failed');
+
+        this.emitExecutionResult({
+            decision: input.decision,
+            confidence: input.confidence,
+            success: result.success,
+            retries: input.session._tool_input_attempts || 0,
+            durationMs: Date.now() - startedAt,
+            errorType,
+            repairUsed: input.repairUsed,
+            repairSuccess: input.repairUsed ? result.success : undefined,
+            planSize: input.plan.steps.length
+        });
+        this.recordLearning(input.input, input.decision, input.confidence, result.success, errorType, input.repairActions);
+
+        return result;
+    }
+
+    private emitExecutionResult(trace: ExecutionTrace) {
+        emitDebug('execution_result', trace);
+    }
+
+    private recordLearning(
+        input: string,
+        decision: RuntimeDecision,
+        confidence: number,
+        success: boolean,
+        errorType?: string,
+        repairActions?: string[]
+    ) {
+        pushLearningRecord({
+            inputHash: hashLearningInput(input),
+            decision,
+            confidence,
+            success,
+            errorType,
+            repairActions
+        });
     }
 
     private normalizeToolInputRepair(parsed: any, currentStep: PlanStep): PlanStep {

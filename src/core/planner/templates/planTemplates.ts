@@ -19,6 +19,8 @@ export interface PlanTemplate {
     build: (context: PlanTemplateContext) => Promise<ExecutionPlan>;
 }
 
+type HtmlGenerationMode = 'web' | 'slides';
+
 function buildStep(
     id: number,
     tool: string,
@@ -91,7 +93,8 @@ async function generateHtmlFromGoal(
     goal: string,
     provider: LLMProvider,
     workspaceContext: WorkspaceFileContext[],
-    activeProjectId?: string
+    activeProjectId?: string,
+    mode: HtmlGenerationMode = 'web'
 ): Promise<string> {
     const workspaceBlock = formatWorkspaceContext(workspaceContext);
     const existingIndex = workspaceContext.find(file => file.relative_path === 'index.html');
@@ -102,10 +105,21 @@ async function generateHtmlFromGoal(
     const existingFileContent = activeProjectId
         ? workspaceService.readArtifact(activeProjectId, targetFile)
         : null;
+    const isSlidesMode = mode === 'slides';
     const messages: MessagePayload[] = [
         {
             role: 'system',
-            content: `You generate complete single-file web projects.
+            content: isSlidesMode
+                ? `You generate complete single-file HTML slide decks.
+Return ONLY valid HTML.
+Use inline CSS and inline JavaScript when needed.
+Do not include markdown fences.
+The output must be immediately runnable as index.html.
+Create professional slides with keyboard navigation, progress indication and responsive layout.
+Prefer semantic sections for each slide.
+If index.html already exists, update it instead of inventing a parallel structure.
+When an existing file is provided, you MUST edit that file instead of regenerating a generic page.`
+                : `You generate complete single-file web projects.
 Return ONLY valid HTML.
 Use inline CSS and inline JavaScript when needed.
 Do not include markdown fences.
@@ -116,7 +130,7 @@ When an existing file is provided, you MUST edit that file instead of regenerati
         },
         {
             role: 'user',
-            content: `Create a complete HTML file for this goal:
+            content: `${isSlidesMode ? 'Create a complete HTML slide deck for this goal' : 'Create a complete HTML file for this goal'}:
 ${goal}
 
 Requirements:
@@ -124,6 +138,7 @@ Requirements:
 - include all CSS inline in <style>
 - include all JavaScript inline in <script>
 - make it functional, not a placeholder
+- ${isSlidesMode ? 'include multiple content-rich slides, navigation controls and presentable visual hierarchy' : 'make the interface polished and usable'}
 ${workspaceBlock ? `\n\nCurrent workspace:\n${workspaceBlock}` : ''}
 ${targetBlock ? `\n\n${targetBlock}` : ''}
 ${existingFileContent ? `\n\nExisting file content (preserve and modify this file):\n${existingFileContent.slice(0, 12000)}` : ''}
@@ -170,7 +185,57 @@ export const createWebProjectTemplate: PlanTemplate = {
         }
 
         const nextId = steps.length + 1;
-        const html = await generateHtmlFromGoal(goal, provider, workspaceContext, currentProjectId);
+        const html = await generateHtmlFromGoal(goal, provider, workspaceContext, currentProjectId, 'web');
+
+        steps.push(buildStep(
+            nextId,
+            'workspace_save_artifact',
+            {
+                filename: targetFile,
+                content: html
+            },
+            {
+                requiresDOM: false
+            }
+        ));
+
+        return {
+            goal,
+            steps
+        };
+    }
+};
+
+export const createSlidesProjectTemplate: PlanTemplate = {
+    id: 'create_slides_project',
+    description: 'Create or continue an HTML slides project',
+    match: (goal: string) => {
+        const g = goal.toLowerCase();
+        return (
+            g.includes('slide')
+            || g.includes('slides')
+            || g.includes('apresentacao')
+            || g.includes('apresentação')
+            || g.includes('presentation')
+            || g.includes('deck')
+        );
+    },
+    build: async ({ goal, provider, hasActiveProject, currentProjectId, workspaceContext }: PlanTemplateContext): Promise<ExecutionPlan> => {
+        const steps: PlanStep[] = [];
+        const rankedFiles = rankFiles({ goal, files: workspaceContext });
+        const fileSelection = selectWithConfidence(rankedFiles);
+        const targetFile = fileSelection?.target || 'index.html';
+
+        if (!hasActiveProject) {
+            steps.push(buildStep(1, 'workspace_create_project', {
+                name: extractProjectName(goal),
+                type: 'slides',
+                prompt: goal
+            }));
+        }
+
+        const nextId = steps.length + 1;
+        const html = await generateHtmlFromGoal(goal, provider, workspaceContext, currentProjectId, 'slides');
 
         steps.push(buildStep(
             nextId,
@@ -192,6 +257,7 @@ export const createWebProjectTemplate: PlanTemplate = {
 };
 
 export const PLAN_TEMPLATES: PlanTemplate[] = [
+    createSlidesProjectTemplate,
     createWebProjectTemplate
 ];
 

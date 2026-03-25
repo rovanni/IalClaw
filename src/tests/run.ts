@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
 import { getExecutionModeSnapshot } from '../core/executor/AgentConfig';
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
+import { clearLearningBuffer, getLearningBuffer, hashLearningInput, pushLearningRecord } from '../core/executor/operationalLearning';
+import { normalizeExecutionPlan, repairPlanStructure } from '../core/executor/repairPipeline';
 import { requiresDOM, resolveRuntimeModeForPlan, sanitizeStep } from '../capabilities/stepCapabilities';
-import { createWebProjectTemplate } from '../core/planner/templates/planTemplates';
+import { computeConfidence, evaluateSessionConsistency } from '../core/planner/plannerDiagnostics';
+import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/planner/templates/planTemplates';
+import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
+import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { ExecutionPlan } from '../core/planner/types';
 import { LLMProvider, MessagePayload, ProviderResponse } from '../engine/ProviderFactory';
+import { parseLlmJsonWithRecovery } from '../utils/parseLlmJson';
 
 class FakeProvider implements LLMProvider {
     async generate(_messages: MessagePayload[], _tools?: any[]): Promise<ProviderResponse> {
@@ -125,6 +131,177 @@ async function run() {
     const saveStep = templatePlan.steps.find(step => step.tool === 'workspace_save_artifact');
     assert.ok(saveStep);
     assert.equal(saveStep?.capabilities?.requiresDOM, false);
+
+    const slidesPlan = await createSlidesProjectTemplate.build({
+        goal: 'crie slides interativos em HTML para programacao desktop',
+        provider: new FakeProvider(),
+        hasActiveProject: false,
+        workspaceContext: []
+    });
+
+    assert.equal(slidesPlan.steps[0]?.tool, 'workspace_create_project');
+    assert.equal(slidesPlan.steps[0]?.input.type, 'slides');
+
+    const slidesSaveStep = slidesPlan.steps.find(step => step.tool === 'workspace_save_artifact');
+    assert.ok(slidesSaveStep);
+    assert.equal(slidesSaveStep?.capabilities?.requiresDOM, false);
+
+    const repairedObject = parseLlmJsonWithRecovery<{ goal: string; steps: Array<{ id: number }> }>(`\n\`\`\`json\n{"goal":"teste","steps":[{"id":1,}],\n\`\`\``);
+    assert.equal(repairedObject.value.goal, 'teste');
+    assert.equal(repairedObject.value.steps[0]?.id, 1);
+    assert.equal(repairedObject.meta.repaired, true);
+    assert.equal(repairedObject.meta.removedTrailingCommas, true);
+    assert.equal(repairedObject.meta.balancedClosers, true);
+
+    const repairedArray = parseLlmJsonWithRecovery<Array<{ id: number }>>('[{"id":1},{"id":2');
+    assert.equal(repairedArray.value.length, 2);
+    assert.equal(repairedArray.meta.repaired, true);
+    assert.equal(repairedArray.meta.truncatedLikely, true);
+
+    const detectedSlides = detectPlannerIntent('crie slides interativos sobre arquitetura de software');
+    assert.equal(detectedSlides.projectType, 'slides');
+
+    const detectedAutomation = detectPlannerIntent('crie um bot de automacao para baixar relatorios');
+    assert.equal(detectedAutomation.projectType, 'automation');
+
+    const fallbackWithoutProject = buildPlannerFallbackPlan('crie uma landing page para um produto SaaS', false, 'planner_parse_failed');
+    assert.equal(fallbackWithoutProject.steps[0]?.tool, 'workspace_create_project');
+    assert.equal(fallbackWithoutProject.steps[1]?.tool, 'workspace_save_artifact');
+
+    const fallbackWithProject = buildPlannerFallbackPlan('corrija o projeto atual', true, 'planner_validation_failed');
+    assert.equal(fallbackWithProject.steps.length, 1);
+    assert.equal(fallbackWithProject.steps[0]?.tool, 'workspace_save_artifact');
+
+    const confidenceHigh = computeConfidence({
+        parseRecovered: false,
+        validationPassed: true,
+        hallucinatedToolDetected: false,
+        sessionConsistency: 0.9,
+        fileTargetConfidence: 0.8
+    });
+    assert.ok(Math.abs(confidenceHigh - 0.72) < 1e-9);
+
+    const confidenceLow = computeConfidence({
+        parseRecovered: true,
+        validationPassed: false,
+        hallucinatedToolDetected: true,
+        sessionConsistency: 0.4,
+        fileTargetConfidence: 0.5
+    });
+    assert.ok(Math.abs(confidenceLow - 0.02) < 1e-9);
+
+    const consistentSession = evaluateSessionConsistency('corrija o dashboard atual', 'corrija o dashboard atual', true);
+    assert.ok(consistentSession >= 0.9);
+
+    const decisionPlan = decideExecutionPath({
+        plan: htmlPlan,
+        diagnostics: {
+            parseRecovered: false,
+            validationPassed: true,
+            hallucinatedToolDetected: false,
+            sessionConsistency: 1,
+            fileTargetConfidence: 1,
+            confidenceScore: 0.85
+        }
+    }, 'strict');
+    assert.equal(decisionPlan, 'PLAN_EXECUTION');
+
+    const decisionRepair = decideExecutionPath({
+        plan: htmlPlan,
+        diagnostics: {
+            parseRecovered: true,
+            validationPassed: true,
+            hallucinatedToolDetected: false,
+            sessionConsistency: 0.8,
+            fileTargetConfidence: 0.8,
+            confidenceScore: 0.55
+        }
+    }, 'balanced');
+    assert.equal(decisionRepair, 'REPAIR_AND_EXECUTE');
+
+    const decisionDirect = decideExecutionPath({
+        diagnostics: {
+            parseRecovered: true,
+            validationPassed: false,
+            hallucinatedToolDetected: true,
+            sessionConsistency: 0.3,
+            fileTargetConfidence: 0.2,
+            confidenceScore: 0.15
+        }
+    }, 'aggressive');
+    assert.equal(decisionDirect, 'DIRECT_EXECUTION');
+
+    const normalizedPlan = normalizeExecutionPlan({
+        goal: 'corrigir app',
+        steps: [
+            {
+                id: 9,
+                type: 'tool',
+                tool: 'workspace_save_artifact',
+                input: {},
+                capabilities: { requiresDOM: 'yes' as any }
+            }
+        ]
+    });
+    assert.equal(normalizedPlan.steps[0]?.id, 1);
+    assert.equal(normalizedPlan.steps[0]?.capabilities?.requiresDOM, false);
+
+    const repairedActivePlan = repairPlanStructure({
+        goal: 'corrigir projeto ativo',
+        steps: [
+            {
+                id: 1,
+                type: 'tool',
+                tool: 'workspace_create_project',
+                input: { name: 'novo', type: 'code', prompt: 'novo' }
+            },
+            {
+                id: 2,
+                type: 'tool',
+                tool: 'workspace_save_artifact',
+                input: { filename: 'index.html', content: '<html></html>' }
+            }
+        ]
+    }, {
+        conversation_id: 'c1',
+        current_project_id: 'demo-123',
+        last_artifacts: []
+    });
+    assert.equal(repairedActivePlan.success, true);
+    assert.ok(repairedActivePlan.repairActions.includes('remove_workspace_create_project_for_active_session'));
+    assert.equal(repairedActivePlan.repairedPlan?.steps[0]?.tool, 'workspace_save_artifact');
+
+    const repairedInactivePlan = repairPlanStructure({
+        goal: 'criar app novo',
+        steps: [
+            {
+                id: 2,
+                type: 'tool',
+                tool: 'workspace_save_artifact',
+                input: { filename: 'index.html', content: '<html></html>' }
+            }
+        ]
+    }, {
+        conversation_id: 'c2',
+        current_goal: 'criar app novo',
+        last_artifacts: []
+    });
+    assert.equal(repairedInactivePlan.success, true);
+    assert.ok(repairedInactivePlan.repairActions.includes('inject_workspace_create_project'));
+    assert.equal(repairedInactivePlan.repairedPlan?.steps[0]?.tool, 'workspace_create_project');
+
+    clearLearningBuffer();
+    pushLearningRecord({
+        inputHash: hashLearningInput('teste'),
+        decision: 'REPAIR_AND_EXECUTE',
+        confidence: 0.42,
+        success: true,
+        repairActions: ['normalize_plan']
+    });
+    const learningBuffer = getLearningBuffer();
+    assert.equal(learningBuffer.length, 1);
+    assert.equal(learningBuffer[0]?.decision, 'REPAIR_AND_EXECUTE');
+    assert.equal(learningBuffer[0]?.inputHash.length, 40);
 
     console.log('All tests passed.');
 }
