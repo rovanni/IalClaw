@@ -88,12 +88,6 @@ If you already have IalClaw installed, use the included updater scripts:
 - **Windows:** Double-click `update.bat`
 - **Linux/macOS:** Run `bash update.sh`
 
-If you prefer to execute the script directly on Linux/macOS, mark it as executable first:
-```bash
-chmod +x update.sh
-./update.sh
-```
-
 ---
 
 ## 🗺️ Roadmap v3.x
@@ -202,12 +196,6 @@ npm run dev
 Se você já instalou o IalClaw, use nossos scripts de atualização:
 - **Windows:** Dê um duplo-clique no arquivo `update.bat`
 - **Linux/macOS:** Rode `bash update.sh` no terminal
-
-Se preferir executar o script diretamente no Linux/macOS, primeiro marque-o como executável:
-```bash
-chmod +x update.sh
-./update.sh
-```
 
 ---
 
