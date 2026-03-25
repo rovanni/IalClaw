@@ -107,8 +107,11 @@ Main environment variables for observability:
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
 - `LOG_CONSOLE_FORMAT=pretty|json`
+- `SAFE_MODE=true|false` to force direct replies and bypass planner/executor orchestration while stabilizing the agent
 
 The agent now writes JSON line logs to files with `trace_id`, component, event, duration, and normalized errors. For humans reading the terminal, the default console output is `pretty`; use `LOG_CONSOLE_FORMAT=json` if you need raw JSON on stdout/stderr.
+
+When `SAFE_MODE=true` (default), the agent prioritizes a direct response path so it keeps answering even if the planning pipeline is unstable. Set `SAFE_MODE=false` to re-enable the full planner-driven execution flow.
 
 ## Troubleshooting
 

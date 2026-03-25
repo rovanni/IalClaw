@@ -15,6 +15,7 @@ import { SkillResolver } from '../skills/SkillResolver';
 import { LoadedSkill } from '../skills/types';
 import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
+import { agentConfig } from './executor/AgentConfig';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -137,6 +138,29 @@ export class AgentController {
                 duration_ms: Date.now() - startedAt
             });
             return sessionDirectiveReply;
+        }
+
+        if (agentConfig.isSafeModeEnabled()) {
+            logger.info('safe_mode_selected', 'Safe mode ativo. Ignorando planner e AgentLoop para garantir resposta direta.', {
+                current_project_id: session?.current_project_id
+            });
+
+            const answer = await this.runtime.execute(userQuery, 'planner');
+
+            this.memory.saveMessage(sessionId, 'assistant', answer);
+            await this.memory.learn({
+                query: userQuery,
+                nodes_used: [],
+                success: !answer.startsWith('Falha'),
+                response: answer
+            });
+
+            logger.info('safe_mode_completed', 'Resposta direta concluida em safe mode.', {
+                duration_ms: Date.now() - startedAt,
+                success: !answer.startsWith('Falha')
+            });
+
+            return answer;
         }
 
         if (this.shouldUsePlannerRuntime(userQuery, session?.current_project_id)) {

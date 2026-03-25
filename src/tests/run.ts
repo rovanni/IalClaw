@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
-import { getExecutionModeSnapshot } from '../core/executor/AgentConfig';
+import { agentConfig, getExecutionModeSnapshot } from '../core/executor/AgentConfig';
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
 import { clearLearningBuffer, getLearningBuffer, hashLearningInput, pushLearningRecord } from '../core/executor/operationalLearning';
 import { normalizeExecutionPlan, repairPlanStructure } from '../core/executor/repairPipeline';
@@ -37,10 +37,18 @@ class FakeProvider implements LLMProvider {
 async function run() {
     assert.deepEqual(getExecutionModeSnapshot('balanced'), {
         executionMode: 'balanced',
+        safeMode: true,
         label: 'Equilibrado',
         behavior: 'Fallback ativo, validacao leve',
         description: 'Tenta diff primeiro, aceita fallback inteligente e entrega progresso sem travar o fluxo.'
     });
+
+    const initialSafeMode = agentConfig.isSafeModeEnabled();
+    agentConfig.setSafeMode(true);
+    assert.equal(agentConfig.isSafeModeEnabled(), true);
+    agentConfig.setSafeMode(false);
+    assert.equal(agentConfig.isSafeModeEnabled(), false);
+    agentConfig.setSafeMode(initialSafeMode);
 
     assert.equal(resolveExecutionMode('strict', 0.2), 'strict');
     assert.equal(resolveExecutionMode('balanced', 0.9), 'balanced');
@@ -258,6 +266,27 @@ async function run() {
         }
     }, 'aggressive');
     assert.equal(decisionDirect, 'DIRECT_EXECUTION');
+
+    const directRuntime = new AgentRuntime({} as CognitiveMemory) as any;
+    const originalSafeMode = agentConfig.isSafeModeEnabled();
+    const originalDirect = directRuntime.executor.executeDirect;
+    const originalPlanner = directRuntime.planner.createPlanWithDiagnostics;
+
+    agentConfig.setSafeMode(true);
+    directRuntime.executor.executeDirect = async (userInput: string) => ({
+        success: true,
+        answer: `DIRECT:${userInput}`
+    });
+    directRuntime.planner.createPlanWithDiagnostics = async () => {
+        throw new Error('planner should not run in safe mode');
+    };
+
+    const runtimeAnswer = await SessionManager.runWithSession('safe-mode-test', async () => directRuntime.execute('explique filas', 'planner'));
+    assert.equal(runtimeAnswer, 'DIRECT:explique filas');
+
+    directRuntime.executor.executeDirect = originalDirect;
+    directRuntime.planner.createPlanWithDiagnostics = originalPlanner;
+    agentConfig.setSafeMode(originalSafeMode);
 
     const normalizedPlan = normalizeExecutionPlan({
         goal: 'corrigir app',

@@ -30,6 +30,25 @@ export class AgentRuntime {
             try {
                 const session = SessionManager.getCurrentSession();
 
+                if (agentConfig.isSafeModeEnabled()) {
+                    emitDebug('runtime_decision', {
+                        stage: 'safe_mode',
+                        decision: 'DIRECT_EXECUTION',
+                        confidence: 1,
+                        selected_mode: 'safe_mode',
+                        planner_used: false,
+                        reason: 'safe_mode:direct_only'
+                    });
+
+                    const direct = await this.executor.executeDirect(userInput, session, 1);
+
+                    if (!direct.success) {
+                        return `Falha na execucao direta: ${direct.error}`;
+                    }
+
+                    return direct.answer || 'Execucao direta concluida sem resposta textual.';
+                }
+
                 if (!session) {
                     throw new Error('Sessao ativa nao encontrada para executar o plano.');
                 }
