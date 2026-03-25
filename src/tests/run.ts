@@ -12,11 +12,13 @@ import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/p
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { AgentRuntime } from '../core/AgentRuntime';
+import { AgentController } from '../core/AgentController';
 import { ExecutionPlan } from '../core/planner/types';
 import { AgentLoop } from '../engine/AgentLoop';
 import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
 import { SkillRegistry } from '../engine/SkillRegistry';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
+import { LoadedSkill } from '../skills/types';
 import { formatConsoleLogLine } from '../shared/AppLogger';
 import { SessionManager } from '../shared/SessionManager';
 import { getTraceId, runWithTrace } from '../shared/TraceContext';
@@ -282,6 +284,51 @@ async function run() {
     const loop = new AgentLoop(loopProvider, new SkillRegistry());
     const loopResult = await loop.run([{ role: 'user', content: 'instale essa dependencia' }]);
     assert.match(loopResult.answer, /Nota: nao executei esses comandos aqui/i);
+
+    await SessionManager.runWithSession('skill-history-test', async () => {
+        const fakeMemory = {
+            saveMessage: () => undefined,
+            learn: async () => undefined
+        } as any;
+
+        const fakeLoop = {
+            run: async () => ({ answer: 'Confirma a instalacao? (sim/nao)', newMessages: [] })
+        } as any;
+
+        const controller = new AgentController(
+            fakeMemory,
+            {} as any,
+            fakeLoop,
+            {} as any,
+            {} as any
+        );
+
+        const skill: LoadedSkill = {
+            name: 'skill-installer',
+            description: 'instala skills publicas',
+            argumentHint: '',
+            body: 'Fluxo de instalacao',
+            sourcePath: '/tmp/skill.md',
+            origin: 'internal',
+            triggers: ['instalar skill']
+        };
+
+        const response = await (controller as any).runWithSkill(
+            'skill-history-test',
+            'Poderia instalar a skill elite-powerpoint-designer?',
+            'instalar elite-powerpoint-designer',
+            skill
+        );
+
+        assert.equal(response, 'Confirma a instalacao? (sim/nao)');
+
+        const session = SessionManager.getCurrentSession()!;
+        assert.equal(session.conversation_history.length, 2);
+        assert.equal(session.conversation_history[0]?.role, 'user');
+        assert.equal(session.conversation_history[1]?.role, 'assistant');
+        assert.match(session.conversation_history[0]?.content || '', /elite-powerpoint-designer/i);
+        assert.match(session.conversation_history[1]?.content || '', /Confirma a instalacao/i);
+    });
 
     const directRuntime = new AgentRuntime({} as CognitiveMemory) as any;
     const originalSafeMode = agentConfig.isSafeModeEnabled();

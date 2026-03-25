@@ -361,6 +361,9 @@ Nao alucine fatos.\n\n${contextStr}`
 
         const result = await this.loop.run(messages);
 
+        SessionManager.addToHistory(sessionId, 'user', originalQuery);
+        SessionManager.addToHistory(sessionId, 'assistant', result.answer);
+
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
         await this.memory.learn({
             query: originalQuery,
