@@ -46,10 +46,10 @@ if errorlevel 1 (
 echo       Download e sincronizacao concluidos.
 echo.
 
-echo [3/5] ⚙️ Instalando ou atualizando dependencias (NPM)...
-call npm install
+echo [3/5] ⚙️ Instalando dependencias travadas do projeto (NPM CI)...
+call npm ci
 if errorlevel 1 (
-    echo [ERRO] Falha na instalacao de pacotes (npm install).
+    echo [ERRO] Falha na instalacao de pacotes (npm ci).
     pause
     exit /b 1
 )

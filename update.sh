@@ -36,8 +36,8 @@ git pull --ff-only || { echo "[ERRO] Falha ao sincronizar arquivos via fast-forw
 echo "      Sincronização concluída."
 echo ""
 
-echo "[3/5] ⚙️ Instalando ou atualizando dependências (NPM)..."
-npm install || { echo "[ERRO] Falha ao instalar pacotes NPM."; exit 1; }
+echo "[3/5] ⚙️ Instalando dependências travadas do projeto (NPM CI)..."
+npm ci || { echo "[ERRO] Falha ao instalar pacotes NPM com npm ci."; exit 1; }
 echo "      Dependências atualizadas."
 echo ""
 

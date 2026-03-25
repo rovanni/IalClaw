@@ -111,7 +111,7 @@ Set-Location ialclaw
 # -------------------------
 
 Write-Host "Instalando dependencias via npm..."
-cmd.exe /c "npm install"
+cmd.exe /c "npm ci"
 
 # -------------------------
 # ENV

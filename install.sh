@@ -99,7 +99,7 @@ chmod +x update.sh 2>/dev/null || true
 # -------------------------
 
 echo "Instalando dependências..."
-npm install
+npm ci
 
 # -------------------------
 # ENV
