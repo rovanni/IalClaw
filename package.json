@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
+    "dev:debug": "cross-env LOG_LEVEL=debug ts-node src/index.ts",
     "test": "ts-node src/tests/run.ts",
     "setup": "ts-node src/scripts/setup.ts",
     "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts"
@@ -26,6 +27,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
+    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.0"
   }

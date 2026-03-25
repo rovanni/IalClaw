@@ -1,10 +1,12 @@
 import { LLMProvider, MessagePayload } from './ProviderFactory';
 import { SkillRegistry } from './SkillRegistry';
+import { createLogger } from '../shared/AppLogger';
 
 export class AgentLoop {
     private llm: LLMProvider;
     private registry: SkillRegistry;
     private maxIterations = 5;
+    private logger = createLogger('AgentLoop');
 
     constructor(llm: LLMProvider, registry: SkillRegistry) {
         this.llm = llm;
@@ -19,6 +21,7 @@ export class AgentLoop {
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
         const maxTools = policy?.limits?.max_tool_calls || 5;
         let toolCallsCount = 0;
+        const startedAt = Date.now();
 
         let toolsDefinition = this.registry.getDefinitions();
 
@@ -48,7 +51,19 @@ export class AgentLoop {
         const messages = [...initialMessages];
         const newMessages: MessagePayload[] = [];
 
+        this.logger.info('loop_started', 'AgentLoop iniciado.', {
+            initial_messages: initialMessages.length,
+            max_iterations: maxIter,
+            max_tools: maxTools,
+            available_tools: toolsDefinition.length
+        });
+
         for (let i = 0; i < maxIter; i++) {
+            this.logger.debug('iteration_started', 'Nova iteracao do AgentLoop.', {
+                iteration: i + 1,
+                message_count: messages.length,
+                tool_calls_count: toolCallsCount
+            });
             const response = await this.llm.generate(messages, toolsDefinition);
 
             if (response.tool_call) {
@@ -57,11 +72,21 @@ export class AgentLoop {
                     const assistBlock: MessagePayload = { role: 'assistant', content: `[Tentei executar ${response.tool_call.name} mas fui bloqueado pela Policy de limites]` };
                     messages.push(assistBlock, blockMsg);
                     newMessages.push(assistBlock, blockMsg);
+                    this.logger.warn('tool_call_blocked', 'Tool call bloqueada pela policy de limite.', {
+                        iteration: i + 1,
+                        tool_name: response.tool_call.name,
+                        max_tools: maxTools
+                    });
                     continue; // Pushes model to finalize answer
                 }
 
                 toolCallsCount++;
                 try {
+                    this.logger.info('tool_call_started', 'Executando tool chamada pelo modelo.', {
+                        iteration: i + 1,
+                        tool_name: response.tool_call.name,
+                        tool_calls_count: toolCallsCount
+                    });
                     const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
 
                     const assistantMsg: MessagePayload = {
@@ -75,8 +100,18 @@ export class AgentLoop {
                     messages.push(assistantMsg, toolMsg);
                     newMessages.push(assistantMsg, toolMsg);
 
+                    this.logger.info('tool_call_completed', 'Tool executada com sucesso.', {
+                        iteration: i + 1,
+                        tool_name: response.tool_call.name,
+                        result_length: result.length
+                    });
+
                     continue;
                 } catch (error: any) {
+                    this.logger.error('tool_call_failed', error, 'Falha ao executar tool.', {
+                        iteration: i + 1,
+                        tool_name: response.tool_call.name
+                    });
                     const errMsg: MessagePayload = { role: 'tool', content: `Erro ao executar tool: ${error.message}` };
                     messages.push(errMsg);
                     newMessages.push(errMsg);
@@ -88,10 +123,21 @@ export class AgentLoop {
                 const finalMsg: MessagePayload = { role: 'assistant', content: response.final_answer };
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
+                this.logger.info('loop_completed', 'AgentLoop finalizado com resposta final.', {
+                    duration_ms: Date.now() - startedAt,
+                    iterations_used: i + 1,
+                    tool_calls_count: toolCallsCount,
+                    answer_length: response.final_answer.length
+                });
                 return { answer: response.final_answer, newMessages };
             }
         }
 
+        this.logger.error('loop_max_iterations_reached', new Error('Max iterations reached in AgentLoop.'), 'AgentLoop excedeu o limite de iteracoes.', {
+            duration_ms: Date.now() - startedAt,
+            max_iterations: maxIter,
+            tool_calls_count: toolCallsCount
+        });
         throw new Error("Max iterations reached in AgentLoop.");
     }
 }

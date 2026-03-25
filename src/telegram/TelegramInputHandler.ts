@@ -1,6 +1,7 @@
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from '../shared/AppLogger';
 
 export type CognitiveInputPayload = {
     text: string;
@@ -10,10 +11,14 @@ export type CognitiveInputPayload = {
 
 export class TelegramInputHandler {
     private allowedUsers: Set<number>;
+    private logger = createLogger('TelegramInputHandler');
 
     constructor() {
         const ids = process.env.TELEGRAM_ALLOWED_USER_IDS || '';
         this.allowedUsers = new Set(ids.split(',').map(id => parseInt(id.trim())));
+        this.logger.info('configured', 'Whitelist de usuarios do Telegram carregada.', {
+            allowed_users_count: Array.from(this.allowedUsers).filter((id) => !Number.isNaN(id)).length
+        });
     }
 
     public isUserAllowed(ctx: Context): boolean {
@@ -22,13 +27,24 @@ export class TelegramInputHandler {
     }
 
     public async processUpdate(ctx: Context): Promise<CognitiveInputPayload | null> {
+        const userId = ctx.from?.id;
+        const chatId = ctx.chat?.id;
+
         if (!this.isUserAllowed(ctx)) {
-            console.log(`[InputHandler] Unauthorized access attempt from user ${ctx.from?.id}`);
+            this.logger.warn('unauthorized_user', 'Tentativa de acesso nao autorizada no Telegram.', {
+                telegram_user_id: userId,
+                telegram_chat_id: chatId
+            });
             return null;
         }
 
         // Handing text messages
         if (ctx.message?.text) {
+            this.logger.info('text_message_received', 'Mensagem de texto recebida do Telegram.', {
+                telegram_user_id: userId,
+                telegram_chat_id: chatId,
+                text_length: ctx.message.text.length
+            });
             await ctx.replyWithChatAction('typing');
             return {
                 text: ctx.message.text,
@@ -42,6 +58,13 @@ export class TelegramInputHandler {
         // Simplifying for this foundational spec:
         if (ctx.message?.document) {
             const doc = ctx.message.document;
+            this.logger.info('document_received', 'Documento recebido do Telegram.', {
+                telegram_user_id: userId,
+                telegram_chat_id: chatId,
+                file_name: doc.file_name,
+                mime_type: doc.mime_type,
+                file_size: doc.file_size
+            });
             await ctx.reply("Documento recebido. O IalClaw em breve irá indexá-lo na memória semântica.");
 
             return {
@@ -53,6 +76,11 @@ export class TelegramInputHandler {
 
         // Handling audio/voice
         if (ctx.message?.voice || ctx.message?.audio) {
+            this.logger.info('audio_received', 'Mensagem de audio recebida do Telegram.', {
+                telegram_user_id: userId,
+                telegram_chat_id: chatId,
+                kind: ctx.message.voice ? 'voice' : 'audio'
+            });
             await ctx.replyWithChatAction('record_voice');
             return {
                 text: "Process please user voice message (transcription placeholder)",
@@ -61,6 +89,14 @@ export class TelegramInputHandler {
             };
         }
 
+        this.logger.warn('unsupported_message', 'Formato de mensagem nao suportado no Telegram.', {
+            telegram_user_id: userId,
+            telegram_chat_id: chatId,
+            has_text: Boolean(ctx.message?.text),
+            has_document: Boolean(ctx.message?.document),
+            has_voice: Boolean(ctx.message?.voice),
+            has_audio: Boolean(ctx.message?.audio)
+        });
         await ctx.reply("Formato não suportado.");
         return null;
     }

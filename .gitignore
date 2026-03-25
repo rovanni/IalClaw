@@ -12,3 +12,4 @@ workspace/
 runtime/
 data/
 backups/
+logs/

@@ -13,6 +13,8 @@ import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
 import { SkillResolver } from '../skills/SkillResolver';
 import { LoadedSkill } from '../skills/types';
+import { runWithTrace } from '../shared/TraceContext';
+import { createLogger } from '../shared/AppLogger';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -22,6 +24,7 @@ export class AgentController {
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
+    private logger = createLogger('AgentController');
 
     constructor(
         memory: CognitiveMemory,
@@ -41,42 +44,88 @@ export class AgentController {
     }
 
     public async handleMessage(ctx: Context) {
-        const payload: CognitiveInputPayload | null = await this.inputHandler.processUpdate(ctx);
-        if (!payload) return;
-
         const conversationId = ctx.chat?.id.toString();
         if (!conversationId) return;
 
-        return SessionManager.runWithSession(conversationId, async () => {
-            try {
-                const answer = await this.runConversation(conversationId, payload.text);
-                await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
-            } catch (error: any) {
-                console.error('[AgentController] Error executing flow:', error);
-                ctx.reply(`Ocorreu um erro no pipeline cognitivo:\n${error.message}`);
+        return runWithTrace(async () => {
+            const startedAt = Date.now();
+            const logger = this.logger.child({ conversation_id: conversationId, channel: 'telegram' });
+            logger.info('message_flow_started', 'Iniciando processamento de mensagem do Telegram.', {
+                telegram_user_id: ctx.from?.id,
+                update_id: ctx.update.update_id
+            });
+
+            const payload: CognitiveInputPayload | null = await this.inputHandler.processUpdate(ctx);
+            if (!payload) {
+                logger.warn('message_ignored', 'Mensagem ignorada antes do pipeline cognitivo.', {
+                    duration_ms: Date.now() - startedAt
+                });
+                return;
             }
-        });
+
+            return SessionManager.runWithSession(conversationId, async () => {
+                try {
+                    const answer = await this.runConversation(conversationId, payload.text);
+                    await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
+                    logger.info('message_flow_completed', 'Resposta enviada ao Telegram com sucesso.', {
+                        duration_ms: Date.now() - startedAt,
+                        response_length: answer.length,
+                        requires_audio_reply: payload.requires_audio_reply
+                    });
+                } catch (error: any) {
+                    logger.error('message_flow_failed', error, 'Falha ao processar mensagem do Telegram.', {
+                        duration_ms: Date.now() - startedAt,
+                        source_type: payload.source_type
+                    });
+                    await ctx.reply(`Ocorreu um erro no pipeline cognitivo:\n${error.message}`);
+                }
+            });
+        }, 'telegram_controller');
     }
 
     public async handleWebMessage(sessionId: string, userQuery: string): Promise<string> {
-        return SessionManager.runWithSession(sessionId, async () => {
-            try {
-                return await this.runConversation(sessionId, userQuery);
-            } catch (error: any) {
-                console.error('[AgentController] Error executing web flow:', error);
-                throw error;
-            }
-        });
+        return runWithTrace(async () => {
+            const startedAt = Date.now();
+            const logger = this.logger.child({ conversation_id: sessionId, channel: 'web' });
+            logger.info('web_flow_started', 'Iniciando processamento da mensagem web.', {
+                query_length: userQuery.length
+            });
+
+            return SessionManager.runWithSession(sessionId, async () => {
+                try {
+                    const answer = await this.runConversation(sessionId, userQuery);
+                    logger.info('web_flow_completed', 'Mensagem web processada com sucesso.', {
+                        duration_ms: Date.now() - startedAt,
+                        response_length: answer.length
+                    });
+                    return answer;
+                } catch (error: any) {
+                    logger.error('web_flow_failed', error, 'Falha ao processar mensagem web.', {
+                        duration_ms: Date.now() - startedAt
+                    });
+                    throw error;
+                }
+            });
+        }, 'web_controller');
     }
 
     private async runConversation(sessionId: string, userQuery: string): Promise<string> {
+        const startedAt = Date.now();
+        const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
         this.memory.saveMessage(sessionId, 'user', userQuery);
+        logger.info('conversation_started', 'Processando nova interacao do usuario.', {
+            query_length: userQuery.length,
+            has_current_project: Boolean(session?.current_project_id)
+        });
 
         // ── Resolução de skill ──────────────────────────────────────────────
         if (this.skillResolver) {
             const resolved = this.skillResolver.resolve(userQuery);
             if (resolved) {
+                logger.info('skill_resolved', 'Mensagem roteada para uma skill dedicada.', {
+                    skill_name: resolved.skill.name
+                });
                 return this.runWithSkill(sessionId, userQuery, resolved.query, resolved.skill);
             }
         }
@@ -84,10 +133,16 @@ export class AgentController {
         const sessionDirectiveReply = await this.handleSessionDirective(userQuery, session);
         if (sessionDirectiveReply) {
             this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
+            logger.info('session_directive_handled', 'Diretiva de sessao processada sem acionar o pipeline principal.', {
+                duration_ms: Date.now() - startedAt
+            });
             return sessionDirectiveReply;
         }
 
         if (this.shouldUsePlannerRuntime(userQuery, session?.current_project_id)) {
+            logger.info('planner_runtime_selected', 'Roteando consulta para o runtime de planejamento.', {
+                current_project_id: session?.current_project_id
+            });
             const answer = await this.runtime.execute(userQuery, 'planner');
 
             this.memory.saveMessage(sessionId, 'assistant', answer);
@@ -98,17 +153,33 @@ export class AgentController {
                 response: answer
             });
 
+            logger.info('planner_runtime_completed', 'Execucao do runtime de planejamento concluida.', {
+                duration_ms: Date.now() - startedAt,
+                success: !answer.startsWith('Falha')
+            });
+
             return answer;
         }
 
         const provider = this.loop.getProvider();
+        logger.debug('embedding_query_started', 'Gerando embedding para a consulta do usuario.');
         const queryEmbedding = await provider.embed(userQuery);
+        logger.debug('embedding_query_completed', 'Embedding da consulta processado.', {
+            embedding_dimensions: queryEmbedding.length
+        });
 
         const gateway = new AgentGateway(this.memory, provider);
         const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
+        logger.info('agent_selected', 'Agente de identidade selecionado para a conversa.', {
+            agent_id: agentId
+        });
 
         const memory = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes(agentId);
+        logger.info('memory_context_built', 'Contexto de memoria recuperado para a resposta.', {
+            retrieved_memory_nodes: memory.length,
+            identity_nodes: identity.length
+        });
 
         const policyEngine = new PolicyEngine();
         const policy = policyEngine.resolvePolicy(identity);
@@ -151,6 +222,12 @@ Nao alucine fatos.\n\n${contextStr}`
             response: result.answer
         });
 
+        logger.info('conversation_completed', 'Pipeline conversacional concluido com sucesso.', {
+            duration_ms: Date.now() - startedAt,
+            response_length: result.answer.length,
+            new_messages_count: result.newMessages.length
+        });
+
         return result.answer;
     }
 
@@ -165,6 +242,7 @@ Nao alucine fatos.\n\n${contextStr}`
         cleanQuery: string,
         skill: LoadedSkill
     ): Promise<string> {
+        const logger = this.logger.child({ conversation_id: sessionId, skill_name: skill.name });
         // Adapta caminhos OpenClaw para o espaço de trabalho do IalClaw
         const adaptedBody = skill.body.replace(
             /\.agent\/skills\//g,
@@ -191,6 +269,10 @@ Nao alucine fatos.\n\n${contextStr}`
             nodes_used: [],
             success: true,
             response: result.answer
+        });
+
+        logger.info('skill_completed', 'Skill executada com sucesso.', {
+            response_length: result.answer.length
         });
 
         return result.answer;

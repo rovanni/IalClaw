@@ -80,6 +80,28 @@ npm run setup
 npm run dev
 ```
 
+For verbose diagnostics during development:
+```bash
+npm run dev:debug
+```
+
+5. **Inspect Structured Logs**:
+Linux / macOS
+```bash
+tail -f logs/ialclaw.log
+```
+
+Windows PowerShell
+```powershell
+Get-Content .\logs\ialclaw.log -Wait
+```
+
+Main environment variables for observability:
+- `LOG_LEVEL=debug|info|warn|error`
+- `LOG_DIR=logs`
+
+The agent now writes JSON line logs with `trace_id`, component, event, duration, and normalized errors so failures like network/provider issues are easier to diagnose.
+
 ---
 
 ## 🔄 How to Update
@@ -201,6 +223,28 @@ npm run setup
 ```bash
 npm run dev
 ```
+
+Para diagnóstico detalhado durante o desenvolvimento:
+```bash
+npm run dev:debug
+```
+
+5. **Acompanhe os logs estruturados**:
+Linux / macOS
+```bash
+tail -f logs/ialclaw.log
+```
+
+Windows PowerShell
+```powershell
+Get-Content .\logs\ialclaw.log -Wait
+```
+
+Principais variáveis de ambiente para observabilidade:
+- `LOG_LEVEL=debug|info|warn|error`
+- `LOG_DIR=logs`
+
+O agente agora grava logs em JSON Lines com `trace_id`, componente, evento, duração e erro normalizado, facilitando o diagnóstico de falhas de rede, provider e execução.
 
 ---
 

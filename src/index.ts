@@ -16,18 +16,21 @@ import { capabilityRegistry, skillManager } from './capabilities';
 import { SkillLoader } from './skills/SkillLoader';
 import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
+import { createLogger } from './shared/AppLogger';
 
 dotenv.config();
+
+const logger = createLogger('Startup');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 if (!BOT_TOKEN || BOT_TOKEN === 'your_bot_token_here') {
-    console.error('[Startup] ERRO: Token do Telegram não configurado no .env!');
+    logger.error('missing_telegram_token', new Error('Telegram token ausente'), 'Token do Telegram nao configurado no .env.');
     process.exit(1);
 }
 
 const dbManager = new DatabaseManager('db.sqlite');
-console.log('[Startup] Banco de dados inicializado com sucesso.');
+logger.info('database_initialized', 'Banco de dados inicializado com sucesso.');
 startTraceRecorder();
 
 // Iniciar Sonho/Consolidação
@@ -67,7 +70,7 @@ const controller = new AgentController(
 );
 
 bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
-    console.error('[Startup] Falha ao fazer bootstrap de capabilities:', error.message);
+    logger.error('capabilities_bootstrap_failed', error, 'Falha ao fazer bootstrap de capabilities.');
 });
 
 dashboard.setController(controller);
@@ -87,11 +90,12 @@ bot.on('message', async (ctx) => {
 });
 
 bot.catch((err) => {
-    console.error(`[Telegram] Error while handling update ${err.ctx.update.update_id}:`);
-    console.error(err.error);
+    logger.error('telegram_update_failed', err.error, 'Erro ao processar update do Telegram.', {
+        update_id: err.ctx.update.update_id
+    });
 });
 
-console.log('[Startup] Iniciando IalClaw Cognitive Agent v2.0 (Polling)...');
+logger.info('bot_starting', 'Iniciando IalClaw Cognitive Agent (Polling).');
 bot.start();
 
 process.once('SIGINT', () => { bot.stop(); dbManager.close(); });
