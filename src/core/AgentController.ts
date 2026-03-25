@@ -155,6 +155,8 @@ export class AgentController {
             const answer = await this.runtime.execute(userQuery, 'planner');
             const success = !answer.startsWith('Falha');
 
+            SessionManager.addToHistory(sessionId, 'user', userQuery);
+            SessionManager.addToHistory(sessionId, 'assistant', answer);
             this.memory.saveMessage(sessionId, 'assistant', answer);
             await this.memory.learn({
                 query: userQuery,
@@ -191,6 +193,8 @@ export class AgentController {
             const answer = await this.runtime.execute(userQuery, 'planner');
             const success = !answer.startsWith('Falha');
 
+            SessionManager.addToHistory(sessionId, 'user', userQuery);
+            SessionManager.addToHistory(sessionId, 'assistant', answer);
             this.memory.saveMessage(sessionId, 'assistant', answer);
             await this.memory.learn({
                 query: userQuery,
@@ -271,6 +275,8 @@ Nao alucine fatos.\n\n${contextStr}`
             );
         }
 
+        SessionManager.addToHistory(sessionId, 'user', userQuery);
+        SessionManager.addToHistory(sessionId, 'assistant', result.answer);
         await this.memory.learn({
             query: userQuery,
             nodes_used: memory,

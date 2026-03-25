@@ -4,6 +4,7 @@ import { ExecutionPlan } from '../planner/types';
 import { debugBus, emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { Session } from '../../shared/SessionManager';
+import { createLogger } from '../../shared/AppLogger';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
 import { classifyError } from '../../utils/errorClassifier';
 import { normalizeError } from '../../utils/errorFingerprint';
@@ -70,6 +71,7 @@ type ExecutionTrace = {
 export class AgentExecutor {
     private llm: LLMProvider;
     private memory: CognitiveMemory;
+    private logger = createLogger('AgentExecutor');
 
     constructor(memory: CognitiveMemory) {
         this.memory = memory;
@@ -691,11 +693,26 @@ export class AgentExecutor {
             ? `CONTEXTO DE SESSAO:\n- Projeto atual: ${session.current_project_id || 'nenhum'}\n- Objetivo atual: ${session.current_goal || 'nenhum'}\n- Ultimo erro: ${session.last_error || 'nenhum'}`
             : 'CONTEXTO DE SESSAO: indisponivel';
 
+        // STM: historico de conversa recente (ultimas 5 trocas = ate 10 mensagens)
+        const stmHistory: MessagePayload[] = (session?.conversation_history ?? []).slice(-10).map(
+            h => ({ role: h.role, content: h.content })
+        );
+        const contextUsed = stmHistory.length > 0;
+        const totalMessages = 1 + stmHistory.length + 1; // system + history + user
+
+        this.logger.info('direct_execution_context', 'Construindo contexto para execucao direta.', {
+            cognitive_stage: 'execution',
+            messages_sent: totalMessages,
+            context_used: contextUsed,
+            history_messages: stmHistory.length
+        });
+
         const response = await this.llm.generate([
             {
                 role: 'system',
-                content: `Voce esta em modo de execucao direta.\nNao dependa de um plano estruturado.\nResponda de forma objetiva, acionavel e honesta.\nSe a tarefa normalmente exigiria edicao de arquivos ou ferramentas, explique o proximo passo mais util sem fingir que executou algo que nao foi executado.\n${contextBlock}`
+                content: `Voce e um assistente direto e prestativo.\nUse o historico da conversa para entender referencias como "isso", "aquilo", "o codigo", "faz pra mim", etc.\nSe o usuario se referir a algo dito anteriormente, use esse contexto sem pedir esclarecimentos.\nResponda de forma objetiva e acionavel.\n${contextBlock}`
             },
+            ...stmHistory,
             {
                 role: 'user',
                 content: userInput

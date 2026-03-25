@@ -1,5 +1,12 @@
 import { AsyncLocalStorage } from 'async_hooks';
 
+export interface ConversationMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+const STM_MAX_MESSAGES = 10; // 5 exchanges
+
 export interface SessionContext {
     conversation_id: string;
     current_goal?: string;
@@ -14,6 +21,7 @@ export interface SessionContext {
     _input_history?: string[];
     last_artifacts: string[];
     last_action?: string;
+    conversation_history: ConversationMessage[];
 }
 
 export type Session = SessionContext;
@@ -26,7 +34,8 @@ export class SessionManager {
         if (!sessionStore.has(conversationId)) {
             sessionStore.set(conversationId, {
                 conversation_id: conversationId,
-                last_artifacts: []
+                last_artifacts: [],
+                conversation_history: []
             });
         }
         return sessionStore.get(conversationId)!;
@@ -39,6 +48,14 @@ export class SessionManager {
 
     static getCurrentSession(): SessionContext | undefined {
         return sessionAsyncStorage.getStore();
+    }
+
+    static addToHistory(conversationId: string, role: 'user' | 'assistant', content: string): void {
+        const session = this.getSession(conversationId);
+        session.conversation_history.push({ role, content });
+        if (session.conversation_history.length > STM_MAX_MESSAGES) {
+            session.conversation_history = session.conversation_history.slice(-STM_MAX_MESSAGES);
+        }
     }
 
     static resetVolatileState(conversationId: string): SessionContext {
