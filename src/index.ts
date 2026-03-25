@@ -23,11 +23,7 @@ dotenv.config();
 const logger = createLogger('Startup');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!BOT_TOKEN || BOT_TOKEN === 'your_bot_token_here') {
-    logger.error('missing_telegram_token', new Error('Telegram token ausente'), 'Token do Telegram nao configurado no .env.');
-    process.exit(1);
-}
+const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
 const dbManager = new DatabaseManager('db.sqlite');
 logger.info('database_initialized', 'Banco de dados inicializado com sucesso.');
@@ -76,27 +72,40 @@ bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
 dashboard.setController(controller);
 dashboard.start();
 
-const bot = new Bot(BOT_TOKEN);
+let bot: Bot | undefined;
 
-bot.command('start', async (ctx) => {
-    await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nPara que eu crie o seu _Núcleo Principal de Identidade_ e lembre de você em nossas sessões, **qual o seu nome e como gostaria de ser chamado?**", { parse_mode: 'Markdown' });
-});
+if (hasTelegramBotToken) {
+    bot = new Bot(BOT_TOKEN!);
 
-bot.on('message', async (ctx) => {
-    // /start já é tratado por bot.command acima.
-    // Slash commands de skills (ex: /sandeco-maestro args) devem passar.
-    if (ctx.message?.text === '/start') return;
-    await controller.handleMessage(ctx);
-});
-
-bot.catch((err) => {
-    logger.error('telegram_update_failed', err.error, 'Erro ao processar update do Telegram.', {
-        update_id: err.ctx.update.update_id
+    bot.command('start', async (ctx) => {
+        await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nPara que eu crie o seu _Núcleo Principal de Identidade_ e lembre de você em nossas sessões, **qual o seu nome e como gostaria de ser chamado?**", { parse_mode: 'Markdown' });
     });
+
+    bot.on('message', async (ctx) => {
+        if (ctx.message?.text === '/start') return;
+        await controller.handleMessage(ctx);
+    });
+
+    bot.catch((err) => {
+        logger.error('telegram_update_failed', err.error, 'Erro ao processar update do Telegram.', {
+            update_id: err.ctx.update.update_id
+        });
+    });
+
+    logger.info('bot_starting', 'Iniciando IalClaw Cognitive Agent (Polling).');
+    bot.start();
+} else {
+    logger.warn('telegram_disabled', 'TELEGRAM_BOT_TOKEN ausente. Iniciando em modo local via dashboard/web chat.', {
+        dashboard_url: 'http://localhost:3000',
+        web_chat_enabled: true
+    });
+}
+
+process.once('SIGINT', () => {
+    bot?.stop();
+    dbManager.close();
 });
-
-logger.info('bot_starting', 'Iniciando IalClaw Cognitive Agent (Polling).');
-bot.start();
-
-process.once('SIGINT', () => { bot.stop(); dbManager.close(); });
-process.once('SIGTERM', () => { bot.stop(); dbManager.close(); });
+process.once('SIGTERM', () => {
+    bot?.stop();
+    dbManager.close();
+});

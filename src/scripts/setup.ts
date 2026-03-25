@@ -24,11 +24,12 @@ async function runSetup() {
     const finalModel = model.trim() || "glm-5:cloud";
 
     console.log("\n[DICA] Para criar um Bot no Telegram, fale com o @BotFather e copie o Token gerado.");
-    const telegramToken = await question("3. Cole aqui o TELEGRAM_BOT_TOKEN: ");
+    console.log("[DICA] Se quiser usar apenas o dashboard web local por enquanto, deixe em branco.");
+    const telegramToken = await question("3. Cole aqui o TELEGRAM_BOT_TOKEN (opcional): ");
 
     console.log("\n[DICA] O IalClaw é privado e seguro. Apenas você pode falar com ele.");
     console.log("[DICA] Para descobrir seu ID, mande um 'Oi' para o bot @userinfobot no Telegram.");
-    const telegramId = await question("4. Cole aqui o seu ID do Telegram (ex: 8071707790): ");
+    const telegramId = await question("4. Cole aqui o seu ID do Telegram (opcional, ex: 8071707790): ");
 
     const envContent = `# Configurações do Provedor (Ollama local)
 OLLAMA_HOST=${finalOllamaHost}
@@ -47,7 +48,12 @@ TELEGRAM_ALLOWED_USER_IDS=${telegramId.trim()}
     fs.writeFileSync(envPath, envContent, 'utf8');
 
     console.log("\n✅ Arquivo .env criado com sucesso! Tudo pronto.");
-    console.log("▶️  Para iniciar o agente, digite: npm run dev\n");
+    if (telegramToken.trim()) {
+        console.log("▶️  Para iniciar o agente, digite: npm run dev\n");
+    } else {
+        console.log("▶️  Para iniciar em modo local sem Telegram, digite: npm run dev");
+        console.log("🌐 Depois abra: http://localhost:3000\n");
+    }
     rl.close();
 }
 
