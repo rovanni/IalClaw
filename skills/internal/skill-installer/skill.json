@@ -1,0 +1,42 @@
+{
+  "name": "skill-installer",
+  "kind": "internal",
+  "trusted": true,
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "marketplace": "https://skills.sh/",
+  "invocation": {
+    "slashCommands": [
+      "/install-skill <tema>",
+      "/find-skill <tema>",
+      "/skill-install <nome-exato>"
+    ],
+    "freeText": [
+      "instalar skill",
+      "baixar skill",
+      "skills disponíveis",
+      "melhor skill para"
+    ]
+  },
+  "requiredTools": [
+    "fetch_url",
+    "write_skill_file",
+    "delete_skill_public",
+    "read_audit_log",
+    "web_search"
+  ],
+  "pipeline": [
+    "search",
+    "present",
+    "confirm",
+    "download",
+    "audit",
+    "report"
+  ],
+  "security": {
+    "alwaysAudit": true,
+    "auditSkill": "skill-auditor",
+    "blockOnDecisions": ["blocked", "quarantined"],
+    "rollbackOnBlock": true
+  }
+}

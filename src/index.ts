@@ -1,5 +1,6 @@
 import { Bot } from 'grammy';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 import { DatabaseManager } from './db/DatabaseManager';
 import { CognitiveMemory } from './memory/CognitiveMemory';
 import { ContextBuilder } from './memory/ContextBuilder';
@@ -12,6 +13,9 @@ import { AgentController } from './core/AgentController';
 import { startTraceRecorder } from './shared/TraceRecorder';
 import { bootstrapCapabilities } from './capabilities/bootstrapCapabilities';
 import { capabilityRegistry, skillManager } from './capabilities';
+import { SkillLoader } from './skills/SkillLoader';
+import { SkillResolver } from './skills/SkillResolver';
+import { createAuditLog } from './skills/AuditLog';
 
 dotenv.config();
 
@@ -41,6 +45,14 @@ const memory = new CognitiveMemory(dbManager.getDb(), provider);
 const contextBuilder = new ContextBuilder();
 const registry = new SkillRegistry();
 
+// Carrega skills: internas direto, públicas somente após auditoria aprovada
+const skillsRoot = path.join(__dirname, '..', 'skills');
+const projectRoot = path.join(__dirname, '..');
+const auditLog = createAuditLog(projectRoot);
+const skillLoader = new SkillLoader(skillsRoot, auditLog);
+skillLoader.load();
+const skillResolver = new SkillResolver(skillLoader);
+
 const loop = new AgentLoop(provider, registry);
 const inputHandler = new TelegramInputHandler();
 const outputHandler = new TelegramOutputHandler();
@@ -50,7 +62,8 @@ const controller = new AgentController(
     contextBuilder,
     loop,
     inputHandler,
-    outputHandler
+    outputHandler,
+    skillResolver
 );
 
 bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
@@ -67,7 +80,9 @@ bot.command('start', async (ctx) => {
 });
 
 bot.on('message', async (ctx) => {
-    if (ctx.message?.text?.startsWith('/')) return; // ignora comandos aqui
+    // /start já é tratado por bot.command acima.
+    // Slash commands de skills (ex: /sandeco-maestro args) devem passar.
+    if (ctx.message?.text === '/start') return;
     await controller.handleMessage(ctx);
 });
 

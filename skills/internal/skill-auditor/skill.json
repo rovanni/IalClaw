@@ -1,0 +1,23 @@
+{
+  "name": "skill-auditor",
+  "kind": "internal",
+  "trusted": true,
+  "version": "1.0.0",
+  "entry": "SKILL.md",
+  "targets": [
+    "skills/public/*",
+    "skills/quarantine/*",
+    "skills/*"
+  ],
+  "invocation": {
+    "slashCommand": "/skill-auditor <nome-da-skill>",
+    "alternate": "/skill-auditor --path <caminho>"
+  },
+  "decisions": [
+    "approved",
+    "approved_with_restrictions",
+    "manual_review",
+    "quarantined",
+    "blocked"
+  ]
+}

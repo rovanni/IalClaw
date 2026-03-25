@@ -11,6 +11,8 @@ import { SessionManager } from '../shared/SessionManager';
 import { AgentRuntime } from './AgentRuntime';
 import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
+import { SkillResolver } from '../skills/SkillResolver';
+import { LoadedSkill } from '../skills/types';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -19,13 +21,15 @@ export class AgentController {
     private runtime: AgentRuntime;
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
+    private skillResolver?: SkillResolver;
 
     constructor(
         memory: CognitiveMemory,
         contextBuilder: ContextBuilder,
         loop: AgentLoop,
         inputHandler: TelegramInputHandler,
-        outputHandler: TelegramOutputHandler
+        outputHandler: TelegramOutputHandler,
+        skillResolver?: SkillResolver
     ) {
         this.memory = memory;
         this.contextBuilder = contextBuilder;
@@ -33,6 +37,7 @@ export class AgentController {
         this.runtime = new AgentRuntime(memory);
         this.inputHandler = inputHandler;
         this.outputHandler = outputHandler;
+        this.skillResolver = skillResolver;
     }
 
     public async handleMessage(ctx: Context) {
@@ -67,6 +72,14 @@ export class AgentController {
     private async runConversation(sessionId: string, userQuery: string): Promise<string> {
         const session = SessionManager.getCurrentSession();
         this.memory.saveMessage(sessionId, 'user', userQuery);
+
+        // ── Resolução de skill ──────────────────────────────────────────────
+        if (this.skillResolver) {
+            const resolved = this.skillResolver.resolve(userQuery);
+            if (resolved) {
+                return this.runWithSkill(sessionId, userQuery, resolved.query, resolved.skill);
+            }
+        }
 
         const sessionDirectiveReply = await this.handleSessionDirective(userQuery, session);
         if (sessionDirectiveReply) {
@@ -134,6 +147,48 @@ Nao alucine fatos.\n\n${contextStr}`
         await this.memory.learn({
             query: userQuery,
             nodes_used: memory,
+            success: true,
+            response: result.answer
+        });
+
+        return result.answer;
+    }
+
+    /**
+     * Executa a conversa utilizando o contexto de uma skill ativada.
+     * O corpo da skill é injetado no system prompt e os caminhos OpenClaw
+     * são adaptados para o padrão IalClaw (workspace/skills/<nome>/).
+     */
+    private async runWithSkill(
+        sessionId: string,
+        originalQuery: string,
+        cleanQuery: string,
+        skill: LoadedSkill
+    ): Promise<string> {
+        // Adapta caminhos OpenClaw para o espaço de trabalho do IalClaw
+        const adaptedBody = skill.body.replace(
+            /\.agent\/skills\//g,
+            'workspace/skills/'
+        );
+
+        const systemPrompt =
+            `Voce e o IalClaw, um agente cognitivo 100% local e privado.\n` +
+            `A skill abaixo foi ativada pelo usuario. Siga suas instrucoes rigorosamente.\n` +
+            `Nao execute nenhum script sem antes planejar e confirmar com o usuario.\n\n` +
+            `## Skill ativa: ${skill.name}\n\n` +
+            `${adaptedBody}`;
+
+        const messages: MessagePayload[] = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: cleanQuery }
+        ];
+
+        const result = await this.loop.run(messages);
+
+        this.memory.saveMessage(sessionId, 'assistant', result.answer);
+        await this.memory.learn({
+            query: originalQuery,
+            nodes_used: [],
             success: true,
             response: result.answer
         });
