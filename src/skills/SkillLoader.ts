@@ -162,10 +162,28 @@ export class SkillLoader {
                 this.yamlField(yaml, 'description');
             const argumentHint = this.yamlField(yaml, 'argument-hint');
 
-            return { name, description, argumentHint, body, sourcePath: filePath, origin };
+            // Lê freeText triggers do skill.json irmão, se existir
+            const triggers = this.loadTriggersFromSkillJson(filePath);
+
+            return { name, description, argumentHint, body, sourcePath: filePath, origin, triggers };
         } catch {
             return null;
         }
+    }
+
+    private loadTriggersFromSkillJson(skillMdPath: string): string[] {
+        try {
+            const jsonPath = path.join(path.dirname(skillMdPath), 'skill.json');
+            if (!fs.existsSync(jsonPath)) return [];
+            const meta = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            const freeText = meta?.invocation?.freeText;
+            if (Array.isArray(freeText)) {
+                return freeText.filter((t: unknown) => typeof t === 'string');
+            }
+        } catch {
+            // ignora erros silenciosamente
+        }
+        return [];
     }
 
     /** Extrai campo simples: `key: value` ou `key: 'value'` */

@@ -59,6 +59,15 @@ export class SkillResolver {
             }
         }
 
+        // ── Estratégia 3: freeText triggers carregados do skill.json ─────────
+        for (const skill of this.skills) {
+            for (const trigger of skill.triggers) {
+                if (lower.includes(trigger.toLowerCase())) {
+                    return { skill, query: trimmed };
+                }
+            }
+        }
+
         return null;
     }
 

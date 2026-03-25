@@ -11,4 +11,6 @@ export type LoadedSkill = {
     sourcePath: string;
     /** Origem da skill: interna ao repositório ou baixada publicamente. */
     origin: 'internal' | 'public';
+    /** Frases de ativação free-text carregadas do skill.json (invocation.freeText). */
+    triggers: string[];
 };
