@@ -15,6 +15,7 @@ import { SkillResolver } from '../skills/SkillResolver';
 import { LoadedSkill } from '../skills/types';
 import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
+import { emitDebug } from '../shared/DebugBus';
 import { agentConfig } from './executor/AgentConfig';
 
 export class AgentController {
@@ -116,6 +117,9 @@ export class AgentController {
         const session = SessionManager.getCurrentSession();
         this.memory.saveMessage(sessionId, 'user', userQuery);
         logger.info('conversation_started', 'Processando nova interacao do usuario.', {
+            cognitive_stage: 'start',
+            summary: 'MESSAGE_RECEIVED',
+            route: 'conversation',
             query_length: userQuery.length,
             has_current_project: Boolean(session?.current_project_id)
         });
@@ -142,22 +146,36 @@ export class AgentController {
 
         if (agentConfig.isSafeModeEnabled()) {
             logger.info('safe_mode_selected', 'Safe mode ativo. Ignorando planner e AgentLoop para garantir resposta direta.', {
+                cognitive_stage: 'decision',
+                decision: 'SAFE_MODE',
+                mode: 'DIRECT_ONLY',
                 current_project_id: session?.current_project_id
             });
 
             const answer = await this.runtime.execute(userQuery, 'planner');
+            const success = !answer.startsWith('Falha');
 
             this.memory.saveMessage(sessionId, 'assistant', answer);
             await this.memory.learn({
                 query: userQuery,
                 nodes_used: [],
-                success: !answer.startsWith('Falha'),
+                success,
                 response: answer
             });
 
             logger.info('safe_mode_completed', 'Resposta direta concluida em safe mode.', {
+                cognitive_stage: 'result',
+                result: success ? 'SUCCESS' : 'FAILED',
                 duration_ms: Date.now() - startedAt,
-                success: !answer.startsWith('Falha')
+                success
+            });
+
+            this.logExecutionSummary(logger, {
+                decision: 'DIRECT_EXECUTION',
+                mode: 'SAFE_MODE',
+                success,
+                durationMs: Date.now() - startedAt,
+                responseLength: answer.length
             });
 
             return answer;
@@ -165,21 +183,35 @@ export class AgentController {
 
         if (this.shouldUsePlannerRuntime(userQuery, session?.current_project_id)) {
             logger.info('planner_runtime_selected', 'Roteando consulta para o runtime de planejamento.', {
+                cognitive_stage: 'decision',
+                decision: 'PLANNER_RUNTIME',
+                mode: 'PLANNED',
                 current_project_id: session?.current_project_id
             });
             const answer = await this.runtime.execute(userQuery, 'planner');
+            const success = !answer.startsWith('Falha');
 
             this.memory.saveMessage(sessionId, 'assistant', answer);
             await this.memory.learn({
                 query: userQuery,
                 nodes_used: [],
-                success: !answer.startsWith('Falha'),
+                success,
                 response: answer
             });
 
             logger.info('planner_runtime_completed', 'Execucao do runtime de planejamento concluida.', {
+                cognitive_stage: 'result',
+                result: success ? 'SUCCESS' : 'FAILED',
                 duration_ms: Date.now() - startedAt,
-                success: !answer.startsWith('Falha')
+                success
+            });
+
+            this.logExecutionSummary(logger, {
+                decision: 'PLANNER_RUNTIME',
+                mode: 'PLANNED',
+                success,
+                durationMs: Date.now() - startedAt,
+                responseLength: answer.length
             });
 
             return answer;
@@ -247,12 +279,48 @@ Nao alucine fatos.\n\n${contextStr}`
         });
 
         logger.info('conversation_completed', 'Pipeline conversacional concluido com sucesso.', {
+            cognitive_stage: 'result',
+            result: 'SUCCESS',
             duration_ms: Date.now() - startedAt,
             response_length: result.answer.length,
             new_messages_count: result.newMessages.length
         });
 
+        this.logExecutionSummary(logger, {
+            decision: 'AGENT_LOOP',
+            mode: 'COGNITIVE',
+            success: true,
+            durationMs: Date.now() - startedAt,
+            responseLength: result.answer.length
+        });
+
         return result.answer;
+    }
+
+    private logExecutionSummary(logger: ReturnType<typeof this.logger.child>, summary: {
+        decision: string;
+        mode: string;
+        success: boolean;
+        durationMs: number;
+        responseLength?: number;
+    }) {
+        logger.info('execution_summary', 'Resumo cognitivo da execucao.', {
+            cognitive_stage: 'result',
+            summary: summary.success ? 'SUCCESS' : 'FAILED',
+            decision: summary.decision,
+            mode: summary.mode,
+            success: summary.success,
+            duration_ms: summary.durationMs,
+            response_length: summary.responseLength
+        });
+
+        emitDebug('execution_summary', {
+            decision: summary.decision,
+            mode: summary.mode,
+            success: summary.success,
+            duration_ms: summary.durationMs,
+            response_length: summary.responseLength
+        });
     }
 
     /**

@@ -450,9 +450,28 @@ async function run() {
         telegram_user_id: 8071707790,
         update_id: 429398611
     });
-    assert.match(consoleLine, /INFO AgentController:message_flow_started/);
+    assert.match(consoleLine, /\[START\] MESSAGE_RECEIVED/);
     assert.match(consoleLine, /trace=67e03695/);
-    assert.match(consoleLine, /channel=telegram/);
+
+    const summaryLine = formatConsoleLogLine({
+        timestamp: '2026-03-25T21:36:53.718Z',
+        level: 'info',
+        component: 'AgentController',
+        event: 'execution_summary',
+        message: 'Resumo cognitivo da execucao.',
+        trace_id: '67e03695-958e-4538-8819-e9223b34fe5f',
+        pid: 3082,
+        cognitive_stage: 'result',
+        summary: 'SUCCESS',
+        decision: 'DIRECT_EXECUTION',
+        mode: 'SAFE_MODE',
+        success: true,
+        duration_ms: 2026,
+        response_length: 512
+    });
+    assert.match(summaryLine, /\[RESULT\] SUCCESS/);
+    assert.match(summaryLine, /mode=SAFE_MODE/);
+    assert.match(summaryLine, /duration_ms=2026/);
 
     console.log('All tests passed.');
 }

@@ -44,6 +44,7 @@ export function startTraceRecorder() {
         'direct_execution',
         'repair_metrics',
         'execution_result',
+        'execution_summary',
         'execution_mode',
         'agent_config',
         'diff_strategy_selected',

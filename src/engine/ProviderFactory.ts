@@ -97,6 +97,9 @@ class OllamaProvider implements LLMProvider {
 
         try {
             this.logger.info('chat_request_started', 'Enviando requisicao de chat ao Ollama.', {
+                cognitive_stage: 'execution',
+                execution: 'LLM_CHAT',
+                route: 'provider',
                 model: ollamaModel,
                 messages_count: ollamaMessages.length,
                 tools_count: ollamaTools?.length || 0
@@ -108,6 +111,9 @@ class OllamaProvider implements LLMProvider {
             });
 
             this.logger.info('chat_request_completed', 'Resposta recebida do Ollama.', {
+                cognitive_stage: 'execution',
+                execution: 'LLM_CHAT_COMPLETED',
+                route: 'provider',
                 model: ollamaModel,
                 duration_ms: Date.now() - startedAt,
                 has_tool_calls: Boolean(response.message?.tool_calls?.length),
@@ -130,6 +136,9 @@ class OllamaProvider implements LLMProvider {
         } catch (error: any) {
             const diagnostic = this.describeProviderError(error, 'chat', ollamaModel);
             this.logger.error('chat_request_failed', error, diagnostic.log_message, {
+                cognitive_stage: 'result',
+                result: 'FAILED',
+                route: 'provider',
                 model: ollamaModel,
                 duration_ms: Date.now() - startedAt,
                 host: this.host,

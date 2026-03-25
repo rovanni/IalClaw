@@ -6,6 +6,7 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type LogMeta = Record<string, unknown>;
 type SerializableLogValue = string | number | boolean | null | undefined | SerializableLogObject | SerializableLogValue[];
 type SerializableLogObject = { [key: string]: SerializableLogValue };
+type CognitiveStage = 'start' | 'decision' | 'execution' | 'result';
 type LogPayload = {
     timestamp: string;
     level: LogLevel;
@@ -176,6 +177,31 @@ function compactTraceId(traceId?: string): string | undefined {
     return traceId.slice(0, 8);
 }
 
+function getCognitiveStage(payload: LogPayload): CognitiveStage | null {
+    const explicitStage = payload.cognitive_stage;
+    if (explicitStage === 'start' || explicitStage === 'decision' || explicitStage === 'execution' || explicitStage === 'result') {
+        return explicitStage;
+    }
+
+    if (payload.event.endsWith('_started')) {
+        return 'start';
+    }
+
+    if (payload.event.includes('selected') || payload.event.includes('decision') || payload.event.includes('resolved')) {
+        return 'decision';
+    }
+
+    if (payload.event.includes('execution') || payload.event.includes('tool_call_started') || payload.event.includes('chat_request_started')) {
+        return 'execution';
+    }
+
+    if (payload.event.endsWith('_completed') || payload.event.endsWith('_failed') || payload.event === 'execution_summary') {
+        return 'result';
+    }
+
+    return null;
+}
+
 function formatValue(value: SerializableLogValue): string {
     if (value === null) {
         return 'null';
@@ -227,7 +253,68 @@ function formatConsoleError(error?: SerializableLogValue): string | null {
     return pieces.length > 0 ? pieces.join(' | ') : JSON.stringify(normalized);
 }
 
+function formatCognitiveLabel(payload: LogPayload, stage: CognitiveStage): string {
+    const fromPayload = payload.summary || payload.decision || payload.execution || payload.result;
+
+    if (typeof fromPayload === 'string' && fromPayload.trim()) {
+        return fromPayload.trim();
+    }
+
+    if (stage === 'start') {
+        return 'MESSAGE_RECEIVED';
+    }
+
+    return `${payload.component}:${payload.event}`;
+}
+
+function formatCognitiveDetails(payload: LogPayload, traceLabel?: string): string[] {
+    const detailKeys = [
+        'mode',
+        'route',
+        'confidence',
+        'success',
+        'duration_ms',
+        'response_length',
+        'model',
+        'tools_count',
+        'messages_count',
+        'reason'
+    ];
+
+    const details: string[] = [];
+
+    if (traceLabel) {
+        details.push(`trace=${traceLabel}`);
+    }
+
+    for (const key of detailKeys) {
+        const value = payload[key];
+        if (value !== undefined) {
+            details.push(`${key}=${formatValue(value)}`);
+        }
+    }
+
+    return details;
+}
+
+function formatCognitiveConsoleLine(payload: LogPayload, stage: CognitiveStage): string {
+    const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
+    const stageLabel = stage.toUpperCase();
+    const label = formatCognitiveLabel(payload, stage);
+    const details = formatCognitiveDetails(payload, traceLabel);
+    const messagePart = payload.message && payload.message !== label ? ` - ${payload.message}` : '';
+    const detailPart = details.length > 0 ? ` (${details.join(' ')})` : '';
+    const errorPart = formatConsoleError(payload.error);
+
+    return `${payload.timestamp} [${stageLabel}] ${label}${detailPart}${messagePart}${errorPart ? `\n  error: ${errorPart}` : ''}`;
+}
+
 export function formatConsoleLogLine(payload: LogPayload): string {
+    const cognitiveStage = getCognitiveStage(payload);
+    if (cognitiveStage) {
+        return formatCognitiveConsoleLine(payload, cognitiveStage);
+    }
+
     const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
     const header = `${payload.timestamp} ${payload.level.toUpperCase()} ${payload.component}:${payload.event}`;
     const scopeBits = [traceLabel ? `trace=${traceLabel}` : null].filter(Boolean) as string[];

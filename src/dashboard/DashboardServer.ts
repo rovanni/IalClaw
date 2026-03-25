@@ -215,6 +215,7 @@ export class DashboardServer {
             const repairBaselineListener = (payload: any) => forwardEvent('repair:tool_input:baseline', payload);
             const repairRawListener = (payload: any) => forwardEvent('repair:tool_input:raw', payload);
             const repairNormalizedListener = (payload: any) => forwardEvent('repair:tool_input:normalized', payload);
+            const executionSummaryListener = (payload: any) => forwardEvent('execution_summary', payload);
             const executionModeListener = (payload: any) => forwardEvent('execution_mode', payload);
             const agentConfigListener = (payload: any) => forwardEvent('agent_config', payload);
 
@@ -228,6 +229,7 @@ export class DashboardServer {
             debugBus.on('repair:tool_input:baseline', repairBaselineListener);
             debugBus.on('repair:tool_input:raw', repairRawListener);
             debugBus.on('repair:tool_input:normalized', repairNormalizedListener);
+            debugBus.on('execution_summary', executionSummaryListener);
             debugBus.on('execution_mode', executionModeListener);
             debugBus.on('agent_config', agentConfigListener);
 
@@ -247,6 +249,7 @@ export class DashboardServer {
                 debugBus.off('repair:tool_input:baseline', repairBaselineListener);
                 debugBus.off('repair:tool_input:raw', repairRawListener);
                 debugBus.off('repair:tool_input:normalized', repairNormalizedListener);
+                debugBus.off('execution_summary', executionSummaryListener);
                 debugBus.off('execution_mode', executionModeListener);
                 debugBus.off('agent_config', agentConfigListener);
                 res.end();
