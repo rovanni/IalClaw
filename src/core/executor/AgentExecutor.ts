@@ -528,17 +528,19 @@ export class AgentExecutor {
             if (runtimeMode.skipRuntimeExecution) {
                 debugBus.emit('browser_skipped', {
                     stepId: 'runtime',
-                    reason: 'requiresDOM_false',
+                    reason: runtimeMode.skipReason || 'runtime_skipped',
                     trace_id: getTraceIdSafe()
                 });
                 debugBus.emit('thought', {
                     type: 'thought',
-                    content: '[EXECUTOR] Projeto HTML detectado sem requiresDOM. Pulando validacao em browser.'
+                    content: runtimeMode.skipReason === 'no_runnable_entry'
+                        ? '[EXECUTOR] Projeto sem entry point executavel suportado. Pulando runtime e preservando os artefatos gerados.'
+                        : '[EXECUTOR] Projeto HTML detectado sem requiresDOM. Pulando validacao em browser.'
                 });
                 debugBus.emit('execution_success', {
                     project_id: session.current_project_id,
                     runtime_skipped: true,
-                    reason: 'html_without_requiresDOM'
+                    reason: runtimeMode.skipReason || 'runtime_skipped'
                 });
 
                 if (session.last_error && session.last_error.length < 5000) {

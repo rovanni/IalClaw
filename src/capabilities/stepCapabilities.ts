@@ -39,13 +39,23 @@ export function resolveRuntimeModeForPlan(
 ): {
     requiresBrowserValidation: boolean;
     skipRuntimeExecution: boolean;
+    skipReason?: 'no_runnable_entry' | 'html_without_requiresDOM';
 } {
     const hasHtmlEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.html');
     const hasNodeEntry = workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.js');
     const requiresBrowserValidation = plan.steps.some(step => requiresDOM(step));
 
+    if (!hasHtmlEntry && !hasNodeEntry) {
+        return {
+            requiresBrowserValidation: false,
+            skipRuntimeExecution: true,
+            skipReason: 'no_runnable_entry'
+        };
+    }
+
     return {
         requiresBrowserValidation: hasHtmlEntry && requiresBrowserValidation,
-        skipRuntimeExecution: hasHtmlEntry && !hasNodeEntry && !requiresBrowserValidation
+        skipRuntimeExecution: hasHtmlEntry && !hasNodeEntry && !requiresBrowserValidation,
+        skipReason: hasHtmlEntry && !hasNodeEntry && !requiresBrowserValidation ? 'html_without_requiresDOM' : undefined
     };
 }

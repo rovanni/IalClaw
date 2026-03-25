@@ -109,6 +109,7 @@ async function run() {
 
     assert.equal(htmlRuntimeMode.requiresBrowserValidation, false);
     assert.equal(htmlRuntimeMode.skipRuntimeExecution, true);
+    assert.equal(htmlRuntimeMode.skipReason, 'html_without_requiresDOM');
 
     const domPlan: ExecutionPlan = {
         goal: 'valide no navegador se o canvas renderiza',
@@ -129,6 +130,24 @@ async function run() {
 
     assert.equal(domRuntimeMode.requiresBrowserValidation, true);
     assert.equal(domRuntimeMode.skipRuntimeExecution, false);
+
+    const markdownRuntimeMode = resolveRuntimeModeForPlan({
+        goal: 'registrar tarefa em markdown',
+        steps: [
+            {
+                id: 1,
+                type: 'tool',
+                tool: 'workspace_save_artifact',
+                input: { filename: 'IALCLAW_FALLBACK_TASK.md', content: '# fallback' }
+            }
+        ]
+    }, [
+        { name: 'IALCLAW_FALLBACK_TASK.md', relative_path: 'IALCLAW_FALLBACK_TASK.md', size: 100, preview: '# fallback' }
+    ]);
+
+    assert.equal(markdownRuntimeMode.requiresBrowserValidation, false);
+    assert.equal(markdownRuntimeMode.skipRuntimeExecution, true);
+    assert.equal(markdownRuntimeMode.skipReason, 'no_runnable_entry');
 
     const templatePlan = await createWebProjectTemplate.build({
         goal: 'crie um jogo da cobrinha em HTML',
