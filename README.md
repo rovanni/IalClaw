@@ -88,6 +88,19 @@ If you already have IalClaw installed, use the included updater scripts:
 - **Windows:** Double-click `update.bat`
 - **Linux/macOS:** Run `bash update.sh`
 
+Beginner-friendly Linux/macOS update steps:
+1. Open a terminal.
+2. Go to the folder where IalClaw is installed.
+3. Run the updater from inside that folder.
+
+Example:
+```bash
+cd ~/ialclaw
+bash update.sh
+```
+
+If you installed the project in another location, replace `~/ialclaw` with the correct folder path.
+
 ---
 
 ## 🗺️ Roadmap v3.x
@@ -196,6 +209,19 @@ npm run dev
 Se você já instalou o IalClaw, use nossos scripts de atualização:
 - **Windows:** Dê um duplo-clique no arquivo `update.bat`
 - **Linux/macOS:** Rode `bash update.sh` no terminal
+
+Passo a passo para usuários iniciantes no Linux/macOS:
+1. Abra o terminal.
+2. Entre na pasta onde o IalClaw foi instalado.
+3. Rode o atualizador de dentro dessa pasta.
+
+Exemplo:
+```bash
+cd ~/ialclaw
+bash update.sh
+```
+
+Se você instalou o projeto em outro local, troque `~/ialclaw` pelo caminho correto da sua pasta.
 
 ---
 
