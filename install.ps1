@@ -66,7 +66,8 @@ else {
     if (Test-Path "ialclaw/.git") {
         $workingTreeDirty = $false
         $statusOutput = cmd.exe /c "git -C ialclaw status --porcelain"
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($statusOutput | Out-String))) {
+        $filteredStatus = $statusOutput | Where-Object { $_ -notmatch '^[ MARCUD?!]{2}\s+(.+ -> )?workspace/' }
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($filteredStatus | Out-String))) {
             $workingTreeDirty = $true
         }
 

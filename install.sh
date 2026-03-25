@@ -65,7 +65,8 @@ if [ ! -d "ialclaw" ]; then
 else
     echo "Diretório local encontrado. Tentando sincronizar com o repositório remoto..."
     if [ -d "ialclaw/.git" ]; then
-        if [ -n "$(git -C ialclaw status --porcelain)" ]; then
+        GIT_STATUS=$(git -C ialclaw status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
+        if [ -n "$GIT_STATUS" ]; then
             echo "[ERRO] O repositório local possui alterações não commitadas e não pode ser atualizado automaticamente."
             echo "[ERRO] Resolva isso antes de continuar. Fluxo recomendado:"
             echo "        cd ~/ialclaw"

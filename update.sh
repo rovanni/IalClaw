@@ -19,7 +19,8 @@ BACKUP_DATE=$(date +"%Y%m%d_%H%M%S")
 echo "      Backup concluído com sucesso."
 echo ""
 
-if [ -n "$(git status --porcelain)" ]; then
+GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
+if [ -n "$GIT_STATUS" ]; then
 	echo "[ERRO] O repositório possui alterações locais e a atualização automática foi interrompida para evitar perda de trabalho."
 	echo "[ERRO] Resolva com commit ou stash antes de continuar. Exemplo:"
 	echo "        git status"

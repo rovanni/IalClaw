@@ -15,7 +15,10 @@ if exist ".env" copy /y ".env" "backups\.env_backup_%date:~-4,4%%date:~-7,2%%dat
 echo       Backup concluido com sucesso.
 echo.
 
-for /f %%i in ('git status --porcelain') do set GIT_DIRTY=1
+for /f "delims=" %%i in ('git status --porcelain') do (
+    echo %%i | findstr /r /c:"^[ MARCUD?!][ MARCUD?!] .*workspace/" >nul
+    if errorlevel 1 set GIT_DIRTY=1
+)
 if defined GIT_DIRTY (
     echo [ERRO] O repositorio possui alteracoes locais e a atualizacao automatica foi interrompida para evitar perda de trabalho.
     echo [ERRO] Resolva com commit ou stash antes de continuar. Exemplo:
