@@ -85,6 +85,11 @@ For verbose diagnostics during development:
 npm run dev:debug
 ```
 
+To start in debug mode and follow the structured log in the same terminal:
+```bash
+npm run dev:debug:tail
+```
+
 5. **Inspect Structured Logs**:
 Linux / macOS
 ```bash
@@ -266,6 +271,11 @@ npm run dev
 Para diagnóstico detalhado durante o desenvolvimento:
 ```bash
 npm run dev:debug
+```
+
+Para iniciar em modo debug e acompanhar o log estruturado no mesmo terminal:
+```bash
+npm run dev:debug:tail
 ```
 
 5. **Acompanhe os logs estruturados**:
