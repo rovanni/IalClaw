@@ -1,4 +1,8 @@
-import { Context } from 'grammy';
+import fs from 'fs';
+import path from 'path';
+import { Context, InputFile } from 'grammy';
+import { SessionManager } from '../shared/SessionManager';
+import { workspaceService } from '../services/WorkspaceService';
 
 export class TelegramOutputHandler {
 
@@ -10,13 +14,26 @@ export class TelegramOutputHandler {
             return;
         }
 
+        const attachment = this.resolveArtifactAttachment();
+        const finalResponse = attachment
+            ? `${response}\n\nArquivo gerado anexado nesta conversa: ${attachment.filename}`
+            : response;
+
         // Detecting huge Markdown outputs to send as files
-        if (response.length > 2000 && response.includes('```')) {
+        if (finalResponse.length > 2000 && finalResponse.includes('```')) {
             // Simplifying: just send as chunked text instead of creating a file to avoid disk IO overhead unless needed
-            return this.sendTextChunks(ctx, response);
+            await this.sendTextChunks(ctx, finalResponse);
+            if (attachment) {
+                await this.sendAttachment(ctx, attachment.filePath, attachment.filename);
+            }
+            return;
         }
 
-        return this.sendTextChunks(ctx, response);
+        await this.sendTextChunks(ctx, finalResponse);
+
+        if (attachment) {
+            await this.sendAttachment(ctx, attachment.filePath, attachment.filename);
+        }
     }
 
     private async sendTextChunks(ctx: Context, text: string) {
@@ -28,5 +45,41 @@ export class TelegramOutputHandler {
                 ctx.reply(chunk);
             });
         }
+    }
+
+    private resolveArtifactAttachment(): { filePath: string; filename: string } | null {
+        const session = SessionManager.getCurrentSession();
+        const projectId = session?.current_project_id;
+        const artifacts = session?.last_artifacts || [];
+
+        if (!projectId || artifacts.length === 0) {
+            return null;
+        }
+
+        const metadata = workspaceService.readProjectMetadata(projectId);
+        if (!metadata || (metadata.type !== 'slides' && metadata.type !== 'document')) {
+            return null;
+        }
+
+        const preferredArtifact = [...artifacts].reverse().find(filename => /\.(html?|pdf|md)$/i.test(filename)) || artifacts[artifacts.length - 1];
+        if (!preferredArtifact) {
+            return null;
+        }
+
+        const filePath = path.join(workspaceService.getProjectOutputPath(projectId), preferredArtifact);
+        if (!fs.existsSync(filePath)) {
+            return null;
+        }
+
+        return {
+            filePath,
+            filename: path.basename(preferredArtifact)
+        };
+    }
+
+    private async sendAttachment(ctx: Context, filePath: string, filename: string) {
+        await (ctx as any).replyWithDocument(new InputFile(filePath, filename), {
+            caption: `Artefato gerado: ${filename}`
+        });
     }
 }

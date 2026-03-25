@@ -17,6 +17,7 @@ import { LLMProvider, MessagePayload, ProviderResponse } from '../engine/Provide
 import { CognitiveMemory } from '../memory/CognitiveMemory';
 import { SessionManager } from '../shared/SessionManager';
 import { workspaceService } from '../services/WorkspaceService';
+import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { parseLlmJsonWithRecovery } from '../utils/parseLlmJson';
 
 class FakeProvider implements LLMProvider {
@@ -337,6 +338,42 @@ async function run() {
     assert.match(successMessage, /Slides gerados com sucesso\./);
     assert.match(successMessage, new RegExp(testProjectId));
     assert.match(successMessage, /index\.html/);
+
+    const telegramProjectId = `telegram-slides-${Date.now()}`;
+    const telegramOutputRoot = workspaceService.getProjectOutputPath(telegramProjectId);
+    fs.mkdirSync(telegramOutputRoot, { recursive: true });
+    fs.writeFileSync(path.join(workspaceService.getProjectRootPath(telegramProjectId), 'project.json'), JSON.stringify({
+        name: 'telegram-slides',
+        type: 'slides',
+        agent: 'test',
+        prompt: 'crie slides no telegram',
+        trace_id: 'trace-telegram',
+        created_at: Date.now(),
+        status: 'completed'
+    }), 'utf8');
+    fs.writeFileSync(path.join(telegramOutputRoot, 'index.html'), '<!DOCTYPE html><html><body>slides</body></html>', 'utf8');
+
+    const telegramHandler = new TelegramOutputHandler();
+    let sentDocument = false;
+    let replyCount = 0;
+
+    await SessionManager.runWithSession('telegram-output-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        session.current_project_id = telegramProjectId;
+        session.last_artifacts = ['index.html'];
+
+        await telegramHandler.sendResponse({
+            reply: async () => {
+                replyCount += 1;
+            },
+            replyWithDocument: async () => {
+                sentDocument = true;
+            }
+        } as any, 'Slides gerados com sucesso.', false);
+    });
+
+    assert.equal(replyCount > 0, true);
+    assert.equal(sentDocument, true);
 
     console.log('All tests passed.');
 }
