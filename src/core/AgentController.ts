@@ -150,10 +150,16 @@ export class AgentController {
             });
 
             const provider = this.loop.getProvider();
-            const queryEmbedding = await provider.embed(userQuery);
+            const isSimpleQuery = userQuery.trim().length < 30;
+            let queryEmbedding: number[] = [];
+            if (!isSimpleQuery) {
+                queryEmbedding = await provider.embed(userQuery);
+            }
             const gateway = new AgentGateway(this.memory, provider);
             const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
-            const memory = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
+            const memory = queryEmbedding.length > 0
+                ? await this.memory.retrieveWithTraversal(userQuery, queryEmbedding)
+                : [];
             const identity = await this.memory.getIdentityNodes(agentId);
             const policyEngine = new PolicyEngine();
             const policy = policyEngine.resolvePolicy(identity);
