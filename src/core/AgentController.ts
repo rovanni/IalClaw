@@ -415,9 +415,12 @@ Nao alucine fatos.\n\n${contextStr}`
             session._tool_input_attempts = 0;
             session._input_history = [];
 
-            return `Projeto existente conectado a esta sessao: ${projectIdFromPath}.
-
-Vou continuar editando os arquivos desse projeto sem criar um novo.`;
+            // Conecta o projeto mas NÃO interrompe — a mensagem do usuário pode
+            // conter um pedido real além do path. Salva a confirmação no histórico
+            // e deixa o pipeline principal processar o pedido completo.
+            const connectMsg = `Projeto existente conectado a esta sessao: ${projectIdFromPath}. Vou continuar editando os arquivos desse projeto sem criar um novo.`;
+            this.memory.saveMessage(session.conversation_id, 'assistant', connectMsg);
+            // Não retorna — continua para o pipeline processar a mensagem
         }
 
         if (this.isPuppeteerInstallAuthorization(normalized)) {
