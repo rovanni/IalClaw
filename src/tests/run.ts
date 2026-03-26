@@ -428,6 +428,13 @@ async function run() {
     const runtimeAnswer = await SessionManager.runWithSession('safe-mode-test', async () => directRuntime.execute('explique filas', 'planner'));
     assert.equal(runtimeAnswer, 'DIRECT:explique filas');
 
+    // ExecutionPolicy explícita sobrepõe o global — safeMode:true via policy
+    agentConfig.setSafeMode(false); // global diz "não safe mode"
+    const policyAnswer = await SessionManager.runWithSession('policy-test', async () =>
+        directRuntime.execute('explique filas', 'planner', { safeMode: true })
+    );
+    assert.equal(policyAnswer, 'DIRECT:explique filas'); // policy vence
+
     directRuntime.executor.executeDirect = originalDirect;
     directRuntime.planner.createPlanWithDiagnostics = originalPlanner;
     agentConfig.setSafeMode(originalSafeMode);

@@ -9,6 +9,7 @@ import { resolveExecutionMode } from './executor/diffStrategy';
 import { decideExecutionPath, RuntimeDecision } from './runtime/decisionGate';
 import { ExecutionPlan, PlannerOutput } from './planner/types';
 import { workspaceService } from '../services/WorkspaceService';
+import { ExecutionPolicy } from './ExecutionPolicy';
 
 export class AgentRuntime {
     private planner: AgentPlanner;
@@ -19,7 +20,7 @@ export class AgentRuntime {
         this.executor = new AgentExecutor(memory);
     }
 
-    async execute(userInput: string, mode: 'react' | 'planner' = 'planner'): Promise<string> {
+    async execute(userInput: string, mode: 'react' | 'planner' = 'planner', policy?: ExecutionPolicy): Promise<string> {
         return runWithTrace(async () => {
             emitDebug('gateway', { route: mode, query: userInput, timestamp: Date.now() });
 
@@ -29,8 +30,9 @@ export class AgentRuntime {
 
             try {
                 const session = SessionManager.getCurrentSession();
+                const safeMode = policy?.safeMode ?? agentConfig.isSafeModeEnabled();
 
-                if (agentConfig.isSafeModeEnabled()) {
+                if (safeMode) {
                     emitDebug('runtime_decision', {
                         stage: 'safe_mode',
                         decision: 'DIRECT_EXECUTION',

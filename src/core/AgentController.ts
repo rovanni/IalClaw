@@ -8,22 +8,18 @@ import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
 import { AgentGateway } from '../engine/AgentGateway';
 import { SessionManager } from '../shared/SessionManager';
-import { AgentRuntime } from './AgentRuntime';
 import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
 import { SkillResolver } from '../skills/SkillResolver';
 import { LoadedSkill } from '../skills/types';
 import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
-import { emitDebug } from '../shared/DebugBus';
-import { agentConfig } from './executor/AgentConfig';
 import { decisionGate } from './agent/decisionGate';
 
 export class AgentController {
     private memory: CognitiveMemory;
     private contextBuilder: ContextBuilder;
     private loop: AgentLoop;
-    private runtime: AgentRuntime;
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
@@ -40,7 +36,6 @@ export class AgentController {
         this.memory = memory;
         this.contextBuilder = contextBuilder;
         this.loop = loop;
-        this.runtime = new AgentRuntime(memory);
         this.inputHandler = inputHandler;
         this.outputHandler = outputHandler;
         this.skillResolver = skillResolver;
@@ -145,189 +140,104 @@ export class AgentController {
             return sessionDirectiveReply;
         }
 
-        if (agentConfig.isSafeModeEnabled()) {
-            logger.info('safe_mode_selected', 'Safe mode ativo. Ignorando planner e AgentLoop para garantir resposta direta.', {
+        // ── Roteamento: projeto ativo → tools | sem projeto → resposta direta ──
+        if (session?.current_project_id) {
+            console.log(`[IALCLAW] Using tools (project: ${session.current_project_id})`);
+            logger.info('tools_mode_selected', 'Projeto ativo. Usando AgentLoop com tools.', {
                 cognitive_stage: 'decision',
-                decision: 'SAFE_MODE',
-                mode: 'DIRECT_ONLY',
-                current_project_id: session?.current_project_id
+                decision: 'TOOLS_MODE',
+                current_project_id: session.current_project_id
             });
 
-            const answer = await this.runtime.execute(userQuery, 'planner');
-            const success = !answer.startsWith('Falha');
+            const provider = this.loop.getProvider();
+            const queryEmbedding = await provider.embed(userQuery);
+            const gateway = new AgentGateway(this.memory, provider);
+            const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
+            const memory = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
+            const identity = await this.memory.getIdentityNodes(agentId);
+            const policyEngine = new PolicyEngine();
+            const policy = policyEngine.resolvePolicy(identity);
+            const contextStr = this.contextBuilder.build({ identity, memory, policy });
+
+            const history = this.memory.getConversationHistory(sessionId, 10);
+            const messages: MessagePayload[] = [
+                {
+                    role: 'system',
+                    content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem um projeto ativo: ${session.current_project_id}. Use as tools disponiveis para executar acoes reais no projeto. Nao apenas descreva — EXECUTE.\nNao alucine fatos.\n\n${contextStr}`
+                }
+            ];
+            for (const message of history) {
+                if (message.role === 'user' || message.role === 'assistant' || message.role === 'tool') {
+                    messages.push({ role: message.role, content: message.content });
+                }
+            }
+            messages.push({ role: 'user', content: userQuery });
+
+            const result = await this.loop.run(messages, policy);
+
+            for (const newMessage of result.newMessages) {
+                this.memory.saveMessage(
+                    sessionId,
+                    newMessage.role,
+                    newMessage.content,
+                    newMessage.tool_name,
+                    newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
+                );
+            }
 
             SessionManager.addToHistory(sessionId, 'user', userQuery);
-            SessionManager.addToHistory(sessionId, 'assistant', answer);
-            this.memory.saveMessage(sessionId, 'assistant', answer);
+            SessionManager.addToHistory(sessionId, 'assistant', result.answer);
             await this.memory.learn({
                 query: userQuery,
-                nodes_used: [],
-                success,
-                response: answer
+                nodes_used: memory,
+                success: true,
+                response: result.answer
             });
 
-            logger.info('safe_mode_completed', 'Resposta direta concluida em safe mode.', {
+            logger.info('tools_mode_completed', 'Pipeline com tools concluido.', {
                 cognitive_stage: 'result',
-                result: success ? 'SUCCESS' : 'FAILED',
+                result: 'SUCCESS',
                 duration_ms: Date.now() - startedAt,
-                success
+                response_length: result.answer.length
             });
 
-            this.logExecutionSummary(logger, {
-                decision: 'DIRECT_EXECUTION',
-                mode: 'SAFE_MODE',
-                success,
-                durationMs: Date.now() - startedAt,
-                responseLength: answer.length
-            });
-
-            return answer;
+            return result.answer;
         }
 
-        if (this.shouldUsePlannerRuntime(userQuery, session?.current_project_id)) {
-            logger.info('planner_runtime_selected', 'Roteando consulta para o runtime de planejamento.', {
-                cognitive_stage: 'decision',
-                decision: 'PLANNER_RUNTIME',
-                mode: 'PLANNED',
-                current_project_id: session?.current_project_id
-            });
-            const answer = await this.runtime.execute(userQuery, 'planner');
-            const success = !answer.startsWith('Falha');
-
-            SessionManager.addToHistory(sessionId, 'user', userQuery);
-            SessionManager.addToHistory(sessionId, 'assistant', answer);
-            this.memory.saveMessage(sessionId, 'assistant', answer);
-            await this.memory.learn({
-                query: userQuery,
-                nodes_used: [],
-                success,
-                response: answer
-            });
-
-            logger.info('planner_runtime_completed', 'Execucao do runtime de planejamento concluida.', {
-                cognitive_stage: 'result',
-                result: success ? 'SUCCESS' : 'FAILED',
-                duration_ms: Date.now() - startedAt,
-                success
-            });
-
-            this.logExecutionSummary(logger, {
-                decision: 'PLANNER_RUNTIME',
-                mode: 'PLANNED',
-                success,
-                durationMs: Date.now() - startedAt,
-                responseLength: answer.length
-            });
-
-            return answer;
-        }
+        // ── Fallback: resposta direta sem tools (barata) ────────────────────
+        console.log('[IALCLAW] Using direct response');
+        logger.info('direct_response_selected', 'Sem projeto ativo. Resposta direta sem tools.', {
+            cognitive_stage: 'decision',
+            decision: 'DIRECT_RESPONSE'
+        });
 
         const provider = this.loop.getProvider();
-        logger.debug('embedding_query_started', 'Gerando embedding para a consulta do usuario.');
-        const queryEmbedding = await provider.embed(userQuery);
-        logger.debug('embedding_query_completed', 'Embedding da consulta processado.', {
-            embedding_dimensions: queryEmbedding.length
-        });
-
-        const gateway = new AgentGateway(this.memory, provider);
-        const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
-        logger.info('agent_selected', 'Agente de identidade selecionado para a conversa.', {
-            agent_id: agentId
-        });
-
-        const memory = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
-        const identity = await this.memory.getIdentityNodes(agentId);
-        logger.info('memory_context_built', 'Contexto de memoria recuperado para a resposta.', {
-            retrieved_memory_nodes: memory.length,
-            identity_nodes: identity.length
-        });
-
-        const policyEngine = new PolicyEngine();
-        const policy = policyEngine.resolvePolicy(identity);
-        const contextStr = this.contextBuilder.build({ identity, memory, policy });
-
-        const history = this.memory.getConversationHistory(sessionId, 10);
-        const messages: MessagePayload[] = [
-            {
-                role: 'system',
-                content: `Voce e o IalClaw, um agente cognitivo 100% local.
-Use o contexto abaixo processado usando RAG via Grafo para embasar sua resposta.
-Nao alucine fatos.\n\n${contextStr}`
-            }
+        const directMessages: MessagePayload[] = [
+            { role: 'system', content: 'Voce e o IalClaw, um agente cognitivo local. Responda de forma direta, util e sem usar tools. Seja conciso.' },
+            { role: 'user', content: userQuery }
         ];
 
-        for (const message of history) {
-            if (message.role === 'user' || message.role === 'assistant' || message.role === 'tool') {
-                messages.push({ role: message.role, content: message.content });
-            }
-        }
-
-        messages.push({ role: 'user', content: userQuery });
-
-        const result = await this.loop.run(messages, policy);
-
-        for (const newMessage of result.newMessages) {
-            this.memory.saveMessage(
-                sessionId,
-                newMessage.role,
-                newMessage.content,
-                newMessage.tool_name,
-                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
-            );
-        }
+        const directResult = await provider.generate(directMessages);
+        const answer = directResult.final_answer || 'Nao consegui gerar uma resposta.';
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
-        SessionManager.addToHistory(sessionId, 'assistant', result.answer);
+        SessionManager.addToHistory(sessionId, 'assistant', answer);
+        this.memory.saveMessage(sessionId, 'assistant', answer);
         await this.memory.learn({
             query: userQuery,
-            nodes_used: memory,
+            nodes_used: [],
             success: true,
-            response: result.answer
+            response: answer
         });
 
-        logger.info('conversation_completed', 'Pipeline conversacional concluido com sucesso.', {
+        logger.info('direct_response_completed', 'Resposta direta concluida.', {
             cognitive_stage: 'result',
             result: 'SUCCESS',
             duration_ms: Date.now() - startedAt,
-            response_length: result.answer.length,
-            new_messages_count: result.newMessages.length
+            response_length: answer.length
         });
 
-        this.logExecutionSummary(logger, {
-            decision: 'AGENT_LOOP',
-            mode: 'COGNITIVE',
-            success: true,
-            durationMs: Date.now() - startedAt,
-            responseLength: result.answer.length
-        });
-
-        return result.answer;
-    }
-
-    private logExecutionSummary(logger: ReturnType<typeof this.logger.child>, summary: {
-        decision: string;
-        mode: string;
-        success: boolean;
-        durationMs: number;
-        responseLength?: number;
-    }) {
-        logger.info('execution_summary', 'Resumo cognitivo da execucao.', {
-            cognitive_stage: 'result',
-            summary: summary.success ? 'SUCCESS' : 'FAILED',
-            decision: summary.decision,
-            mode: summary.mode,
-            success: summary.success,
-            duration_ms: summary.durationMs,
-            response_length: summary.responseLength
-        });
-
-        emitDebug('execution_summary', {
-            decision: summary.decision,
-            mode: summary.mode,
-            success: summary.success,
-            duration_ms: summary.durationMs,
-            response_length: summary.responseLength
-        });
+        return answer;
     }
 
     /**
@@ -387,18 +297,6 @@ Nao alucine fatos.\n\n${contextStr}`
         });
 
         return result.answer;
-    }
-
-    private shouldUsePlannerRuntime(userQuery: string, currentProjectId?: string): boolean {
-        if (this.extractWorkspaceProjectId(userQuery)) {
-            return true;
-        }
-
-        if (currentProjectId) {
-            return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|continuar|continue|ajuste|corrija|corrigir|adicione|instale|instalar|som|sons|audio|áudio|efeito|efeitos|index\.html)\b/i.test(userQuery);
-        }
-
-        return /\b(criar|crie|gere|gerar|montar|monte|projeto|workspace|arquivo|arquivos|html|css|javascript|site|pagina|frontend|som|sons|audio|áudio|efeito|efeitos|index\.html)\b/i.test(userQuery);
     }
 
     private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {
