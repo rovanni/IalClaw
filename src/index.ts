@@ -161,6 +161,16 @@ if (hasTelegramBotToken) {
         });
     });
 
+    // Registrar comandos no menu do Telegram (BotFather)
+    bot.api.setMyCommands([
+        { command: 'new', description: 'Iniciar nova conversa' },
+        { command: 'help', description: 'Ver comandos disponíveis' },
+        { command: 'status', description: 'Ver estado da sessão atual' },
+        { command: 'start', description: 'Mensagem de boas-vindas' },
+    ]).catch((err) => {
+        logger.warn('set_commands_failed', 'Falha ao registrar comandos no Telegram.', { error: String(err) });
+    });
+
     logger.info('bot_starting', 'Iniciando IalClaw Cognitive Agent (Polling).');
     bot.start();
 } else {

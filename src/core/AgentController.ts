@@ -105,10 +105,52 @@ export class AgentController {
         }, 'web_controller');
     }
 
+    private handleCommand(input: string, sessionId: string): string | null {
+        if (!input.startsWith('/')) return null;
+
+        const cmd = input.split(' ')[0].toLowerCase();
+
+        switch (cmd) {
+            case '/new':
+                SessionManager.resetVolatileState(sessionId);
+                const session = SessionManager.getSession(sessionId);
+                session.conversation_history = [];
+                session.current_project_id = undefined;
+                session.continue_project_only = undefined;
+                return '🔄 Nova conversa iniciada. Como posso te ajudar?';
+
+            case '/help':
+                return 'Comandos disponíveis:\n/new - reiniciar conversa\n/help - ver comandos\n/status - ver estado da sessão';
+
+            case '/status': {
+                const s = SessionManager.getSession(sessionId);
+                const project = s.current_project_id || 'nenhum';
+                const msgs = s.conversation_history.length;
+                return `📊 Sessão: ${sessionId}\nProjeto ativo: ${project}\nMensagens na sessão: ${msgs}`;
+            }
+
+            default:
+                return '⚠️ Comando não reconhecido. Use /help para ver os comandos disponíveis.';
+        }
+    }
+
     private async runConversation(sessionId: string, userQuery: string): Promise<string> {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
+
+        // ── Roteamento de comandos (antes do LLM) ──────────────────────────
+        const commandResponse = this.handleCommand(userQuery, sessionId);
+        if (commandResponse) {
+            this.memory.saveMessage(sessionId, 'user', userQuery);
+            this.memory.saveMessage(sessionId, 'assistant', commandResponse);
+            logger.info('command_handled', 'Comando processado sem acionar LLM.', {
+                command: userQuery.split(' ')[0],
+                duration_ms: Date.now() - startedAt
+            });
+            return commandResponse;
+        }
+
         this.memory.saveMessage(sessionId, 'user', userQuery);
         logger.info('conversation_started', 'Processando nova interacao do usuario.', {
             cognitive_stage: 'start',
