@@ -220,6 +220,14 @@ export class AgentController {
         skill: LoadedSkill
     ): Promise<string> {
         const logger = this.logger.child({ conversation_id: sessionId, skill_name: skill.name });
+
+        // Memória: embedding → retrieval → contexto
+        const provider = this.loop.getProvider();
+        const queryEmbedding = await provider.embed(originalQuery);
+        const memoryNodes = await this.memory.retrieveWithTraversal(originalQuery, queryEmbedding);
+        const identity = await this.memory.getIdentityNodes();
+        const contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+
         // Adapta caminhos OpenClaw para o espaço de trabalho do IalClaw
         const adaptedBody = skill.body.replace(
             /\.agent\/skills\//g,
@@ -232,7 +240,8 @@ export class AgentController {
             `Voce TEM tools disponiveis para executar acoes reais. USE-AS em vez de dizer ao usuario para executar comandos manualmente.\n` +
             `Nao invente resultados — execute as tools e relate o resultado real.\n\n` +
             `## Skill ativa: ${skill.name}\n\n` +
-            `${adaptedBody}`;
+            `${adaptedBody}\n\n` +
+            `${contextStr}`;
 
         const messages: MessagePayload[] = [
             { role: 'system', content: systemPrompt },
@@ -255,7 +264,7 @@ export class AgentController {
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
         await this.memory.learn({
             query: originalQuery,
-            nodes_used: [],
+            nodes_used: memoryNodes,
             success: true,
             response: result.answer
         });
