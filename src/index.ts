@@ -20,6 +20,28 @@ import { createLogger } from './shared/AppLogger';
 
 dotenv.config();
 
+// ── Banner de inicialização ──────────────────────────────────────────────────
+{
+    const pkg = require('../package.json');
+    const version = pkg.version || '0.0.0';
+    const logLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
+    const mode = logLevel === 'debug' ? 'dev:debug' : 'dev';
+    const channel = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_bot_token_here'
+        ? 'telegram + web'
+        : 'web only';
+
+    const banner = `
+===================================================
+   🐙  IALCLAW v${version}
+   ─────────────────────────────────
+   modo:    ${mode}
+   canal:   ${channel}
+   modelo:  ${process.env.OLLAMA_MODEL || 'default'}
+===================================================`;
+
+    console.log(banner);
+}
+
 const logger = createLogger('Startup');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
