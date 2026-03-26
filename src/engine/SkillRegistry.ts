@@ -210,5 +210,119 @@ export class SkillRegistry {
                 return JSON.stringify(last, null, 2);
             }
         });
+
+        /**
+         * run_skill_auditor: executa auditoria estática programática em uma skill pública.
+         * Substitui a necessidade de invocar o skill-auditor via bash/grep.
+         */
+        this.register({
+            name: "run_skill_auditor",
+            description: "Executa auditoria de segurança estática em uma skill pública recém-baixada. Analisa padrões de risco e grava resultado em data/skill-audit-log.json. Use APÓS salvar a skill com write_skill_file.",
+            parameters: {
+                type: "object",
+                properties: {
+                    skill_name: { type: "string", description: "Nome da skill em skills/public/ para auditar" }
+                },
+                required: ["skill_name"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const safeName = String(args.skill_name).replace(/[^a-zA-Z0-9\-_]/g, '');
+                if (!safeName || safeName !== String(args.skill_name)) {
+                    return `Erro: nome de skill inválido.`;
+                }
+                const skillDir = path.join(process.cwd(), 'skills', 'public', safeName);
+                if (!fs.existsSync(skillDir)) {
+                    return `Erro: skill "${safeName}" não encontrada em skills/public/`;
+                }
+
+                // Coleta todos os arquivos de texto da skill
+                const files = fs.readdirSync(skillDir).filter(f => /\.(md|json|txt|sh|py|js|ts|yaml|yml)$/i.test(f));
+                if (files.length === 0) {
+                    return `Erro: nenhum arquivo analisável encontrado em skills/public/${safeName}/`;
+                }
+
+                let fullContent = '';
+                for (const file of files) {
+                    fullContent += fs.readFileSync(path.join(skillDir, file), 'utf8') + '\n';
+                }
+
+                // Categorias de risco com padrões e pesos
+                const RISK_CHECKS: Array<{ name: string; weight: number; pattern: RegExp }> = [
+                    { name: 'Prompt Injection', weight: 40, pattern: /ignore (previous|all|above|prior) instructions|disregard|override (your|all)|forget (you are|your role)|new persona|act as (an? )?(unrestricted|DAN|jailbreak)|you are now|system prompt/gi },
+                    { name: 'Acesso a Arquivos Sensíveis', weight: 35, pattern: /\/etc\/(passwd|shadow|sudoers|hosts|ssh|cron)|~\/.ssh|~\/.aws|~\/.gnupg|\.env\b|id_rsa|id_ed25519|\.pem|\.key|authorized_keys/gi },
+                    { name: 'Variáveis de Ambiente Sensíveis', weight: 25, pattern: /(API_KEY|SECRET_KEY|ACCESS_TOKEN|AUTH_TOKEN|PASSWORD|PRIVATE_KEY|DATABASE_URL|OPENAI_API|ANTHROPIC_API|AWS_SECRET|GCP_KEY)\s*[=:]/gi },
+                    { name: 'Exfiltração de Dados', weight: 30, pattern: /(curl|wget|fetch|http\.get|axios|requests\.)\s.*(http|https):\/\//gi },
+                    { name: 'Comandos Perigosos', weight: 30, pattern: /rm\s+-rf\s+\/|chmod\s+777|sudo\s+|eval\s*\(|exec\s*\(|os\.system|subprocess\.call|shell=True/gi },
+                    { name: 'Downloads Não Declarados', weight: 15, pattern: /npm install|pip install|apt(-get)? install|brew install|wget .* -O|curl .* \|/gi },
+                    { name: 'Ofuscação', weight: 20, pattern: /base64|atob|btoa|hex decode|fromCharCode|\\x[0-9a-f]{2}|eval\(atob/gi }
+                ];
+
+                let score = 0;
+                const findings: string[] = [];
+
+                for (const check of RISK_CHECKS) {
+                    const matches = fullContent.match(check.pattern);
+                    if (matches && matches.length > 0) {
+                        score += check.weight * matches.length;
+                        findings.push(`[${check.name}] ${matches.length} ocorrência(s) — +${check.weight * matches.length} pontos`);
+                    }
+                }
+
+                // Overrides automáticos (bloqueio imediato)
+                const CRITICAL_PATTERNS = [
+                    /curl\s.*\|\s*(ba)?sh/gi,
+                    /wget\s.*\|\s*(ba)?sh/gi,
+                    /~\/.ssh\/id_rsa/gi,
+                    /\/etc\/shadow/gi
+                ];
+                let hasCritical = false;
+                for (const cp of CRITICAL_PATTERNS) {
+                    if (cp.test(fullContent)) {
+                        hasCritical = true;
+                        findings.push(`[CRÍTICO] Padrão de bloqueio automático detectado: ${cp.source}`);
+                    }
+                }
+
+                // Determinar decisão
+                let decision: string;
+                if (hasCritical || score >= 60) {
+                    decision = 'blocked';
+                } else if (score >= 21) {
+                    decision = 'manual_review';
+                } else {
+                    decision = 'approved';
+                }
+
+                const level = score >= 60 ? '🔴 ALTO' : score >= 21 ? '🟡 MÉDIO' : '🟢 BAIXO';
+
+                // Gravar no audit log
+                const logDir = path.join(process.cwd(), 'data');
+                if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+                const logPath = path.join(logDir, 'skill-audit-log.json');
+                const entry = {
+                    skill: safeName,
+                    status: decision,
+                    score,
+                    date: new Date().toISOString(),
+                    agent: 'skill-auditor-programmatic'
+                };
+                fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', 'utf8');
+
+                const report = [
+                    `══ SKILL AUDITOR — RELATÓRIO ══`,
+                    `Skill: ${safeName}`,
+                    `Arquivos analisados: ${files.length}`,
+                    `Score de risco: ${score}/100 — ${level}`,
+                    ``,
+                    findings.length > 0 ? `Achados:\n${findings.join('\n')}` : 'Nenhum padrão de risco detectado.',
+                    ``,
+                    `Decisão: ${decision.toUpperCase()}`,
+                    `Entrada gravada em data/skill-audit-log.json`
+                ].join('\n');
+
+                return report;
+            }
+        });
     }
 }

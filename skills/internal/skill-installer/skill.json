@@ -43,6 +43,8 @@
     "write_skill_file",
     "delete_skill_public",
     "read_audit_log",
+    "run_skill_auditor",
+    "reload_skills",
     "web_search"
   ],
   "pipeline": [

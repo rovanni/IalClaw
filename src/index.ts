@@ -106,6 +106,19 @@ registry.register({
     }
 });
 
+// Tool para recarregar skills após instalação (hot-reload)
+registry.register({
+    name: "reload_skills",
+    description: "Recarrega as skills do disco após uma nova instalação. Use após write_skill_file e run_skill_auditor para ativar a skill sem reiniciar o agente.",
+    parameters: { type: "object", properties: {}, required: [] }
+}, {
+    execute: async () => {
+        auditLog.reload();
+        const skills = skillLoader.load();
+        return `Skills recarregadas com sucesso. ${skills.length} skill(s) ativa(s): ${skills.map(s => s.name).join(', ')}`;
+    }
+});
+
 const loop = new AgentLoop(provider, registry);
 const inputHandler = new TelegramInputHandler();
 const outputHandler = new TelegramOutputHandler();

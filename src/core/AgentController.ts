@@ -350,7 +350,8 @@ Nao alucine fatos.\n\n${contextStr}`
         const systemPrompt =
             `Voce e o IalClaw, um agente cognitivo 100% local e privado.\n` +
             `A skill abaixo foi ativada pelo usuario. Siga suas instrucoes rigorosamente.\n` +
-            `Nao execute nenhum script sem antes planejar e confirmar com o usuario.\n\n` +
+            `Voce TEM tools disponiveis para executar acoes reais. USE-AS em vez de dizer ao usuario para executar comandos manualmente.\n` +
+            `Nao invente resultados — execute as tools e relate o resultado real.\n\n` +
             `## Skill ativa: ${skill.name}\n\n` +
             `${adaptedBody}`;
 
@@ -359,7 +360,15 @@ Nao alucine fatos.\n\n${contextStr}`
             { role: 'user', content: cleanQuery }
         ];
 
-        const result = await this.loop.run(messages);
+        // Skills como skill-installer precisam de mais tool calls que o default (5)
+        const skillPolicy = {
+            limits: {
+                max_steps: 10,
+                max_tool_calls: 12
+            }
+        };
+
+        const result = await this.loop.run(messages, skillPolicy);
 
         SessionManager.addToHistory(sessionId, 'user', originalQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);

@@ -7,7 +7,7 @@ description: >
   reprovada. Use esta skill sempre que o usuário quiser instalar, descobrir ou avaliar uma
   skill pública.
 compatibility:
-  tools: [fetch_url, write_skill_file, delete_skill_public, read_audit_log, web_search, read_local_file]
+  tools: [fetch_url, write_skill_file, delete_skill_public, read_audit_log, run_skill_auditor, reload_skills, web_search, read_local_file]
   context: IalClaw Cognitive System v3.0
 metadata:
   kind: internal
@@ -178,15 +178,15 @@ Avise o usuário:
 
 ## Passo 5 — Auditar com o skill-auditor
 
-Acione a skill-auditor internamente para analisar a skill recém-baixada:
+Execute a auditoria de segurança programática usando a tool `run_skill_auditor`:
 
+```tool
+run_skill_auditor(skill_name="<nome>")
 ```
-/skill-auditor <nome>
-```
 
-Aguarde a conclusão. O skill-auditor escreverá uma entrada em `data/skill-audit-log.json`.
+A tool executa análise estática, calcula score de risco e grava a decisão em `data/skill-audit-log.json`.
 
-Leia o resultado com:
+Em seguida, leia o resultado com:
 
 ```tool
 read_audit_log(skill_name="<nome>")
@@ -208,14 +208,21 @@ O campo `decision` terá um dos seguintes valores:
 
 ### ✅ Se `approved` ou `approved_with_restrictions`:
 
+Ative a skill imediatamente com hot-reload:
+
+```tool
+reload_skills()
 ```
-✅ Skill "<nome>" aprovada pela auditoria de segurança!
+
+Depois informe:
+
+```
+✅ Skill "<nome>" aprovada pela auditoria de segurança e ativada!
 
 Decisão: approved
 Motivo: <motivo do skill-auditor>
 
-A skill está disponível em skills/public/<nome>/.
-Reinicie o IalClaw (ou use /reload-skills quando disponível) para ativar.
+A skill já está disponível para uso.
 ```
 
 Se houver restrições, liste-as claramente para o usuário.
