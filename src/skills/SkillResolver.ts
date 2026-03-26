@@ -76,6 +76,11 @@ export class SkillResolver {
         return this.skills.map(s => s.name);
     }
 
+    /** Lista skills com nome e descrição (útil para injetar no contexto do LLM). */
+    listWithDescriptions(): { name: string; description: string }[] {
+        return this.skills.map(s => ({ name: s.name, description: s.description }));
+    }
+
     private findByName(name: string): LoadedSkill | undefined {
         return this.skills.find(s => s.name.toLowerCase() === name.toLowerCase());
     }
