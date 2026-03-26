@@ -415,10 +415,15 @@ Nao alucine fatos.\n\n${contextStr}`
             session._tool_input_attempts = 0;
             session._input_history = [];
 
-            // Conecta o projeto mas NÃO interrompe — a mensagem do usuário pode
-            // conter um pedido real além do path. Salva a confirmação no histórico
-            // e deixa o pipeline principal processar o pedido completo.
             const connectMsg = `Projeto existente conectado a esta sessao: ${projectIdFromPath}. Vou continuar editando os arquivos desse projeto sem criar um novo.`;
+
+            // Se o input é APENAS um path (sem pedido real), retorna confirmação.
+            // Se tem conteúdo além do path, registra a conexão e deixa o pipeline processar o pedido.
+            const withoutPaths = userQuery.replace(/(?:[A-Za-z]:\\|\/)[^\s"'`]+/g, '').trim();
+            if (withoutPaths.length < 5) {
+                return `${connectMsg}\n\nO que voce deseja fazer com esse projeto?`;
+            }
+
             this.memory.saveMessage(session.conversation_id, 'assistant', connectMsg);
             // Não retorna — continua para o pipeline processar a mensagem
         }
