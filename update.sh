@@ -20,20 +20,36 @@ echo "      Backup concluído com sucesso."
 echo ""
 
 GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
+STASHED=false
 if [ -n "$GIT_STATUS" ]; then
-	echo "[ERRO] O repositório possui alterações locais e a atualização automática foi interrompida para evitar perda de trabalho."
-	echo "[ERRO] Resolva com commit ou stash antes de continuar. Exemplo:"
-	echo "        git status"
-	echo "        git stash push -u -m 'ialclaw-update'"
-	echo "        bash update.sh"
-	exit 1
+	echo "      Alterações locais detectadas — guardando automaticamente..."
+	git stash push -u -m "ialclaw-update-$(date +%Y%m%d_%H%M%S)" || {
+		echo "[ERRO] Falha ao guardar alterações locais (git stash)."
+		echo "        Resolva manualmente: git status"
+		exit 1
+	}
+	STASHED=true
+	echo "      Stash criado com sucesso."
 fi
+echo ""
 
 echo "[2/5] 🌐 Baixando a versão mais recente do repositório..."
 git fetch origin || { echo "[ERRO] Falha ao conectar com o GitHub."; exit 1; }
 
 git pull --ff-only || { echo "[ERRO] Falha ao sincronizar arquivos via fast-forward."; exit 1; }
 echo "      Sincronização concluída."
+
+if [ "$STASHED" = true ]; then
+	echo "      Restaurando alterações locais..."
+	if git stash pop; then
+		echo "      Alterações restauradas com sucesso."
+	else
+		echo ""
+		echo "[AVISO] Conflito ao restaurar alterações locais."
+		echo "        Suas alterações estão salvas em: git stash list"
+		echo "        Resolva depois com: git stash pop"
+	fi
+fi
 echo ""
 
 echo "[3/5] ⚙️ Instalando dependências travadas do projeto (NPM CI)..."
