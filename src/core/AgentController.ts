@@ -24,6 +24,7 @@ export class AgentController {
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
     private logger = createLogger('AgentController');
+    private embeddingCache = new Map<string, number[]>();
 
     constructor(
         memory: CognitiveMemory,
@@ -150,10 +151,23 @@ export class AgentController {
             });
 
             const provider = this.loop.getProvider();
-            const isSimpleQuery = userQuery.trim().length < 30;
+            const normalizedQuery = userQuery.trim().toLowerCase();
+            const isSimpleQuery =
+                normalizedQuery.length < 30 &&
+                !/[a-zA-Z]{4,}\s+[a-zA-Z]{4,}/.test(normalizedQuery);
             let queryEmbedding: number[] = [];
             if (!isSimpleQuery) {
-                queryEmbedding = await provider.embed(userQuery);
+                const cached = this.embeddingCache.get(normalizedQuery);
+                if (cached) {
+                    queryEmbedding = cached;
+                } else {
+                    queryEmbedding = await provider.embed(userQuery);
+                    if (this.embeddingCache.size > 100) {
+                        const firstKey = this.embeddingCache.keys().next().value;
+                        if (firstKey) this.embeddingCache.delete(firstKey);
+                    }
+                    this.embeddingCache.set(normalizedQuery, queryEmbedding);
+                }
             }
             const gateway = new AgentGateway(this.memory, provider);
             const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
