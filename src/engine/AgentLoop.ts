@@ -16,6 +16,20 @@ const EXECUTION_CLAIM_PATTERNS: RegExp[] = [
     /\b(npm\s+install|yarn\s+add|pnpm\s+add|pip\s+install)\b/i
 ];
 
+const INSTALL_SUCCESS_CLAIM_PATTERNS: RegExp[] = [
+    /\bskill\s+instalad[oa]\s+com\s+sucesso\b/i,
+    /\binstalad[oa]\s+com\s+sucesso\b/i,
+    /\binstalled\s+successfully\b/i,
+    /\badded\s+\d+\s+packages\b/i
+];
+
+const INSTALL_EVIDENCE_PATTERNS: RegExp[] = [
+    /OK:\s*(SKILL\.md|skill\.json|README\.md)\s+salvo\s+em\s+skills\/public\//i,
+    /skills\/public\/[a-z0-9\-_]+\//i,
+    /auditoria\s+(aprovada|concluida\s+com\s+sucesso)/i,
+    /added\s+\d+\s+packages/i
+];
+
 export class AgentLoop {
     private llm: LLMProvider;
     private registry: SkillRegistry;
@@ -35,6 +49,7 @@ export class AgentLoop {
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
         const maxTools = policy?.limits?.max_tool_calls || 5;
         let toolCallsCount = 0;
+        const toolEvidence: string[] = [];
         const startedAt = Date.now();
 
         let toolsDefinition = this.registry.getDefinitions();
@@ -102,6 +117,7 @@ export class AgentLoop {
                         tool_calls_count: toolCallsCount
                     });
                     const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
+                    toolEvidence.push(String(result).slice(0, 2000));
 
                     const assistantMsg: MessagePayload = {
                         role: 'assistant',
@@ -134,7 +150,7 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
-                const safeAnswer = this.applyExecutionClaimGuard(response.final_answer, toolCallsCount);
+                const safeAnswer = this.applyExecutionClaimGuard(response.final_answer, toolCallsCount, toolEvidence);
                 const finalMsg: MessagePayload = { role: 'assistant', content: safeAnswer };
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
@@ -156,17 +172,17 @@ export class AgentLoop {
         throw new Error("Max iterations reached in AgentLoop.");
     }
 
-    private applyExecutionClaimGuard(answer: string, toolCallsCount: number): string {
-        if (toolCallsCount > 0) {
-            return answer;
-        }
-
+    private applyExecutionClaimGuard(answer: string, toolCallsCount: number, toolEvidence: string[]): string {
         if (!this.hasExecutionClaim(answer)) {
             return answer;
         }
 
+        if (toolCallsCount > 0 && this.hasGroundingEvidence(answer, toolEvidence)) {
+            return answer;
+        }
+
         emitDebug('execution_claim_blocked', {
-            reason: 'no_tool_call',
+            reason: toolCallsCount > 0 ? 'missing_grounding_evidence' : 'no_tool_call',
             response_preview: answer.slice(0, 200)
         });
 
@@ -175,6 +191,17 @@ export class AgentLoop {
 
     private hasExecutionClaim(text: string): boolean {
         return EXECUTION_CLAIM_PATTERNS.some(pattern => pattern.test(text));
+    }
+
+    private hasGroundingEvidence(answer: string, toolEvidence: string[]): boolean {
+        const evidenceBlob = toolEvidence.join('\n');
+
+        const claimsInstallSuccess = INSTALL_SUCCESS_CLAIM_PATTERNS.some(pattern => pattern.test(answer));
+        if (claimsInstallSuccess) {
+            return INSTALL_EVIDENCE_PATTERNS.some(pattern => pattern.test(evidenceBlob));
+        }
+
+        return toolEvidence.length > 0;
     }
 
     private injectRealityCheck(answer: string): string {

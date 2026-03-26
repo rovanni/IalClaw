@@ -285,6 +285,32 @@ async function run() {
     const loopResult = await loop.run([{ role: 'user', content: 'instale essa dependencia' }]);
     assert.match(loopResult.answer, /Nota: nao executei esses comandos aqui/i);
 
+    let loopStep = 0;
+    const loopProviderWithIrrelevantTool: LLMProvider = {
+        async generate(): Promise<ProviderResponse> {
+            if (loopStep === 0) {
+                loopStep++;
+                return {
+                    tool_call: {
+                        name: 'get_system_time',
+                        args: {}
+                    }
+                };
+            }
+
+            return {
+                final_answer: '✅ Skill instalada com sucesso! elite-powerpoint-designer v2.1.0'
+            };
+        },
+        async embed(): Promise<number[]> {
+            return [];
+        }
+    };
+
+    const loopWithIrrelevantTool = new AgentLoop(loopProviderWithIrrelevantTool, new SkillRegistry());
+    const groundedLoopResult = await loopWithIrrelevantTool.run([{ role: 'user', content: 'instale a skill elite-powerpoint-designer' }]);
+    assert.match(groundedLoopResult.answer, /Nota: nao executei esses comandos aqui/i);
+
     await SessionManager.runWithSession('skill-history-test', async () => {
         const fakeMemory = {
             saveMessage: () => undefined,
