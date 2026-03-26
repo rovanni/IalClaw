@@ -49,6 +49,7 @@ export class AgentLoop {
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
         const maxTools = policy?.limits?.max_tool_calls || 5;
         let toolCallsCount = 0;
+        let consecutiveToolFailures = 0;
         const toolEvidence: string[] = [];
         const startedAt = Date.now();
 
@@ -118,6 +119,7 @@ export class AgentLoop {
                     });
                     const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
                     toolEvidence.push(String(result).slice(0, 2000));
+                    consecutiveToolFailures = 0;
 
                     const assistantMsg: MessagePayload = {
                         role: 'assistant',
@@ -145,6 +147,15 @@ export class AgentLoop {
                     const errMsg: MessagePayload = { role: 'tool', content: `Erro ao executar tool: ${error.message}` };
                     messages.push(errMsg);
                     newMessages.push(errMsg);
+                    consecutiveToolFailures++;
+
+                    if (consecutiveToolFailures >= 2) {
+                        const fallbackHint: MessagePayload = {
+                            role: 'system',
+                            content: 'Voce ja falhou multiplas vezes tentando usar tools. Pare de tentar usar tools e responda diretamente ao usuario com uma explicacao util de como ele pode realizar a tarefa.'
+                        };
+                        messages.push(fallbackHint);
+                    }
                     continue;
                 }
             }
@@ -165,12 +176,35 @@ export class AgentLoop {
             }
         }
 
-        this.logger.error('loop_max_iterations_reached', new Error('Max iterations reached in AgentLoop.'), 'AgentLoop excedeu o limite de iteracoes.', {
+        // Graceful fallback: pedir ao LLM uma resposta final sem tools
+        this.logger.warn('loop_max_iterations_fallback', 'AgentLoop atingiu limite de iteracoes. Solicitando resposta final.', {
             duration_ms: Date.now() - startedAt,
             max_iterations: maxIter,
             tool_calls_count: toolCallsCount
         });
-        throw new Error("Max iterations reached in AgentLoop.");
+
+        messages.push({
+            role: 'system',
+            content: 'Voce atingiu o limite de iteracoes. NAO use tools. Responda diretamente ao usuario com o melhor resultado possivel baseado no que ja foi feito, ou explique como ele pode realizar a tarefa manualmente.'
+        });
+
+        try {
+            const fallbackResponse = await this.llm.generate(messages, []);
+            const fallbackAnswer = fallbackResponse.final_answer || 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.';
+            const sanitized = this.sanitizeUserFacingAnswer(fallbackAnswer);
+            const finalMsg: MessagePayload = { role: 'assistant', content: sanitized };
+            newMessages.push(finalMsg);
+            this.logger.info('loop_completed_via_fallback', 'AgentLoop finalizado via fallback.', {
+                duration_ms: Date.now() - startedAt,
+                answer_length: sanitized.length
+            });
+            return { answer: sanitized, newMessages };
+        } catch (fallbackError: any) {
+            this.logger.error('loop_fallback_failed', fallbackError, 'Fallback tambem falhou.', {
+                duration_ms: Date.now() - startedAt
+            });
+            return { answer: 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.', newMessages };
+        }
     }
 
     private applyExecutionClaimGuard(answer: string, toolCallsCount: number, toolEvidence: string[]): string {
