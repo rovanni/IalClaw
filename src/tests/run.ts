@@ -328,6 +328,44 @@ async function run() {
     assert.doesNotMatch(leakResult.answer, /<\/?arg_[a-z_]+>/i);
     assert.ok(leakResult.answer.length > 0);
 
+    // ── Test: list_installed_skills tool returns real skill data ──────────
+    {
+        const registryWithList = new SkillRegistry();
+        const fakeSkills: LoadedSkill[] = [
+            { name: 'skill-installer', description: 'Instala skills do marketplace', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [] },
+            { name: 'skill-auditor', description: 'Audita skills publicas', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [] },
+        ];
+        registryWithList.register({
+            name: 'list_installed_skills',
+            description: 'Lista skills instaladas.',
+            parameters: { type: 'object', properties: {}, required: [] }
+        }, {
+            execute: async () => {
+                const lines = fakeSkills.map(s => `• ${s.name} (${s.origin === 'internal' ? 'interna' : 'pública'}) — ${s.description}`);
+                return `Skills instaladas (${fakeSkills.length}):\n${lines.join('\n')}`;
+            }
+        });
+
+        // Provider that calls list_installed_skills tool
+        let listToolCallCount = 0;
+        const listProvider: LLMProvider = {
+            async generate(_msgs: MessagePayload[], _tools?: any[]): Promise<ProviderResponse> {
+                if (listToolCallCount === 0) {
+                    listToolCallCount++;
+                    return { tool_call: { name: 'list_installed_skills', args: {} } };
+                }
+                return { final_answer: _msgs[_msgs.length - 1]?.content || '' };
+            },
+            async embed(): Promise<number[]> { return []; }
+        };
+
+        const loopWithList = new AgentLoop(listProvider, registryWithList);
+        const listResult = await loopWithList.run([{ role: 'user', content: 'O que voce sabe fazer?' }]);
+        assert.match(listResult.answer, /skill-installer/i);
+        assert.match(listResult.answer, /skill-auditor/i);
+        assert.match(listResult.answer, /Skills instaladas \(2\)/);
+    }
+
     await SessionManager.runWithSession('skill-history-test', async () => {
         const fakeMemory = {
             saveMessage: () => undefined,

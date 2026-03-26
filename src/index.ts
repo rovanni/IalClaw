@@ -52,6 +52,25 @@ const skillLoader = new SkillLoader(skillsRoot, auditLog);
 skillLoader.load();
 const skillResolver = new SkillResolver(skillLoader);
 
+// Tool que o LLM pode chamar quando o usuário perguntar sobre skills disponíveis
+registry.register({
+    name: "list_installed_skills",
+    description: "Lista todas as skills (habilidades/capacidades) instaladas e disponíveis no agente. Use quando o usuário perguntar quais skills, capacidades ou habilidades estão disponíveis.",
+    parameters: { type: "object", properties: {}, required: [] }
+}, {
+    execute: async () => {
+        const skills = skillLoader.getAll();
+        if (skills.length === 0) {
+            return "Nenhuma skill instalada no momento.";
+        }
+        const lines = skills.map(s => {
+            const origin = s.origin === 'internal' ? 'interna' : 'pública';
+            return `• ${s.name} (${origin}) — ${s.description || 'sem descrição'}`;
+        });
+        return `Skills instaladas (${skills.length}):\n${lines.join('\n')}`;
+    }
+});
+
 const loop = new AgentLoop(provider, registry);
 const inputHandler = new TelegramInputHandler();
 const outputHandler = new TelegramOutputHandler();
