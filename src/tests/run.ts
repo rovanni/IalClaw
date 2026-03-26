@@ -311,6 +311,23 @@ async function run() {
     const groundedLoopResult = await loopWithIrrelevantTool.run([{ role: 'user', content: 'instale a skill elite-powerpoint-designer' }]);
     assert.match(groundedLoopResult.answer, /Nota: nao executei esses comandos aqui/i);
 
+    const loopProviderWithLeak: LLMProvider = {
+        async generate(): Promise<ProviderResponse> {
+            return {
+                final_answer: '[Usando skill: read_local_file]</arg_value>'
+            };
+        },
+        async embed(): Promise<number[]> {
+            return [];
+        }
+    };
+
+    const loopWithLeak = new AgentLoop(loopProviderWithLeak, new SkillRegistry());
+    const leakResult = await loopWithLeak.run([{ role: 'user', content: 'Quais skills voce tem instaladas?' }]);
+    assert.doesNotMatch(leakResult.answer, /\[Usando skill:/i);
+    assert.doesNotMatch(leakResult.answer, /<\/?arg_[a-z_]+>/i);
+    assert.ok(leakResult.answer.length > 0);
+
     await SessionManager.runWithSession('skill-history-test', async () => {
         const fakeMemory = {
             saveMessage: () => undefined,

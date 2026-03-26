@@ -121,7 +121,7 @@ export class AgentLoop {
 
                     const assistantMsg: MessagePayload = {
                         role: 'assistant',
-                        content: `[Usando skill: ${response.tool_call.name}]`,
+                        content: '',
                         tool_name: response.tool_call.name,
                         tool_args: response.tool_call.args
                     };
@@ -150,7 +150,8 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
-                const safeAnswer = this.applyExecutionClaimGuard(response.final_answer, toolCallsCount, toolEvidence);
+                const sanitizedAnswer = this.sanitizeUserFacingAnswer(response.final_answer);
+                const safeAnswer = this.applyExecutionClaimGuard(sanitizedAnswer, toolCallsCount, toolEvidence);
                 const finalMsg: MessagePayload = { role: 'assistant', content: safeAnswer };
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
@@ -207,5 +208,22 @@ export class AgentLoop {
     private injectRealityCheck(answer: string): string {
         const suffix = '\n\nNota: nao executei esses comandos aqui. Se quiser, eu te passo os passos para rodar localmente.';
         return `${answer.trimEnd()}${suffix}`;
+    }
+
+    private sanitizeUserFacingAnswer(answer: string): string {
+        let cleaned = answer;
+
+        // Remove vazamento de marcadores internos de tool-call e residuos XML-like do parser.
+        cleaned = cleaned.replace(/\[Usando skill:[^\]]*\]/gi, '');
+        cleaned = cleaned.replace(/<\/?arg_[a-z_]+>/gi, '');
+        cleaned = cleaned.replace(/<\/?tool_call[^>]*>/gi, '');
+        cleaned = cleaned.replace(/<\/?function[^>]*>/gi, '');
+        cleaned = cleaned.trim();
+
+        if (!cleaned) {
+            return 'Consegui processar sua solicitacao e posso continuar com o proximo passo.';
+        }
+
+        return cleaned;
     }
 }
