@@ -40,13 +40,13 @@ dotenv.config({ debug: false });
         : 'web only';
     const model = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
 
-    console.log('');
+    console.log('==================================================');
     console.log(`${CYAN}  🐙 IALCLAW${RESET} ${DIM}v${version}${RESET}`);
     console.log(`${DIM}  ─────────────────────────────────${RESET}`);
     console.log(`  modo:    ${GREEN}${mode}${RESET}`);
     console.log(`  canal:   ${GREEN}${channel}${RESET}`);
     console.log(`  modelo:  ${GREEN}${model}${RESET}`);
-    console.log('');
+    console.log('==================================================');
 }
 
 const logger = createLogger('Startup');
