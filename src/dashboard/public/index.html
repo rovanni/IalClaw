@@ -1,27 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
   <meta charset="UTF-8">
-  <title>IalClaw v3.0 - Memória Cognitiva</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IalClaw v3.0 - Cognitive Console</title>
   <link rel="icon" href="data:,">
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     :root {
       --font-xs: 0.75rem;
-      /* 12px */
       --font-sm: 0.875rem;
-      /* 14px */
       --font-md: 1rem;
-      /* 16px */
       --font-lg: 1.125rem;
-      /* 18px */
       --font-xl: 1.25rem;
-      /* 20px */
       --font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
 
-      /* Material Light Theme (Base) */
       --bg-base: #f8f9fa;
       --bg-surface: #ffffff;
       --bg-header: #ffffff;
@@ -33,25 +28,19 @@
       --accent-hover: #174ea6;
       --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
 
-      /* Component Colors */
-      --chat-user-bg: #e8f0fe;
-      --chat-user-text: #1967d2;
-      --chat-bot-bg: #f1f3f4;
-      --chat-bot-text: #202124;
-      --log-text: #137333;
-      --thought-bg: #f8f9fa;
-      --thought-border: #dadce0;
-      --t-obs: #0d652d;
-      --t-action: #b06000;
-      --t-thought: #681da8;
-      --t-rag: #c5221f;
-      --t-final: #1a73e8;
       --stat-ok: #1e8e3e;
       --stat-warn: #f29900;
+      --line-user: #1967d2;
+      --line-thought: #681da8;
+      --line-action: #b06000;
+      --line-obs: #0d652d;
+      --line-final: #1a73e8;
+      --line-error: #c5221f;
+      --line-debug: #5f6368;
+      --line-rag: #c5221f;
     }
 
     [data-theme="dark"] {
-      /* Material Dark Theme */
       --bg-base: #202124;
       --bg-surface: #292a2d;
       --bg-header: #292a2d;
@@ -63,26 +52,25 @@
       --accent-hover: #aecbfa;
       --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
 
-      /* Component Colors */
-      --chat-user-bg: #4285f4;
-      --chat-user-text: #ffffff;
-      --chat-bot-bg: #3c4043;
-      --chat-bot-text: #e8eaed;
-      --log-text: #81c995;
-      --thought-bg: #202124;
-      --thought-border: #5f6368;
-      --t-obs: #81c995;
-      --t-action: #fde293;
-      --t-thought: #d7aefb;
-      --t-rag: #f28b82;
-      --t-final: #8ab4f8;
       --stat-ok: #81c995;
       --stat-warn: #fde293;
+      --line-user: #8ab4f8;
+      --line-thought: #d7aefb;
+      --line-action: #fde293;
+      --line-obs: #81c995;
+      --line-final: #8ab4f8;
+      --line-error: #f28b82;
+      --line-debug: #9aa0a6;
+      --line-rag: #f28b82;
     }
 
     html {
       font-size: 16px;
       transition: font-size 0.2s ease-out;
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body {
@@ -97,21 +85,20 @@
       transition: background-color 0.3s, color 0.3s;
     }
 
-    /* Top Status Bar */
     #status-bar {
-      height: 56px;
+      min-height: 56px;
       background: var(--bg-header);
       border-bottom: 1px solid var(--border-color);
       display: flex;
       align-items: center;
-      padding: 0 20px;
+      padding: 10px 20px;
       font-size: var(--font-sm);
       font-weight: 500;
       color: var(--text-muted);
-      gap: 20px;
+      gap: 16px;
       z-index: 100;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-      transition: background-color 0.3s, border-color 0.3s;
+      flex-wrap: wrap;
     }
 
     .stat-badge {
@@ -149,12 +136,12 @@
     .mode-meta {
       color: var(--text-muted);
       font-size: var(--font-xs);
-      max-width: 240px;
+      max-width: 280px;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    /* Zoom Controls */
     .zoom-btn {
       background: transparent;
       border: 1px solid var(--border-color);
@@ -165,6 +152,11 @@
       font-size: var(--font-sm);
       font-weight: 600;
       transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
     }
 
     .zoom-btn:hover {
@@ -183,27 +175,40 @@
       color: #fff;
     }
 
-    /* Main Workspace */
     #workspace {
       display: flex;
       flex: 1;
       overflow: hidden;
-      padding: 16px;
-      gap: 16px;
+      padding: 14px;
+      gap: 14px;
+      min-height: 0;
     }
 
     #conversation-sidebar {
       width: 280px;
       min-width: 280px;
       min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
     }
 
     .sidebar-header {
-      padding: 16px;
+      padding: 14px;
       border-bottom: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .sidebar-title {
@@ -221,7 +226,7 @@
     .sidebar-subtitle {
       font-size: var(--font-xs);
       color: var(--text-muted);
-      line-height: 1.5;
+      line-height: 1.45;
     }
 
     .sidebar-btn {
@@ -253,11 +258,13 @@
 
     .conversation-item {
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 10px;
       background: var(--bg-surface);
-      padding: 12px;
+      padding: 10px;
       cursor: pointer;
       transition: all 0.2s;
+      text-align: left;
+      color: inherit;
     }
 
     .conversation-item:hover {
@@ -267,7 +274,7 @@
 
     .conversation-item.active {
       border-color: var(--accent);
-      background: var(--chat-user-bg);
+      background: var(--bg-input);
     }
 
     .conversation-name {
@@ -283,6 +290,7 @@
       color: var(--text-muted);
       line-height: 1.45;
       display: -webkit-box;
+      line-clamp: 2;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
@@ -301,27 +309,22 @@
       padding: 16px;
       color: var(--text-muted);
       font-size: var(--font-sm);
-      line-height: 1.6;
+      line-height: 1.5;
     }
 
-    /* Panels Base - Google Material Card Style */
-    .panel {
-      background: var(--bg-surface);
-      border-radius: 12px;
-      box-shadow: var(--shadow-sm);
-      border: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      transition: all 0.3s;
-    }
-
-    /* Left Column: Graph + Debug */
-    #left-col {
+    #main-col {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    #graph-panel {
+      height: 36%;
+      min-height: 220px;
+      max-height: 420px;
     }
 
     #mynetwork-container {
@@ -335,14 +338,9 @@
       height: 100%;
     }
 
-    /* System Debug / Gateway Panel */
-    #debug-panel {
-      height: 250px;
-    }
-
     .panel-header {
       background: var(--bg-surface);
-      padding: 12px 16px;
+      padding: 10px 14px;
       font-size: var(--font-sm);
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -352,150 +350,204 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
-    #debug-log {
+    #timeline-panel {
       flex: 1;
-      padding: 12px 16px;
-      overflow-y: auto;
-      min-height: 0;
-      /* 🔥 Flexbox Magic - Evita estourar o container pai */
-      font-family: var(--font-mono);
-      font-size: var(--font-sm);
-      color: var(--log-text);
-      line-height: 1.5;
-      margin: 0;
-      white-space: pre-wrap;
-    }
-
-    /* Right Column: Agent Panel */
-    #right-col {
-      width: 420px;
       min-height: 0;
     }
 
-    /* Thought Trace Panel */
-    #thought-panel {
-      height: 40%;
-      border-bottom: 1px solid var(--border-color);
-      min-height: 0;
-    }
-
-    #thought-log {
+    #timeline {
       flex: 1;
       overflow-y: auto;
       min-height: 0;
-      /* 🔥 Flexbox Magic */
-      padding: 12px;
+      padding: 10px 12px;
       font-family: var(--font-mono);
-      font-size: var(--font-sm);
-      line-height: 1.5;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      background: linear-gradient(180deg, rgba(128, 128, 128, 0.06) 0%, transparent 80px);
+    }
+
+    .event-line {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 5px 0;
+      border-bottom: 1px dashed rgba(128, 128, 128, 0.15);
+      word-break: break-word;
     }
 
-    .thought-item {
+    .event-time {
+      color: var(--text-muted);
+      min-width: 72px;
+      opacity: 0.9;
+      font-size: var(--font-xs);
+      padding-top: 2px;
+      user-select: none;
+    }
+
+    .event-body {
+      flex: 1;
+      min-width: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .event-tag {
+      font-weight: 700;
+      margin-right: 8px;
+      letter-spacing: 0.01em;
+    }
+
+    .event-user .event-tag {
+      color: var(--line-user);
+    }
+
+    .event-thought .event-tag {
+      color: var(--line-thought);
+    }
+
+    .event-action .event-tag {
+      color: var(--line-action);
+    }
+
+    .event-obs .event-tag {
+      color: var(--line-obs);
+    }
+
+    .event-final .event-tag {
+      color: var(--line-final);
+    }
+
+    .event-error .event-tag {
+      color: var(--line-error);
+    }
+
+    .event-debug .event-tag {
+      color: var(--line-debug);
+    }
+
+    .event-rag .event-tag {
+      color: var(--line-rag);
+    }
+
+    .trace-btn {
+      margin-left: 10px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: var(--font-xs);
+      font-family: var(--font-mono);
+      cursor: pointer;
+    }
+
+    .trace-btn:hover {
+      background: var(--bg-input);
+    }
+
+    #typing-indicator {
+      display: none;
       padding: 8px 12px;
-      border-radius: 6px;
-      background: var(--thought-bg);
-      border-left: 4px solid var(--thought-border);
+      border-top: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: var(--font-xs);
+      background: var(--bg-surface);
+    }
+
+    .input-area {
+      flex-shrink: 0;
+      padding: 10px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #chat-input {
+      flex: 1;
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      color: var(--text-main);
+      border-radius: 8px;
+      outline: none;
+      font-size: var(--font-md);
+      font-family: var(--font-mono);
+      transition: all 0.2s;
+    }
+
+    #chat-input:focus {
+      border: 1px solid var(--accent);
+      background: var(--bg-surface);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+    }
+
+    .console-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0 14px;
+      height: 40px;
+      font-weight: 700;
+      font-size: var(--font-sm);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .console-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .console-btn:disabled {
+      background: var(--border-color);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    #speech-btn {
+      min-width: 46px;
+      padding: 0 10px;
+      font-size: 1rem;
+      font-family: var(--font-mono);
+    }
+
+    #speech-btn.recording {
+      background: #c5221f;
+      color: #fff;
+    }
+
+    #tts-toggle {
+      min-width: 56px;
+      padding: 0 10px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    #tts-toggle.active {
+      background: var(--bg-input);
       color: var(--text-main);
     }
 
-    .t-thought {
-      border-color: var(--t-thought);
-    }
-
-    .t-action {
-      border-color: var(--t-action);
-    }
-
-    .t-obs {
-      border-color: var(--t-obs);
-    }
-
-    .t-final {
-      border-color: var(--t-final);
-      font-weight: bold;
-    }
-
-    .t-rag {
-      border-color: var(--t-rag);
-    }
-
-    .thought-mode {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .thought-mode-main {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .mode-pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: var(--font-xs);
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      border: 1px solid transparent;
-    }
-
-    .mode-pill.strict {
-      background: rgba(30, 142, 62, 0.12);
-      color: #1e8e3e;
-      border-color: rgba(30, 142, 62, 0.3);
-    }
-
-    .mode-pill.balanced {
-      background: rgba(242, 153, 0, 0.12);
-      color: #b06000;
-      border-color: rgba(242, 153, 0, 0.3);
-    }
-
-    .mode-pill.aggressive {
-      background: rgba(197, 34, 31, 0.12);
-      color: #c5221f;
-      border-color: rgba(197, 34, 31, 0.3);
-    }
-
-    .mode-stage {
+    #console-status {
+      font-family: var(--font-mono);
       font-size: var(--font-xs);
       color: var(--text-muted);
-      font-family: var(--font-mono);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+      margin-left: auto;
+      white-space: nowrap;
+      max-width: 220px;
+      text-overflow: ellipsis;
+      overflow: hidden;
     }
 
-    /* Chat Container */
-    #chat-container {
-      flex: 1;
-      min-height: 0;
-    }
-
-    #chat-messages {
-      flex: 1;
-      overflow-y: auto;
-      min-height: 0;
-      max-height: 100%;
-      /* 🔥 Flexbox Magic */
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    /* Custom Scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -514,160 +566,62 @@
       background: var(--text-muted);
     }
 
-    .chat-bubble {
-      padding: 12px 18px;
-      border-radius: 16px;
-      max-width: 85%;
-      line-height: 1.5;
-      word-break: break-word;
-      white-space: pre-wrap;
-      /* Garante que os '\n' do LLM sejam respeitados */
-      font-size: var(--font-md);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-      animation: fadeIn 0.3s ease-in-out;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .bubble-meta {
-      font-size: var(--font-xs);
-      opacity: 0.8;
-      margin-bottom: 6px;
-      display: block;
-      font-weight: 500;
-    }
-
-    .bubble-user {
-      background: var(--chat-user-bg);
-      color: var(--chat-user-text);
-      align-self: flex-end;
-      border-bottom-right-radius: 4px;
-    }
-
-    .bubble-bot {
-      background: var(--chat-bot-bg);
-      color: var(--chat-bot-text);
-      align-self: flex-start;
-      border-bottom-left-radius: 4px;
-      border: 1px solid var(--border-color);
-    }
-
-    #typing-indicator {
-      display: none;
-      font-size: var(--font-sm);
-      color: var(--text-muted);
-      padding: 0 16px 12px;
-      font-style: italic;
-    }
-
-    /* Input Container */
-    .input-area {
-      flex-shrink: 0;
-      padding: 16px;
-      background: var(--bg-surface);
-      border-top: 1px solid var(--border-color);
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    #chat-input {
-      flex: 1;
-      width: 100%;
-      box-sizing: border-box;
-      padding: 12px 18px;
-      background: var(--bg-input);
-      border: 1px solid transparent;
-      color: var(--text-main);
-      border-radius: 24px;
-      outline: none;
-      font-size: var(--font-md);
-      font-family: inherit;
-      transition: all 0.2s;
-    }
-
-    #chat-input:focus {
-      border: 1px solid var(--accent);
-      background: var(--bg-surface);
-      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
-    }
-
-    #send-btn {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 24px;
-      padding: 0 24px;
-      height: 48px;
-      font-weight: 600;
-      font-size: var(--font-md);
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    #send-btn:hover {
-      background: var(--accent-hover);
-    }
-
-    #send-btn:disabled {
-      background: var(--border-color);
-      color: var(--text-muted);
-      cursor: not-allowed;
-    }
-
     @media (max-width: 1200px) {
       #conversation-sidebar {
         width: 240px;
         min-width: 240px;
       }
+
+      #graph-panel {
+        height: 32%;
+      }
     }
 
-    @media (max-width: 1500px) {
-      #status-bar {
-        flex-wrap: wrap;
-        height: auto;
-        padding: 12px 20px;
+    @media (max-width: 960px) {
+      #workspace {
+        flex-direction: column;
+      }
+
+      #conversation-sidebar {
+        width: 100%;
+        min-width: 0;
+        max-height: 260px;
+      }
+
+      #graph-panel {
+        height: 220px;
+        max-height: none;
       }
     }
   </style>
 </head>
 
 <body>
-  <!-- Top Status Bar -->
   <header id="status-bar">
-    <div>IalClaw V3.0 <span class="stat-badge">COGNITIVE DASHBOARD</span></div>
+    <div>IalClaw V3.0 <span class="stat-badge">COGNITIVE CONSOLE</span></div>
     <div>|</div>
     <div>Gateway: <span class="stat-ok">ONLINE</span></div>
     <div>Engine: <span class="stat-warn">STANDBY</span></div>
     <div>|</div>
-    <div class="mode-status">Modo atual: <span id="mode-badge" class="stat-badge">Equilibrado</span></div>
+    <div class="mode-status">Modo atual: <span id="mode-badge" class="stat-badge" data-mode="balanced">Equilibrado</span></div>
     <div id="mode-behavior" class="mode-meta">Fallback ativo, validacao leve</div>
 
-    <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+    <div style="margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
       <label for="execution-mode" style="font-size: var(--font-xs); color: var(--text-muted);">MODO</label>
       <select id="execution-mode" class="mode-select">
         <option value="strict">Seguro</option>
         <option value="balanced" selected>Equilibrado</option>
         <option value="aggressive">Livre</option>
       </select>
-      <a href="/simple" class="zoom-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Modo simples</a>
-      <a href="/help" class="zoom-btn" style="text-decoration:none; display:inline-flex; align-items:center;">Ajuda</a>
-      <span style="color: #666; font-size: var(--font-xs);">ZOOM</span>
+      <a href="/simple" class="zoom-btn">Modo simples</a>
+      <a href="/help" class="zoom-btn">Ajuda</a>
+      <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
       <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
-      <span id="zoom-level" style="color: #aaa; width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
+      <span id="zoom-level" style="color: var(--text-muted); width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
       <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
-      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()" style="margin-left: 8px;">🌓 Theme</button>
+      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">🌓 Theme</button>
     </div>
+
     <div>|</div>
     <div>Nodes: <span id="stat-nodes" class="stat-badge">0</span></div>
     <div>Edges: <span id="stat-edges" class="stat-badge">0</span></div>
@@ -688,71 +642,151 @@
       </div>
     </aside>
 
-    <!-- Left: Graph & Debug -->
-    <div id="left-col">
-      <div class="panel" id="mynetwork-container">
-        <div id="mynetwork"></div>
-      </div>
-      <div class="panel" id="debug-panel">
-        <div class="panel-header"><span>⚙️ Gateway & Policy Debug</span> <span>[LIVE]</span></div>
-        <pre id="debug-log">// Aguardando interceptação de rotas e decisões do Gateway...</pre>
-      </div>
-    </div>
-
-    <!-- Right: Agent Panel -->
-    <div class="panel" id="right-col">
-      <div id="thought-panel" style="display:flex; flex-direction:column;">
+    <div id="main-col">
+      <div class="panel" id="graph-panel">
         <div class="panel-header">
-          <span>🧠 Thought Trace (ReAct)</span>
-          <button class="zoom-btn btn-primary" onclick="promptReplay()">▶ REPLAY</button>
+          <span>Memoria Cognitiva</span>
+          <button class="zoom-btn btn-primary" id="replay-btn">▶ Replay por Trace</button>
         </div>
-        <div id="thought-log">
-          <div class="thought-item t-obs">[SYSTEM] AgentLoop Listening...</div>
+        <div id="mynetwork-container">
+          <div id="mynetwork"></div>
         </div>
       </div>
 
-      <div id="chat-container" style="display:flex; flex-direction:column;">
-        <div class="panel-header"><span>💬 Interaction Panel</span></div>
-        <div id="chat-messages"></div>
-        <div id="typing-indicator">Agent is thinking...</div>
+      <div class="panel" id="timeline-panel">
+        <div class="panel-header">
+          <span>Timeline Cognitiva Unificada</span>
+          <span id="console-status">sse: conectando...</span>
+        </div>
+        <div id="timeline"></div>
+        <div id="typing-indicator">[SYSTEM] processando...</div>
         <div class="input-area">
-          <input type="text" id="chat-input" placeholder="Comando cognitivo..." autocomplete="off">
-          <button id="send-btn">Enviar</button>
+          <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
+          <button id="speech-btn" class="console-btn" title="Entrada por voz">🎤</button>
+          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">🔈</button>
+          <button id="send-btn" class="console-btn">Enviar</button>
         </div>
       </div>
     </div>
   </div>
 
   <script type="text/javascript">
-    // --- Controle da Sessão Cognitiva ---
     let sessionId = localStorage.getItem('ialclaw_session_id');
     if (!sessionId) {
-      sessionId = crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).substr(2, 9);
+      sessionId = createSessionId();
       localStorage.setItem('ialclaw_session_id', sessionId);
     }
 
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
-    const chatMsgs = document.getElementById('chat-messages');
+    const speechBtn = document.getElementById('speech-btn');
+    const ttsToggleBtn = document.getElementById('tts-toggle');
+    const timeline = document.getElementById('timeline');
     const typingIndicator = document.getElementById('typing-indicator');
-    const thoughtLog = document.getElementById('thought-log');
-    const debugLog = document.getElementById('debug-log');
     const conversationList = document.getElementById('conversation-list');
     const conversationCount = document.getElementById('conversation-count');
     const newChatBtn = document.getElementById('new-chat-btn');
+    const replayBtn = document.getElementById('replay-btn');
     const executionModeSelect = document.getElementById('execution-mode');
     const modeBadge = document.getElementById('mode-badge');
     const modeBehavior = document.getElementById('mode-behavior');
-    let network = null;
+    const consoleStatus = document.getElementById('console-status');
 
-    // --- Controle de Zoom Persistente ---
+    let network = null;
+    let eventSource = null;
     let currentZoom = parseFloat(localStorage.getItem('ialclaw_zoom')) || 1.0;
+    let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
+    let commandHistory = [];
+    let historyCursor = -1;
+    let ttsEnabled = localStorage.getItem('ialclaw_tts') === '1';
+    let recognition = null;
+    let isRecording = false;
+
+    const EVENT_LABELS = {
+      user: 'USER',
+      thought: 'THOUGHT',
+      action: 'ACTION',
+      obs: 'OBS',
+      final: 'FINAL',
+      error: 'ERROR',
+      debug: 'DEBUG',
+      rag: 'RAG'
+    };
+
+    function createSessionId() {
+      return crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function nowLabel(ts) {
+      const dt = ts ? new Date(ts) : new Date();
+      return dt.toLocaleTimeString('pt-BR', { hour12: false });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function eventContentToString(content) {
+      if (typeof content === 'string') return content;
+      try {
+        return JSON.stringify(content, null, 2);
+      } catch (_err) {
+        return String(content);
+      }
+    }
+
+    function appendEvent(type, content, meta = {}) {
+      const normalizedType = EVENT_LABELS[type] ? type : 'obs';
+      const row = document.createElement('div');
+      row.className = `event-line event-${normalizedType}`;
+
+      const timeEl = document.createElement('div');
+      timeEl.className = 'event-time';
+      timeEl.textContent = nowLabel(meta.timestamp);
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'event-body';
+
+      const tagEl = document.createElement('span');
+      tagEl.className = 'event-tag';
+      tagEl.textContent = `[${EVENT_LABELS[normalizedType]}]`;
+
+      const textEl = document.createElement('span');
+      textEl.textContent = eventContentToString(content);
+
+      bodyEl.appendChild(tagEl);
+      bodyEl.appendChild(textEl);
+
+      const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
+      if (traceId && (normalizedType === 'final' || normalizedType === 'error' || normalizedType === 'debug')) {
+        const traceBtn = document.createElement('button');
+        traceBtn.className = 'trace-btn';
+        traceBtn.type = 'button';
+        traceBtn.textContent = '🔍 Ver execucao';
+        traceBtn.addEventListener('click', () => replayTrace(traceId));
+        bodyEl.appendChild(traceBtn);
+      }
+
+      row.appendChild(timeEl);
+      row.appendChild(bodyEl);
+      timeline.appendChild(row);
+      timeline.scrollTop = timeline.scrollHeight;
+
+      const maxRows = 1500;
+      if (timeline.children.length > maxRows) {
+        timeline.removeChild(timeline.firstChild);
+      }
+    }
 
     function applyZoom() {
-      // Alterar a base no HTML escala todos os tamanhos (rem) automaticamente
       document.documentElement.style.fontSize = `${16 * currentZoom}px`;
       document.getElementById('zoom-level').innerText = `${Math.round(currentZoom * 100)}%`;
-      localStorage.setItem('ialclaw_zoom', currentZoom);
+      localStorage.setItem('ialclaw_zoom', String(currentZoom));
     }
 
     function changeZoom(delta) {
@@ -760,15 +794,10 @@
       applyZoom();
     }
 
-    applyZoom(); // Inicializa na primeira carga
-
-    // --- Controle de Temas (Google Clean UI) ---
-    let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
-
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
       document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? '🌙 Escuro' : '☀️ Claro';
-      if (typeof network !== 'undefined' && network) network.setOptions(getGraphOptions()); // Atualiza cores do canvas na troca
+      if (network) network.setOptions(getGraphOptions());
     }
 
     function toggleTheme() {
@@ -777,92 +806,75 @@
       applyTheme(currentTheme);
     }
 
-    applyTheme(currentTheme); // Inicializa Tema
+    function setTtsState(enabled) {
+      ttsEnabled = enabled;
+      localStorage.setItem('ialclaw_tts', enabled ? '1' : '0');
+      ttsToggleBtn.classList.toggle('active', enabled);
+      ttsToggleBtn.textContent = enabled ? '🔊' : '🔈';
+    }
 
-    // --- Replay Cognitivo ---
-    async function promptReplay() {
-      const traceId = prompt("Cole o ID do Trace (trace_id) para reproduzir o raciocínio:");
-      if (!traceId) return;
+    function speak(text) {
+      if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(String(text));
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    }
 
-      try {
-        thoughtLog.innerHTML = '';
-        debugLog.innerText = `// Carregando replay para o trace: ${traceId}...\n`;
-        chatMsgs.innerHTML = '';
+    function handleSpeechInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        appendEvent('error', 'Web Speech API nao suportada neste navegador.');
+        speechBtn.disabled = true;
+        return;
+      }
 
-        const res = await fetch(`/api/trace/${traceId}`);
-        if (!res.ok) throw new Error("Trace não encontrado no banco de dados.");
-        const events = await res.json();
+      recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
 
-        for (const e of events) {
-          const data = JSON.parse(e.payload);
+      recognition.onstart = () => {
+        isRecording = true;
+        speechBtn.classList.add('recording');
+        speechBtn.textContent = '🔴';
+        appendEvent('obs', 'Captura de voz iniciada.');
+      };
 
-          if (e.type === 'gateway') {
-            updateDebugLog(data);
-          } else if (e.type === 'thought') {
-            appendThought(data.type || 'thought', data.content);
-          } else if (e.type === 'tool') {
-            appendThought('action', `Tool [${data.name}]: ${data.status} (${data.latency}ms)`);
-          } else if (e.type === 'rag') {
-            appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados`);
-          } else if (e.type === 'execution_mode') {
-            appendExecutionModeEvent(data);
-          }
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) return;
+        chatInput.value = transcript;
+        chatInput.focus();
+        appendEvent('obs', `Voz capturada: ${transcript}`);
+      };
 
-          // Simula o tempo real do agente "pensando"
-          await new Promise(r => setTimeout(r, 400));
+      recognition.onerror = (event) => {
+        appendEvent('error', `Falha no reconhecimento de voz: ${event.error || 'desconhecido'}`);
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        speechBtn.classList.remove('recording');
+        speechBtn.textContent = '🎤';
+      };
+
+      speechBtn.addEventListener('click', () => {
+        if (!recognition) return;
+        if (isRecording) {
+          recognition.stop();
+        } else {
+          recognition.start();
         }
-        appendThought('obs', '[SYSTEM] Replay Cognitivo Finalizado.');
-      } catch (err) {
-        alert("Erro no Replay: " + err.message);
-      }
-    }
-
-    function appendMessage(role, text, meta = '') {
-      const el = document.createElement('div');
-      el.classList.add('chat-bubble');
-      el.classList.add(role === 'user' ? 'bubble-user' : 'bubble-bot');
-
-      if (meta && role === 'bot') {
-        const metaEl = document.createElement('span');
-        metaEl.className = 'bubble-meta';
-        metaEl.innerText = meta;
-        el.appendChild(metaEl);
-      }
-
-      // --- UX Limitador de Textos Longos ---
-      const MAX_LEN = 600;
-      if (role === 'bot' && text.length > MAX_LEN) {
-        const textContainer = document.createElement('span');
-        textContainer.innerText = text.slice(0, MAX_LEN) + '...';
-        el.appendChild(textContainer);
-
-        const expandBtn = document.createElement('button');
-        expandBtn.innerText = '▼ Expandir resposta completa';
-        expandBtn.style.cssText = 'background: transparent; border: 1px solid var(--border-color); color: var(--accent); cursor: pointer; font-size: var(--font-xs); font-weight: 600; padding: 6px 12px; border-radius: 16px; display: block; margin-top: 10px; width: fit-content; transition: all 0.2s; font-family: inherit;';
-        expandBtn.onmouseover = () => expandBtn.style.background = 'var(--bg-input)';
-        expandBtn.onmouseout = () => expandBtn.style.background = 'transparent';
-
-        expandBtn.onclick = () => {
-          textContainer.innerText = text;
-          expandBtn.style.display = 'none';
-        };
-        el.appendChild(expandBtn);
-      } else {
-        const textNode = document.createTextNode(text);
-        el.appendChild(textNode);
-      }
-
-      chatMsgs.appendChild(el);
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    }
-
-    function createSessionId() {
-      return crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).substr(2, 9);
+      });
     }
 
     function resetConversationView() {
-      chatMsgs.innerHTML = '';
-      appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
+      timeline.innerHTML = '';
+      appendEvent('obs', `Sessao ativa: ${sessionId}`);
+      appendEvent('obs', 'Console cognitivo pronto para comandos.');
     }
 
     async function resetSessionState(targetSessionId) {
@@ -871,6 +883,52 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: targetSessionId })
       }).catch(() => null);
+    }
+
+    function shouldConsumeEvent(payload) {
+      if (!payload || typeof payload !== 'object') return true;
+      const payloadSession = payload.sessionId || payload.session_id || payload.conversation_id || payload.conversationId;
+      if (!payloadSession) return true;
+      return String(payloadSession) === String(sessionId);
+    }
+
+    function applyExecutionConfig(config) {
+      if (!config) return;
+      executionModeSelect.value = config.executionMode;
+      modeBadge.innerText = config.label;
+      modeBehavior.innerText = config.behavior;
+      modeBadge.dataset.mode = config.executionMode;
+    }
+
+    async function loadExecutionConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (res.ok && data?.config) applyExecutionConfig(data.config);
+      } catch (_err) {
+        appendEvent('error', 'Falha ao carregar configuracao de execucao.');
+      }
+    }
+
+    async function updateExecutionMode(nextMode, previousMode) {
+      executionModeSelect.disabled = true;
+      try {
+        const res = await fetch('/api/config/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: nextMode })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.config) throw new Error(data.error || `Falha HTTP ${res.status}`);
+
+        applyExecutionConfig(data.config);
+        appendEvent('obs', `Modo de execucao alterado para ${data.config.label}.`);
+      } catch (err) {
+        executionModeSelect.value = previousMode;
+        appendEvent('error', `Nao foi possivel atualizar o modo: ${err.message || err}`);
+      } finally {
+        executionModeSelect.disabled = false;
+      }
     }
 
     async function loadConversationList() {
@@ -884,20 +942,19 @@
 
         conversationCount.innerText = String(conversations.length);
         renderConversationList(conversations);
-      } catch (err) {
+      } catch (_err) {
         conversationList.innerHTML = '<div class="conversation-empty">Nao foi possivel carregar o historico.</div>';
       }
     }
 
     function renderConversationList(conversations) {
       if (!conversations.length) {
-        conversationList.innerHTML = '<div class="conversation-empty">Nenhuma conversa salva ainda. Use "Nova conversa" para começar.</div>';
+        conversationList.innerHTML = '<div class="conversation-empty">Nenhuma conversa salva ainda. Use "Nova conversa" para comecar.</div>';
         return;
       }
 
       conversationList.innerHTML = '';
-
-      conversations.forEach(conversation => {
+      conversations.forEach((conversation) => {
         const item = document.createElement('button');
         item.type = 'button';
         item.className = `conversation-item${conversation.conversation_id === sessionId ? ' active' : ''}`;
@@ -920,6 +977,33 @@
       });
     }
 
+    async function loadConversationMessages(targetSessionId) {
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
+        const messages = await res.json();
+
+        timeline.innerHTML = '';
+        appendEvent('obs', `Sessao ativa: ${targetSessionId}`);
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+          appendEvent('obs', 'Historico vazio. Digite um comando cognitivo.');
+          return;
+        }
+
+        messages.forEach((message) => {
+          if (message.role === 'user') {
+            appendEvent('user', message.content, { timestamp: message.created_at });
+          } else if (message.role === 'assistant') {
+            appendEvent('final', message.content, { timestamp: message.created_at });
+          } else if (message.role === 'tool') {
+            appendEvent('action', message.content, { timestamp: message.created_at });
+          }
+        });
+      } catch (_err) {
+        resetConversationView();
+      }
+    }
+
     async function switchConversation(nextSessionId) {
       if (!nextSessionId || nextSessionId === sessionId) return;
 
@@ -931,152 +1015,142 @@
       await loadConversationList();
     }
 
-    async function loadConversationMessages(targetSessionId) {
-      try {
-        const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
-        const messages = await res.json();
-
-        chatMsgs.innerHTML = '';
-
-        if (!Array.isArray(messages) || messages.length === 0) {
-          appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
-          return;
-        }
-
-        messages.forEach(message => {
-          if (message.role === 'user') {
-            appendMessage('user', message.content);
-          } else if (message.role === 'assistant') {
-            appendMessage('bot', message.content, '[AGENT: core] [SCORE: 0.92]');
-          }
-        });
-      } catch (err) {
-        resetConversationView();
-      }
-    }
-
     function startNewConversation() {
       sessionId = createSessionId();
       localStorage.setItem('ialclaw_session_id', sessionId);
-      resetSessionState(sessionId).finally(() => {
+      resetSessionState(sessionId).finally(async () => {
         resetConversationView();
-        loadConversationList();
+        await loadConversationList();
         chatInput.focus();
       });
     }
 
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function applyExecutionConfig(config) {
-      if (!config) return;
-
-      executionModeSelect.value = config.executionMode;
-      modeBadge.innerText = config.label;
-      modeBehavior.innerText = config.behavior;
-      modeBadge.dataset.mode = config.executionMode;
-    }
-
-    async function loadExecutionConfig() {
+    function parseSsePayload(event) {
       try {
-        const res = await fetch('/api/config');
-        const data = await res.json();
-        if (res.ok && data?.config) {
-          applyExecutionConfig(data.config);
-        }
+        return JSON.parse(event.data);
       } catch (_err) {
-        // Mantem o modo padrao renderizado no HTML se a API falhar.
+        return { raw: String(event.data || '') };
       }
     }
 
-    async function updateExecutionMode(nextMode, previousMode) {
-      executionModeSelect.disabled = true;
+    function connectSSE() {
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      eventSource = new EventSource('/debug/stream');
+      consoleStatus.textContent = 'sse: conectado';
+
+      const onEvent = (eventType, mapper) => (event) => {
+        const data = parseSsePayload(event);
+        if (!shouldConsumeEvent(data)) return;
+        const mapped = mapper(data);
+        if (!mapped) return;
+        appendEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
+      };
+
+      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'thought', content: data.content || 'evento thought sem conteudo' })));
+
+      eventSource.addEventListener('tool', onEvent('tool', (data) => {
+        const status = String(data.status || '').toLowerCase();
+        if (status.includes('error') || status.includes('fail')) {
+          return { type: 'obs', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+        }
+        return { type: 'action', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+      }));
+
+      eventSource.addEventListener('rag', onEvent('rag', (data) => ({
+        type: 'rag',
+        content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
+      })));
+
+      eventSource.addEventListener('gateway', onEvent('gateway', (data) => ({
+        type: 'debug',
+        content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
+      })));
+
+      eventSource.addEventListener('execution_summary', onEvent('execution_summary', (data) => ({
+        type: 'final',
+        content: data.answer || data.response || data.summary || 'Resumo de execucao recebido'
+      })));
+
+      eventSource.addEventListener('execution_mode', onEvent('execution_mode', (data) => ({
+        type: 'obs',
+        content: `Modo ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`
+      })));
+
+      eventSource.addEventListener('tool_input_error', onEvent('tool_input_error', (data) => ({
+        type: 'error',
+        content: `Erro de entrada de tool: ${data.tool || 'tool desconhecida'}`
+      })));
+
+      eventSource.addEventListener('self_healing', onEvent('self_healing', (data) => ({
+        type: 'obs',
+        content: `Self-healing ${data.stage || 'unknown'} tentativa ${data.attempt ?? '-'}`
+      })));
+
+      eventSource.addEventListener('self_healing_abort', onEvent('self_healing_abort', (data) => ({
+        type: 'error',
+        content: `Self-healing abortado: ${data.reason || 'sem motivo'}`
+      })));
+
+      eventSource.addEventListener('agent_config', onEvent('agent_config', (data) => {
+        applyExecutionConfig(data);
+        return {
+          type: 'obs',
+          content: `Configuracao atualizada: ${data.label || data.executionMode || 'modo'}`
+        };
+      }));
+
+      eventSource.onerror = () => {
+        consoleStatus.textContent = 'sse: reconectando...';
+      };
+    }
+
+    async function replayTrace(traceId) {
+      if (!traceId) return;
+      appendEvent('obs', `Replay do trace ${traceId} iniciado...`);
 
       try {
-        const res = await fetch('/api/config/mode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: nextMode })
-        });
-        const data = await res.json().catch(() => ({}));
+        const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
+        if (!res.ok) throw new Error(`Falha HTTP ${res.status}`);
 
-        if (!res.ok || !data?.config) {
-          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        const events = await res.json();
+        if (!Array.isArray(events) || events.length === 0) {
+          appendEvent('obs', 'Nenhum evento encontrado para este trace.');
+          return;
         }
 
-        applyExecutionConfig(data.config);
+        for (const event of events) {
+          let payload = {};
+          try {
+            payload = JSON.parse(event.payload || '{}');
+          } catch (_err) {
+            payload = { raw: event.payload };
+          }
+
+          if (event.type === 'thought') {
+            appendEvent('thought', payload.content || 'thought', { timestamp: event.created_at, traceId });
+          } else if (event.type === 'tool') {
+            appendEvent('action', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at, traceId });
+          } else if (event.type === 'rag') {
+            appendEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at, traceId });
+          } else if (event.type === 'gateway') {
+            appendEvent('debug', payload.summary || JSON.stringify(payload), { timestamp: event.created_at, traceId });
+          } else if (event.type === 'execution_summary') {
+            appendEvent('final', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at, traceId });
+          } else {
+            appendEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at, traceId });
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+
+        appendEvent('obs', `Replay do trace ${traceId} finalizado.`);
       } catch (err) {
-        executionModeSelect.value = previousMode;
-        alert('Nao foi possivel atualizar o modo de execucao: ' + (err.message || err));
-      } finally {
-        executionModeSelect.disabled = false;
+        appendEvent('error', `Erro ao reproduzir trace: ${err.message || err}`);
       }
     }
-
-    function appendThought(type, text) {
-      const el = document.createElement('div');
-      el.classList.add('thought-item');
-      el.classList.add(`t-${type}`);
-      el.innerText = `[${type.toUpperCase()}] ${text}`;
-      thoughtLog.appendChild(el);
-      thoughtLog.scrollTop = thoughtLog.scrollHeight;
-    }
-
-    function executionModeLabel(mode) {
-      if (mode === 'strict') return 'Seguro';
-      if (mode === 'aggressive') return 'Livre';
-      return 'Equilibrado';
-    }
-
-    function appendExecutionModeEvent(data) {
-      const mode = data.selected || data.executionMode || 'balanced';
-      const stage = data.stage || 'runtime';
-
-      const item = document.createElement('div');
-      item.className = 'thought-item t-thought thought-mode';
-
-      const main = document.createElement('div');
-      main.className = 'thought-mode-main';
-
-      const prefix = document.createElement('span');
-      prefix.innerText = '[MODE]';
-      main.appendChild(prefix);
-
-      const pill = document.createElement('span');
-      pill.className = `mode-pill ${mode}`;
-      pill.innerText = executionModeLabel(mode);
-      main.appendChild(pill);
-
-      const detail = document.createElement('span');
-      const confidence = typeof data.confidence === 'number' ? ` conf=${data.confidence.toFixed(2)}` : '';
-      detail.innerText = data.validation_mode
-        ? `validacao ${data.validation_mode}`
-        : `executor em ${stage}${confidence}`;
-      main.appendChild(detail);
-
-      const stageEl = document.createElement('span');
-      stageEl.className = 'mode-stage';
-      stageEl.innerText = stage;
-
-      item.appendChild(main);
-      item.appendChild(stageEl);
-      thoughtLog.appendChild(item);
-      thoughtLog.scrollTop = thoughtLog.scrollHeight;
-    }
-
-    function updateDebugLog(jsonObj) {
-      const current = debugLog.innerText;
-      const newEntry = JSON.stringify(jsonObj, null, 2);
-      debugLog.innerText = `--- NEW REQUEST ---\n${newEntry}\n\n${current}`.substring(0, 5000); // Limita tamanho
-    }
-
-    appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
 
     async function sendMessage() {
       const text = chatInput.value.trim();
@@ -1085,10 +1159,14 @@
       chatInput.value = '';
       chatInput.disabled = true;
       sendBtn.disabled = true;
-
-      appendMessage('user', text);
+      speechBtn.disabled = true;
       typingIndicator.style.display = 'block';
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+      appendEvent('user', text);
+
+      commandHistory.push(text);
+      if (commandHistory.length > 100) commandHistory.shift();
+      historyCursor = commandHistory.length;
 
       try {
         const res = await fetch('/api/chat', {
@@ -1096,44 +1174,58 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: text, sessionId })
         });
+
         const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Falha HTTP ${res.status}`);
 
-        if (!res.ok) {
-          throw new Error(data.error || `Falha HTTP ${res.status}`);
+        const responseText = data.response || data.answer || '';
+        if (responseText) {
+          appendEvent('final', responseText, { traceId: data.trace_id || '' });
+          speak(responseText);
+        } else {
+          appendEvent('error', 'Resposta vazia do backend.');
         }
 
-        typingIndicator.style.display = 'none';
-        if (data.answer) {
-          appendMessage('bot', data.answer, '[AGENT: core] [SCORE: 0.92]');
-          loadGraph();
-          loadConversationList();
-        } else if (data.error) {
-          appendMessage('bot', 'Erro: ' + data.error);
+        if (data.mode) {
+          appendEvent('obs', `Modo efetivo: ${data.mode} | confianca: ${data.confidence ?? 'n/a'}`);
         }
+
+        await loadGraph();
+        await loadConversationList();
       } catch (err) {
-        typingIndicator.style.display = 'none';
-        appendMessage('bot', 'Erro ao falar com IalClaw: ' + (err.message || err));
+        appendEvent('error', `Erro ao falar com IalClaw: ${err.message || err}`);
       } finally {
+        typingIndicator.style.display = 'none';
         chatInput.disabled = false;
         sendBtn.disabled = false;
+        speechBtn.disabled = false;
         chatInput.focus();
       }
     }
 
-    chatInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    function handleInputKeyboard(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
         sendMessage();
+        return;
       }
-    });
 
-    sendBtn.addEventListener('click', sendMessage);
-    newChatBtn.addEventListener('click', startNewConversation);
-    executionModeSelect.addEventListener('change', (event) => {
-      const previousMode = modeBadge.dataset.mode || 'balanced';
-      updateExecutionMode(event.target.value, previousMode);
-    });
+      if (event.key === 'ArrowUp') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.max(0, historyCursor - 1);
+        chatInput.value = commandHistory[historyCursor] || '';
+        return;
+      }
 
-    // Variáveis globais para o Grafo utilizando DataSet
+      if (event.key === 'ArrowDown') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.min(commandHistory.length, historyCursor + 1);
+        chatInput.value = historyCursor >= commandHistory.length ? '' : commandHistory[historyCursor] || '';
+      }
+    }
+
     const nodesData = new vis.DataSet([]);
     const edgesData = new vis.DataSet([]);
 
@@ -1148,8 +1240,8 @@
       return {
         nodes: {
           shape: 'dot',
-          size: 20,
-          font: { color: textColor, face: 'Segoe UI, Roboto, sans-serif', size: 14 },
+          size: 16,
+          font: { color: textColor, face: 'JetBrains Mono, Consolas, monospace', size: 13 },
           borderWidth: 2,
           color: {
             border: nodeBorder,
@@ -1159,15 +1251,15 @@
           shadow: { enabled: true, color: 'rgba(0,0,0,0.15)', size: 5, x: 0, y: 2 }
         },
         edges: {
-          width: 1.5,
+          width: 1.4,
           color: { color: edgeColor, highlight: edgeHighlight },
-          font: { color: textColor, align: 'middle', size: 11, face: 'Segoe UI, Roboto, sans-serif' },
+          font: { color: textColor, align: 'middle', size: 11, face: 'JetBrains Mono, Consolas, monospace' },
           arrows: { to: { enabled: true, scaleFactor: 0.5 } },
           smooth: { type: 'continuous' }
         },
         physics: {
           barnesHut: { gravitationalConstant: -3000, centralGravity: 0.1, springLength: 200 },
-          stabilization: { iterations: 150 }
+          stabilization: { iterations: 120 }
         },
         interaction: { hover: true, tooltipDelay: 200 }
       };
@@ -1175,126 +1267,72 @@
 
     function initGraph() {
       const container = document.getElementById('mynetwork');
-      const data = { nodes: nodesData, edges: edgesData };
-      const options = getGraphOptions();
-      network = new vis.Network(container, data, options);
+      network = new vis.Network(container, { nodes: nodesData, edges: edgesData }, getGraphOptions());
     }
 
-    function loadGraph() {
-      fetch('/api/graph')
-        .then(res => res.json())
-        .then(data => {
-          if (!data || !data.nodes) return;
+    async function loadGraph() {
+      try {
+        const res = await fetch('/api/graph');
+        const data = await res.json();
+        if (!data || !Array.isArray(data.nodes)) return;
 
-          // Atualiza contadores no header
-          document.getElementById('stat-nodes').innerText = data.nodes.length;
-          document.getElementById('stat-edges').innerText = (data.edges || []).length;
+        document.getElementById('stat-nodes').innerText = String(data.nodes.length);
+        document.getElementById('stat-edges').innerText = String((data.edges || []).length);
 
-          // Mapeia 'name' do banco de dados para o 'label' que o Vis.js exige
-          const processNodes = data.nodes.map(n => ({
-            ...n,
-            label: n.label || n.name
-          }));
+        const processedNodes = data.nodes.map((node) => ({
+          ...node,
+          label: node.label || node.name
+        }));
 
-          // Mapeia 'source/target/relation' do banco para 'from/to/label' do Vis.js
-          const processEdges = (data.edges || []).map(e => ({
-            ...e,
-            from: e.from || e.source,
-            to: e.to || e.target,
-            label: e.label || e.relation,
-            id: e.id || `${e.source || e.from}-${e.target || e.to}-${e.relation || e.label}`
-          }));
+        const processedEdges = (data.edges || []).map((edge) => ({
+          ...edge,
+          from: edge.from || edge.source,
+          to: edge.to || edge.target,
+          label: edge.label || edge.relation,
+          id: edge.id || `${edge.source || edge.from}-${edge.target || edge.to}-${edge.relation || edge.label}`
+        }));
 
-          nodesData.update(processNodes);
-          edgesData.update(processEdges);
-        })
-        .catch(console.error);
+        nodesData.update(processedNodes);
+        edgesData.update(processedEdges);
+      } catch (_err) {
+        appendEvent('error', 'Falha ao carregar grafo cognitivo.');
+      }
     }
 
-    // Inicializar e carregar primeiro estado
+    async function promptReplay() {
+      const traceId = prompt('Cole o trace_id para reproduzir na timeline:');
+      if (!traceId) return;
+      await replayTrace(traceId.trim());
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', handleInputKeyboard);
+    newChatBtn.addEventListener('click', startNewConversation);
+    replayBtn.addEventListener('click', promptReplay);
+
+    executionModeSelect.addEventListener('change', (event) => {
+      const previousMode = modeBadge.dataset.mode || 'balanced';
+      updateExecutionMode(event.target.value, previousMode);
+    });
+
+    ttsToggleBtn.addEventListener('click', () => {
+      setTtsState(!ttsEnabled);
+      appendEvent('obs', `Leitura por voz ${ttsEnabled ? 'ativada' : 'desativada'}.`);
+    });
+
+    applyZoom();
+    applyTheme(currentTheme);
+    setTtsState(ttsEnabled);
     initGraph();
-    loadGraph();
+    resetConversationView();
     loadConversationMessages(sessionId);
     loadConversationList();
     loadExecutionConfig();
+    loadGraph();
+    connectSSE();
+    handleSpeechInput();
 
-    // Refresh a cada 10 segundos
     setInterval(loadGraph, 10000);
-
-    // ==========================================
-    // 📡 TELEMETRIA EM TEMPO REAL (SSE)
-    // ==========================================
-    const eventSource = new EventSource('/debug/stream');
-
-    eventSource.addEventListener('gateway', (event) => {
-      const data = JSON.parse(event.data);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('thought', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought(data.type, data.content);
-    });
-
-    eventSource.addEventListener('tool', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('action', `Tool [${data.name}]: ${data.status} (${data.latency}ms)`);
-    });
-
-    eventSource.addEventListener('rag', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('rag', `Graph-RAG: ${data.nodes?.length || 0} nós recuperados (Top Score: ${data.nodes?.[0]?.score || 0})`);
-    });
-    eventSource.addEventListener('tool_input_error', (event) => {
-      const data = JSON.parse(event.data);
-      const issues = Array.isArray(data.issues)
-        ? data.issues.map(issue => `${issue.path || '<root>'}: ${issue.message}`).join(' | ')
-        : 'sem detalhes';
-      appendThought('obs', `Tool input error em ${data.tool}: ${issues}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('self_healing', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('obs', `Self-healing [${data.stage || 'unknown'}] tentativa ${data.attempt ?? '-'} para ${data.tool || data.error_type || 'erro'}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('self_healing_abort', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('obs', `Self-healing abortado: ${data.reason}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('repair:tool_input:baseline', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('obs', `Repair baseline para ${data.step?.tool}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('repair:tool_input:raw', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('obs', `Repair raw recebido para ${data.step?.tool}: ${String(data.raw).slice(0, 120)}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('repair:tool_input:normalized', (event) => {
-      const data = JSON.parse(event.data);
-      appendThought('obs', `Repair normalizado para ${data.normalized_step?.tool}`);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('execution_mode', (event) => {
-      const data = JSON.parse(event.data);
-      appendExecutionModeEvent(data);
-      updateDebugLog(data);
-    });
-
-    eventSource.addEventListener('agent_config', (event) => {
-      const data = JSON.parse(event.data);
-      applyExecutionConfig(data);
-      updateDebugLog(data);
-    });
   </script>
 </body>
 

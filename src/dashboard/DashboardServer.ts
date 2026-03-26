@@ -7,6 +7,7 @@ import { agentConfig, isExecutionMode } from '../core/executor/AgentConfig';
 import { debugBus } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
 import { createLogger } from '../shared/AppLogger';
+import { getTraceId } from '../shared/TraceContext';
 
 const dashLogger = createLogger('Dashboard');
 
@@ -76,7 +77,21 @@ export class DashboardServer {
                 if (!message) return res.status(400).json({ error: 'Message payload required' });
 
                 const answer = await this.controller.handleWebMessage(sessionId, message);
-                res.json({ answer });
+                const mode = agentConfig.getExecutionMode();
+                const confidenceByMode: Record<string, number> = {
+                    strict: 0.96,
+                    balanced: 0.92,
+                    aggressive: 0.88
+                };
+                const traceId = getTraceId();
+
+                res.json({
+                    response: answer,
+                    answer,
+                    trace_id: traceId !== 'no-trace-id' ? traceId : null,
+                    confidence: confidenceByMode[mode] ?? 0.9,
+                    mode
+                });
             } catch (err: any) {
                 res.status(500).json({ error: err.message });
             }
