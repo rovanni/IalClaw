@@ -12,11 +12,24 @@ Use essas informacoes para manter consistencia de comportamento.
 ${identityBlock}
 ${policyBlock}
 
-[CONTEXTO RELEVANTE - USE PARA DECIDIR ACOES]
+[MEMORIA ATIVA DO AGENTE]
 
-As informacoes abaixo representam memoria relevante recuperada.
+As informacoes abaixo foram recuperadas dinamicamente da sua memoria interna.
+Voce DEVE considerar isso como conhecimento proprio.
 
-REGRAS DE USO:
+Voce pode:
+- usar essas informacoes para responder
+- assumir que ja "lembra" disso
+- continuar tarefas com base nisso
+
+Se a informacao estiver aqui, voce SABE disso.
+Nao diga que nao tem memoria.
+
+REGRAS:
+- Se a informacao estiver na memoria, use diretamente
+- Nao diga que "nao tem acesso a memoria"
+- Nao diga que precisa de tool para acessar memoria
+- A memoria ja foi fornecida para voce
 - Se houver referencia a arquivos, diretorios ou projetos → use tools
 - Se houver continuidade de acao → continue executando
 - Se nao houver contexto util → responda normalmente
