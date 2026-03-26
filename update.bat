@@ -59,6 +59,33 @@ echo.
 echo [4/5] 🔨 Compilando o IalClaw v3.0 (TypeScript)...
 call npx tsc --noEmit
 if errorlevel 1 (
+    echo [ERRO] Falha ao validar o codigo TypeScript.
+    pause
+    exit /b 1
+)
+echo       Compilacao concluida.
+echo.
+
+echo [5/5] 🎉 ATUALIZACAO FINALIZADA!
+echo.
+echo O seu IalClaw foi atualizado para a ultima versao oficial com sucesso.
+echo Seu banco de dados e suas configuracoes estao intactos.
+echo.
+echo ==================================================
+echo   🐙 Para iniciar o IalClaw:
+echo ==================================================
+echo.
+echo   Foreground (dev):    node bin/ialclaw.js start
+echo   Background (VPS):    node bin/ialclaw.js start --daemon
+echo   Debug:               node bin/ialclaw.js start --debug
+echo.
+echo   Gerenciar:
+echo     node bin/ialclaw.js status
+echo     node bin/ialclaw.js logs --follow
+echo     node bin/ialclaw.js stop
+echo.
+pause
+if errorlevel 1 (
     echo [ERRO] Falha ao validar o typescript (npx tsc --noEmit).
     pause
     exit /b 1

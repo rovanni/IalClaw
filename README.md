@@ -76,40 +76,78 @@ npm run setup
 > - Your **Telegram User ID** (find it by sending a \"Hi\" to [@userinfobot](https://t.me/userinfobot)).
 
 4. **Start the Cognitive Agent**:
+
+IalClaw ships with a built-in CLI (`bin/ialclaw.js`). You can run it directly or through npm scripts:
+
 ```bash
-npm run dev
+# Foreground (development)
+node bin/ialclaw.js start
+
+# Background (VPS / production)
+node bin/ialclaw.js start --daemon
+
+# Debug mode (verbose logging)
+node bin/ialclaw.js start --debug
+
+# Debug + live log tail in the same terminal
+node bin/ialclaw.js start --debug --tail
 ```
 
-For verbose diagnostics during development:
+The npm scripts still work as shortcuts:
 ```bash
-npm run dev:debug
+npm run dev              # same as: node bin/ialclaw.js start
+npm run dev:debug        # same as: node bin/ialclaw.js start --debug
+npm run dev:debug:tail   # same as: node bin/ialclaw.js start --debug --tail
 ```
 
-To start in debug mode and follow the structured log in the same terminal:
+> **VPS tip:** Use `--daemon` to detach the agent from your SSH session. The process keeps running after you disconnect.
+
+5. **Manage the Agent**:
+
 ```bash
-npm run dev:debug:tail
+node bin/ialclaw.js status           # check if running (shows PID, uptime, mode)
+node bin/ialclaw.js stop             # gracefully stop the agent
+node bin/ialclaw.js restart          # stop + start (preserves flags)
+node bin/ialclaw.js logs             # show last 30 log lines
+node bin/ialclaw.js logs --follow    # tail logs in real time (cross-platform)
 ```
 
-This command prints the last log lines already present and then keeps following new entries in real time.
+> You can also install the CLI globally with `npm link` from the project root, then use `ialclaw start`, `ialclaw status`, etc. from anywhere.
 
-5. **Inspect Structured Logs**:
-Linux / macOS
-```bash
-tail -f logs/ialclaw.log
-```
+---
 
-Windows PowerShell
-```powershell
-Get-Content .\logs\ialclaw.log -Wait
-```
+## 🐙 CLI Reference
 
-Main environment variables for observability:
+| Command | Description |
+|---|---|
+| `ialclaw start` | Start in foreground (dev) |
+| `ialclaw start --daemon` | Start in background (VPS/production) |
+| `ialclaw start --debug` | Start with `LOG_LEVEL=debug` |
+| `ialclaw start --debug --tail` | Debug + live log stream |
+| `ialclaw stop` | Stop the running agent |
+| `ialclaw restart` | Restart (stop + start) |
+| `ialclaw status` | Show PID, uptime, mode, daemon status |
+| `ialclaw logs` | Print last 30 log lines |
+| `ialclaw logs --follow` | Tail logs in real time |
+| `ialclaw help` | Show all commands |
+
+Internal features:
+- **Lock file** — prevents two simultaneous starts (race condition protection)
+- **PID management** — stale PID detection and cleanup (`.ialclaw/pid`)
+- **Log rotation** — auto-rotates `ialclaw.log` when it exceeds 5 MB
+- **Cross-platform** — works on Linux, macOS, and Windows
+
+---
+
+## 📋 Environment & Observability
+
+Main environment variables:
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
 - `LOG_CONSOLE_FORMAT=pretty|json`
 - `SAFE_MODE=true|false` to force direct replies and bypass planner/executor orchestration while stabilizing the agent
 
-The agent now writes JSON line logs to files with `trace_id`, component, event, duration, and normalized errors. For humans reading the terminal, the default console output is `pretty`, with a cognitive summary style such as `[START]`, `[DECISION]`, `[EXECUTION]`, and `[RESULT]`. Use `LOG_CONSOLE_FORMAT=json` if you need raw JSON on stdout/stderr.
+The agent writes JSON line logs to files with `trace_id`, component, event, duration, and normalized errors. For humans reading the terminal, the default console output is `pretty`, with a cognitive summary style such as `[START]`, `[DECISION]`, `[EXECUTION]`, and `[RESULT]`. Use `LOG_CONSOLE_FORMAT=json` if you need raw JSON on stdout/stderr.
 
 When `SAFE_MODE=true` (default), the agent prioritizes a direct response path so it keeps answering even if the planning pipeline is unstable. Set `SAFE_MODE=false` to re-enable the full planner-driven execution flow.
 
@@ -270,38 +308,80 @@ npm run setup
 ```
 
 4. **Inicie o Agente Cognitivo**:
+
+O IalClaw inclui uma CLI própria (`bin/ialclaw.js`). Rode diretamente ou via npm scripts:
+
 ```bash
-npm run dev
+# Foreground (desenvolvimento)
+node bin/ialclaw.js start
+
+# Background (VPS / produção)
+node bin/ialclaw.js start --daemon
+
+# Modo debug (log detalhado)
+node bin/ialclaw.js start --debug
+
+# Debug + tail de log em tempo real no mesmo terminal
+node bin/ialclaw.js start --debug --tail
 ```
 
-Para diagnóstico detalhado durante o desenvolvimento:
+Os npm scripts continuam funcionando como atalhos:
 ```bash
-npm run dev:debug
+npm run dev              # equivale a: node bin/ialclaw.js start
+npm run dev:debug        # equivale a: node bin/ialclaw.js start --debug
+npm run dev:debug:tail   # equivale a: node bin/ialclaw.js start --debug --tail
 ```
 
-Para iniciar em modo debug e acompanhar o log estruturado no mesmo terminal:
+> **Dica VPS:** Use `--daemon` para desacoplar o agente da sessão SSH. O processo continua rodando após desconectar.
+
+5. **Gerencie o Agente**:
+
 ```bash
-npm run dev:debug:tail
+node bin/ialclaw.js status           # verifica status (PID, uptime, modo)
+node bin/ialclaw.js stop             # encerra o agente graciosamente
+node bin/ialclaw.js restart          # stop + start (preserva flags)
+node bin/ialclaw.js logs             # exibe últimas 30 linhas do log
+node bin/ialclaw.js logs --follow    # acompanha log em tempo real (cross-platform)
 ```
 
-Esse comando mostra as últimas linhas já existentes no log e depois continua acompanhando as novas entradas em tempo real.
+> Você também pode instalar a CLI globalmente com `npm link` na raiz do projeto e usar `ialclaw start`, `ialclaw status`, etc. de qualquer lugar.
 
-5. **Acompanhe os logs estruturados**:
-Linux / macOS
-```bash
-tail -f logs/ialclaw.log
-```
+---
 
-Windows PowerShell
-```powershell
-Get-Content .\logs\ialclaw.log -Wait
-```
+## 🐙 Referência da CLI
 
-Principais variáveis de ambiente para observabilidade:
+| Comando | Descrição |
+|---|---|
+| `ialclaw start` | Inicia em foreground (dev) |
+| `ialclaw start --daemon` | Inicia em background (VPS/produção) |
+| `ialclaw start --debug` | Inicia com `LOG_LEVEL=debug` |
+| `ialclaw start --debug --tail` | Debug + stream de log ao vivo |
+| `ialclaw stop` | Encerra o agente |
+| `ialclaw restart` | Reinicia (stop + start) |
+| `ialclaw status` | Mostra PID, uptime, modo, daemon |
+| `ialclaw logs` | Últimas 30 linhas do log |
+| `ialclaw logs --follow` | Tail do log em tempo real |
+| `ialclaw help` | Exibe todos os comandos |
+
+Recursos internos:
+- **Lock file** — impede dois starts simultâneos (proteção contra race condition)
+- **Gerenciamento de PID** — detecção e limpeza de PID stale (`.ialclaw/pid`)
+- **Rotação de logs** — rotaciona `ialclaw.log` automaticamente ao ultrapassar 5 MB
+- **Cross-platform** — funciona em Linux, macOS e Windows
+
+---
+
+## 📋 Ambiente & Observabilidade
+
+Principais variáveis de ambiente:
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
+- `LOG_CONSOLE_FORMAT=pretty|json`
+- `SAFE_MODE=true|false` para forçar respostas diretas e pular a orquestração planner/executor
 
-O agente agora grava logs em JSON Lines com `trace_id`, componente, evento, duração e erro normalizado, facilitando o diagnóstico de falhas de rede, provider e execução.
+O agente grava logs em JSON Lines com `trace_id`, componente, evento, duração e erro normalizado. No terminal, o formato padrão é `pretty`, com estilo cognitivo (`[START]`, `[DECISION]`, `[EXECUTION]`, `[RESULT]`). Use `LOG_CONSOLE_FORMAT=json` para JSON puro no stdout/stderr.
+
+Quando `SAFE_MODE=true` (padrão), o agente prioriza resposta direta para continuar respondendo mesmo se o pipeline de planejamento estiver instável. Use `SAFE_MODE=false` para habilitar o fluxo completo via planner.
 
 ## Solução de Problemas
 
