@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { debugBus } from './DebugBus';
+import { createLogger } from './AppLogger';
+
+const traceLogger = createLogger('TraceRecorder');
 
 const dbPath = path.join(process.cwd(), 'db.sqlite');
 const db = new Database(dbPath);
@@ -71,7 +74,7 @@ export function startTraceRecorder() {
         debugBus.on(eventName, (data) => saveEvent(eventName, data));
     }
 
-    console.log('[TraceRecorder] Observabilidade e gravacao de traces ativada.');
+    traceLogger.debug('trace_recorder_started', 'Observabilidade e gravacao de traces ativada');
 }
 
 function saveEvent(type: string, data: any) {
@@ -82,7 +85,7 @@ function saveEvent(type: string, data: any) {
             const stmt = db.prepare('INSERT INTO trace_events (trace_id, type, payload, created_at) VALUES (?, ?, ?, ?)');
             stmt.run(data.trace_id, type, JSON.stringify(data).slice(0, 5000), Date.now());
         } catch (err) {
-            console.error('[TraceRecorder] Erro ao salvar evento:', err);
+            traceLogger.error('trace_save_failed', err, 'Erro ao salvar evento');
         }
     });
 }

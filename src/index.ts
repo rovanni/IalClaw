@@ -1,3 +1,6 @@
+// Silencia output do dotenv antes de qualquer import
+process.env.DOTENV_CONFIG_QUIET = 'true';
+
 import { Bot } from 'grammy';
 import * as dotenv from 'dotenv';
 import * as path from 'path';

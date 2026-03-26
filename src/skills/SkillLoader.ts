@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { LoadedSkill } from './types';
 import { AuditLog } from './AuditLog';
+import { createLogger } from '../shared/AppLogger';
+
+const logger = createLogger('SkillLoader');
 
 /**
  * Lê e parseia os SKILL.md disponíveis respeitando a separação interna/pública.
@@ -39,7 +42,7 @@ export class SkillLoader {
         // 3. skills/<nome>/ na raiz   — fallback de compatibilidade
         this.scanRootFallback();
 
-        console.log(`[SkillLoader] ${this.loaded.length} skill(s) ativa(s).`);
+        logger.info('skills_loaded', `${this.loaded.length} skill(s) ativa(s)`);
         return this.loaded;
     }
 
@@ -60,7 +63,7 @@ export class SkillLoader {
             const skill = this.parseSkillFile(skillMdPath, 'internal');
             if (skill) {
                 this.loaded.push(skill);
-                console.log(`[SkillLoader] [internal] carregada: ${skill.name}`);
+                logger.debug('skill_loaded', `[internal] carregada: ${skill.name}`);
             }
         }
     }
@@ -80,7 +83,7 @@ export class SkillLoader {
 
             if (!this.auditLog) {
                 // Sem audit log configurado: carregar com aviso
-                console.warn(`[SkillLoader] [public] WARN: audit log não configurado, carregando "${skill.name}" sem verificação`);
+                logger.warn('audit_missing', `audit log não configurado, carregando "${skill.name}" sem verificação`);
                 this.loaded.push(skill);
                 continue;
             }
@@ -89,11 +92,11 @@ export class SkillLoader {
 
             if (this.auditLog.isActivatable(skill.name)) {
                 this.loaded.push(skill);
-                console.log(`[SkillLoader] [public] carregada (${status}): ${skill.name}`);
+                logger.debug('skill_loaded', `[public] carregada (${status}): ${skill.name}`);
             } else if (status === null) {
-                console.warn(`[SkillLoader] [public] BLOQUEADA — não auditada: "${skill.name}". Execute /skill-auditor ${skill.name} para auditar.`);
+                logger.warn('skill_blocked', `[public] não auditada: "${skill.name}". Execute /skill-auditor ${skill.name} para auditar.`);
             } else {
-                console.warn(`[SkillLoader] [public] BLOQUEADA — status "${status}": "${skill.name}"`);
+                logger.warn('skill_blocked', `[public] status "${status}": "${skill.name}"`);
             }
         }
     }
@@ -117,16 +120,16 @@ export class SkillLoader {
 
             if (isInternal) {
                 this.loaded.push(skill);
-                console.log(`[SkillLoader] [internal/legacy] carregada: ${skill.name}`);
+                logger.debug('skill_loaded', `[internal/legacy] carregada: ${skill.name}`);
             } else {
                 // Pública na raiz — aplica mesma regra de auditoria
                 if (this.auditLog?.isActivatable(skill.name)) {
                     this.loaded.push(skill);
-                    console.log(`[SkillLoader] [public/legacy] carregada: ${skill.name}`);
+                    logger.debug('skill_loaded', `[public/legacy] carregada: ${skill.name}`);
                 } else {
                     const status = this.auditLog?.getStatus(skill.name) ?? null;
                     const reason = status === null ? 'não auditada' : `status "${status}"`;
-                    console.warn(`[SkillLoader] [public/legacy] BLOQUEADA — ${reason}: "${skill.name}". Mova para skills/public/ e audite.`);
+                    logger.warn('skill_blocked', `[public/legacy] ${reason}: "${skill.name}". Mova para skills/public/ e audite.`);
                 }
             }
         }

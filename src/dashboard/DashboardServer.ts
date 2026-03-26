@@ -6,6 +6,9 @@ import { AgentController } from '../core/AgentController';
 import { agentConfig, isExecutionMode } from '../core/executor/AgentConfig';
 import { debugBus } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
+import { createLogger } from '../shared/AppLogger';
+
+const dashLogger = createLogger('Dashboard');
 
 export class DashboardServer {
     private app: express.Express;
@@ -269,7 +272,7 @@ export class DashboardServer {
                 agentConfig.setExecutionMode(row.value);
             }
         } catch (error: any) {
-            console.warn('[Dashboard] Falha ao carregar execution_mode persistido:', error.message);
+            dashLogger.warn('config_load_failed', `Falha ao carregar execution_mode persistido: ${error.message}`);
         }
     }
 
@@ -283,13 +286,13 @@ export class DashboardServer {
                     updated_at = excluded.updated_at
             `).run('execution_mode', mode, new Date().toISOString());
         } catch (error: any) {
-            console.warn('[Dashboard] Falha ao persistir execution_mode:', error.message);
+            dashLogger.warn('config_persist_failed', `Falha ao persistir execution_mode: ${error.message}`);
         }
     }
 
     public start(port: number = 3000) {
         this.app.listen(port, () => {
-            console.log(`[Dashboard] Graph Visualization rodando em http://localhost:${port}`);
+            dashLogger.info('server_started', `Graph Visualization rodando em http://localhost:${port}`);
         });
     }
 }

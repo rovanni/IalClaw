@@ -12,7 +12,8 @@
     "dev:debug:tail": "node bin/ialclaw.js start --debug --tail",
     "test": "ts-node src/tests/run.ts",
     "setup": "ts-node src/scripts/setup.ts",
-    "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts"
+    "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts",
+    "postinstall": "node scripts/patch-punycode.js"
   },
   "keywords": [],
   "author": "",
@@ -24,7 +25,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "grammy": "^1.41.1",
-    "ollama": "^0.6.3"
+    "ollama": "^0.6.3",
+    "punycode": "^2.3.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

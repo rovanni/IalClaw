@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from '../shared/AppLogger';
+
+const dbLogger = createLogger('DatabaseManager');
 
 export class DatabaseManager {
     private db: Database.Database;
@@ -19,7 +22,7 @@ export class DatabaseManager {
             // better-sqlite3 exec runs multiple statements
             this.db.exec(schema);
         } else {
-            console.warn(`[DatabaseManager] warn: Schema file not found at ${schemaPath}`);
+            dbLogger.warn('schema_not_found', `Schema file not found at ${schemaPath}`);
         }
     }
 
