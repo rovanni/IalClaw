@@ -134,6 +134,44 @@ export class AgentController {
         }
     }
 
+    private tryCaptureUserName(lastAgentMessage: string, userMessage: string): void {
+        if (!lastAgentMessage || !userMessage) return;
+
+        const question = lastAgentMessage.toLowerCase();
+        const askedName =
+            question.includes('seu nome') ||
+            question.includes('como voce se chama') ||
+            question.includes('como você se chama') ||
+            question.includes('qual o seu nome') ||
+            question.includes('qual é o seu nome');
+        if (!askedName) return;
+
+        const cleaned = userMessage.trim();
+        const isValidName =
+            cleaned.length >= 2 &&
+            cleaned.length <= 40 &&
+            /^[a-zA-ZÀ-ÿ\s]+$/.test(cleaned) &&
+            cleaned.split(' ').length <= 3;
+        if (!isValidName) return;
+
+        const already = this.memory.searchByContent('nome do usuario');
+        if (already.length > 0) return;
+
+        this.memory.saveExecutionFix({
+            content: `O nome do usuario é ${cleaned}`,
+            error_type: 'user_identity',
+            fingerprint: `user_name_${cleaned.toLowerCase()}`
+        });
+        this.logger.info('user_name_captured', 'Nome do usuario capturado.', { name: cleaned });
+    }
+
+    private getUserName(): string | null {
+        const nodes = this.memory.searchByContent('nome do usuario');
+        if (!nodes.length) return null;
+        const match = nodes[0].content?.match(/nome do usuario [eé] (.+)/i);
+        return match ? match[1].trim() : null;
+    }
+
     private async runConversation(sessionId: string, userQuery: string): Promise<string> {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
@@ -193,7 +231,13 @@ export class AgentController {
         const queryEmbedding = await provider.embed(userQuery);
         const memoryNodes = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
-        const contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+
+        // ── Injetar nome do usuário no contexto ────────────────────────────
+        const userName = this.getUserName();
+        if (userName) {
+            contextStr += `\nO nome do usuario é ${userName}. Use isso para personalizar a resposta.`;
+        }
 
         const history = this.memory.getConversationHistory(sessionId, 10);
         const projectInfo = session?.current_project_id
@@ -234,36 +278,20 @@ export class AgentController {
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
 
-        // Detecção contextual de nome do usuário
+        // ── Captura automática do nome do usuário ──────────────────────────
         const lastMessages = this.memory.getConversationHistory(sessionId, 3);
-        const lastAssistantMessage = lastMessages[lastMessages.length - 2]?.content || '';
-        const askedName = /nome|como voc[eê] se chama|qual [eé] o seu nome/i.test(lastAssistantMessage);
-        const trimmedQuery = userQuery.trim();
-        const isShortName = trimmedQuery.split(' ').length <= 2 && /^[A-Za-zÀ-ÿ\s]+$/.test(trimmedQuery);
-
-        if (askedName && isShortName) {
-            await this.memory.saveExecutionFix({
-                content: `O nome do usuario é ${trimmedQuery}`,
-                error_type: 'user_identity',
-                fingerprint: `user_name_${trimmedQuery.toLowerCase()}`
-            });
-            logger.info('user_name_detected', 'Nome do usuario detectado via contexto conversacional.', {
-                name: trimmedQuery
-            });
-        }
+        const lastAssistantMsg = lastMessages[lastMessages.length - 2]?.content || '';
+        this.tryCaptureUserName(lastAssistantMsg, userQuery);
 
         // Detecção direta: "meu nome é X" / "me chamo X"
         const directNameMatch = userQuery.match(/(?:meu nome [eé]|me chamo)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
-        if (directNameMatch) {
-            const name = directNameMatch[1].trim();
-            await this.memory.saveExecutionFix({
-                content: `O nome do usuario é ${name}`,
+        if (directNameMatch && !this.memory.searchByContent('nome do usuario').length) {
+            this.memory.saveExecutionFix({
+                content: `O nome do usuario é ${directNameMatch[1].trim()}`,
                 error_type: 'user_identity',
-                fingerprint: `user_name_${name.toLowerCase()}`
+                fingerprint: `user_name_${directNameMatch[1].trim().toLowerCase()}`
             });
-            logger.info('user_name_detected', 'Nome do usuario detectado via frase direta.', {
-                name
-            });
+            logger.info('user_name_captured', 'Nome capturado via frase direta.', { name: directNameMatch[1].trim() });
         }
 
         await this.memory.learn({

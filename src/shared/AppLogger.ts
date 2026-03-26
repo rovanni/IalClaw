@@ -2,6 +2,23 @@ import fs from 'fs';
 import path from 'path';
 import { getTraceId } from './TraceContext';
 
+function localTimestamp(): string {
+    const now = new Date();
+    const offset = -now.getTimezoneOffset();
+    const sign = offset >= 0 ? '+' : '-';
+    const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const MM = pad(now.getMonth() + 1);
+    const dd = pad(now.getDate());
+    const hh = pad(now.getHours());
+    const mm = pad(now.getMinutes());
+    const ss = pad(now.getSeconds());
+    const ms = String(now.getMilliseconds()).padStart(3, '0');
+    const oh = pad(Math.floor(Math.abs(offset) / 60));
+    const om = pad(Math.abs(offset) % 60);
+    return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}.${ms}${sign}${oh}:${om}`;
+}
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 type LogMeta = Record<string, unknown>;
 type SerializableLogValue = string | number | boolean | null | undefined | SerializableLogObject | SerializableLogValue[];
@@ -190,7 +207,7 @@ function appendLine(filePath: string, line: string) {
     fs.appendFile(filePath, `${line}\n`, (error) => {
         if (error) {
             console.error(JSON.stringify({
-                timestamp: new Date().toISOString(),
+                timestamp: localTimestamp(),
                 level: 'error',
                 component: 'AppLogger',
                 event: 'file_write_failed',
@@ -394,7 +411,7 @@ function writeLog(level: LogLevel, component: string, event: string, message?: s
 
     const traceId = getTraceId();
     const payload: LogPayload = {
-        timestamp: new Date().toISOString(),
+        timestamp: localTimestamp(),
         level,
         component,
         event,

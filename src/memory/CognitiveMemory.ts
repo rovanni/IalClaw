@@ -55,6 +55,16 @@ export class CognitiveMemory {
         return this.db.prepare(query).all() as NodeResult[];
     }
 
+    public searchByContent(text: string, limit: number = 5): NodeResult[] {
+        return this.db.prepare(`
+            SELECT id, type, subtype, name, score, importance, freshness, content, content_preview
+            FROM nodes
+            WHERE content LIKE ?
+            ORDER BY importance DESC
+            LIMIT ?
+        `).all(`%${text}%`, limit) as NodeResult[];
+    }
+
     public async hybridSearch(query: string, queryEmbedding: number[], limit: number = 5): Promise<NodeResult[]> {
         const normalized = this.normalize(query);
 
