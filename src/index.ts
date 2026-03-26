@@ -36,7 +36,7 @@ dotenv.config();
    ─────────────────────────────────
    modo:    ${mode}
    canal:   ${channel}
-   modelo:  ${process.env.OLLAMA_MODEL || 'default'}
+   modelo:  ${process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2'}
 ===================================================`;
 
     console.log(banner);
