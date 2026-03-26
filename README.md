@@ -139,6 +139,48 @@ Internal features:
 
 ---
 
+## 🧩 Skills System
+
+IalClaw extends its capabilities through **Skills** — self-contained instruction packages that are resolved **before** the LLM is invoked.
+
+### Directory Layout
+
+```
+skills/
+  internal/          ← Trusted skills (no audit required)
+    skill-auditor/   ← Security auditor for public skills
+    skill-installer/ ← Marketplace search & install
+  public/            ← Third-party skills (audit required)
+  quarantine/        ← Blocked skills (never loaded)
+```
+
+### How It Works
+
+1. **SkillLoader** scans `skills/` at boot, parses each `SKILL.md` frontmatter and loads triggers from `skill.json`
+2. **SkillResolver** matches every user message against loaded skills using three strategies (in priority order):
+   - Slash command: `/skill-name [args]`
+   - Name mention in text
+   - FreeText triggers (from `skill.json → invocation.freeText`)
+3. If a skill matches, its body is injected as the system prompt via `runWithSkill()`
+4. If no skill matches, the agent still lists all installed skills in the LLM context (skill awareness)
+
+### Built-in Skills
+
+| Skill | Invocation | Purpose |
+|---|---|---|
+| **skill-auditor** | `/skill-auditor <name>` | Analyzes public skill files for security risks |
+| **skill-installer** | `/install-skill <topic>`, `/find-skill <topic>` | Searches the marketplace and installs new skills |
+
+### Installing a Public Skill
+
+1. Copy the skill folder to `skills/public/<name>/`
+2. Run `/skill-auditor <name>` in Telegram to audit
+3. If approved, the skill is loaded on next boot or hot-reload
+
+> For the full technical specification, see [specs/skills-system.md](./specs/skills-system.md).
+
+---
+
 ## 📋 Environment & Observability
 
 Main environment variables:
@@ -368,6 +410,48 @@ Recursos internos:
 - **Gerenciamento de PID** — detecção e limpeza de PID stale (`.ialclaw/pid`)
 - **Rotação de logs** — rotaciona `ialclaw.log` automaticamente ao ultrapassar 5 MB
 - **Cross-platform** — funciona em Linux, macOS e Windows
+
+---
+
+## 🧩 Sistema de Skills
+
+O IalClaw estende suas capacidades através de **Skills** — pacotes de instrução autocontidos que são resolvidos **antes** da chamada ao LLM.
+
+### Layout de Diretórios
+
+```
+skills/
+  internal/          ← Skills confiáveis (sem auditoria)
+    skill-auditor/   ← Auditor de segurança para skills públicas
+    skill-installer/ ← Busca e instalação do marketplace
+  public/            ← Skills de terceiros (auditoria obrigatória)
+  quarantine/        ← Skills bloqueadas (nunca carregadas)
+```
+
+### Como Funciona
+
+1. **SkillLoader** varre `skills/` no boot, parseia o frontmatter de cada `SKILL.md` e carrega triggers do `skill.json`
+2. **SkillResolver** compara cada mensagem do usuário com as skills carregadas usando três estratégias (em ordem de prioridade):
+   - Slash command: `/nome-da-skill [args]`
+   - Menção ao nome da skill no texto
+   - Triggers freeText (de `skill.json → invocation.freeText`)
+3. Se uma skill casar, seu corpo é injetado como system prompt via `runWithSkill()`
+4. Se nenhuma skill casar, o agente ainda lista todas as skills instaladas no contexto do LLM (consciência de skills)
+
+### Skills Nativas
+
+| Skill | Invocação | Propósito |
+|---|---|---|
+| **skill-auditor** | `/skill-auditor <nome>` | Analisa arquivos de skills públicas em busca de riscos de segurança |
+| **skill-installer** | `/install-skill <tema>`, `/find-skill <tema>` | Busca no marketplace e instala novas skills |
+
+### Instalando uma Skill Pública
+
+1. Copie a pasta da skill para `skills/public/<nome>/`
+2. Execute `/skill-auditor <nome>` no Telegram para auditar
+3. Se aprovada, a skill será carregada no próximo boot ou hot-reload
+
+> Para a especificação técnica completa, veja [specs/skills-system.md](./specs/skills-system.md).
 
 ---
 
