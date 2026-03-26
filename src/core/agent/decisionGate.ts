@@ -1,0 +1,80 @@
+// ── Decision Gate ──────────────────────────────────────────────────────────
+// Recebe intent + contexto de sessão e decide: execute | confirm | pass.
+// O controller não precisa conhecer as regras — só reage ao Decision.
+
+import { IntentResult, detectIntent } from './IntentDetector';
+import { SessionContext } from '../../shared/SessionManager';
+
+export type Decision =
+    | { type: 'execute'; message: string }
+    | { type: 'confirm'; message: string }
+    | { type: 'pass' };   // fluxo normal do pipeline
+
+export interface DecisionGateInput {
+    text: string;
+    session?: SessionContext;
+}
+
+// Thresholds de confiança
+const THRESHOLD_EXECUTE = 0.75;
+const THRESHOLD_CONFIRM = 0.4;
+
+/**
+ * Avalia a entrada e retorna a decisão que o controller deve seguir.
+ */
+export function decisionGate(input: DecisionGateInput): Decision {
+    const intent = detectIntent(input.text);
+    if (!intent) return { type: 'pass' };
+
+    const { session } = input;
+
+    // Boost de contexto: projeto ativo adiciona confiança
+    let confidence = intent.confidence;
+    if (session?.current_project_id) confidence += 0.2;
+
+    // Penalidade: entrada muito curta sem verbo claro — já coberta pelo detector,
+    // mas mensagens de 1-2 chars sem match forte ficam em 'pass' naturalmente.
+
+    // ── Continue intent ──────────────────────────────────────────────────
+    if (intent.type === 'continue') {
+        if (!session?.current_project_id) return { type: 'pass' };
+
+        // Já em modo continuação + confiança alta → auto-resolve
+        if (confidence >= THRESHOLD_EXECUTE && session.continue_project_only) {
+            return {
+                type: 'execute',
+                message: `Vou continuar o projeto atual (${session.current_project_id}) — se nao era isso, me avisa.`
+            };
+        }
+
+        if (confidence >= THRESHOLD_EXECUTE) {
+            return {
+                type: 'execute',
+                message: `Vou continuar apenas o projeto atual desta sessao (${session.current_project_id}) e nao vou criar um projeto novo.`
+            };
+        }
+
+        if (confidence >= THRESHOLD_CONFIRM) {
+            return {
+                type: 'confirm',
+                message: `Voce quer que eu continue o projeto "${session.current_project_id}" ou esta se referindo a outra coisa?`
+            };
+        }
+
+        return { type: 'pass' };
+    }
+
+    // ── Stop / Cancel intent ─────────────────────────────────────────────
+    // Passamos para o pipeline principal tratar (pode envolver cleanup de sessão)
+    if (intent.type === 'stop') {
+        return { type: 'pass' };
+    }
+
+    // ── Execute intent ───────────────────────────────────────────────────
+    // "roda", "executa" etc. — passa para o pipeline normal processar
+    if (intent.type === 'execute') {
+        return { type: 'pass' };
+    }
+
+    return { type: 'pass' };
+}

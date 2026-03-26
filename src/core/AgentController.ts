@@ -17,6 +17,7 @@ import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 import { agentConfig } from './executor/AgentConfig';
+import { decisionGate } from './agent/decisionGate';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -441,16 +442,24 @@ Voce ainda pode:
 2. continuar em modo degradado sem validacao em browser`;
         }
 
-        if (this.isContinueProjectDirective(normalized) && session?.current_project_id) {
-            session.continue_project_only = true;
-            session.last_error = undefined;
-            session.last_error_type = undefined;
-            session.last_error_hash = undefined;
-            session.last_error_fingerprint = undefined;
-            session._tool_input_attempts = 0;
-            session._input_history = [];
+        // ── Decision Gate: intent + contexto → decisão ─────────────────────
+        const decision = decisionGate({ text: normalized, session: session ?? undefined });
 
-            return `Vou continuar apenas o projeto atual desta sessao (${session.current_project_id}) e nao vou criar um projeto novo.`;
+        if (decision.type === 'execute') {
+            if (session && !session.continue_project_only) {
+                session.continue_project_only = true;
+                session.last_error = undefined;
+                session.last_error_type = undefined;
+                session.last_error_hash = undefined;
+                session.last_error_fingerprint = undefined;
+                session._tool_input_attempts = 0;
+                session._input_history = [];
+            }
+            return decision.message;
+        }
+
+        if (decision.type === 'confirm') {
+            return decision.message;
         }
 
         return null;
@@ -461,9 +470,7 @@ Voce ainda pode:
             && normalizedQuery.includes('puppeteer');
     }
 
-    private isContinueProjectDirective(normalizedQuery: string): boolean {
-        return /\b(so continue|continuar|continue o projeto|continue os projetos|nao recrie|não recrie|nao crie novo projeto|não crie novo projeto)\b/.test(normalizedQuery);
-    }
+
 
     private extractWorkspaceProjectId(userQuery: string): string | null {
         const matches = userQuery.match(/(?:[A-Za-z]:\\|\/)[^\s"'`]+/g) || [];
