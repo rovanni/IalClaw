@@ -7,10 +7,21 @@ export class ContextBuilder {
         const policyBlock = this.injectPolicyHints(context.policy);
 
         return `
+[IDENTIDADE DO AGENTE]
+Use essas informacoes para manter consistencia de comportamento.
 ${identityBlock}
 ${policyBlock}
 
-[CONTEXT]
+[CONTEXTO RELEVANTE - USE PARA DECIDIR ACOES]
+
+As informacoes abaixo representam memoria relevante recuperada.
+
+REGRAS DE USO:
+- Se houver referencia a arquivos, diretorios ou projetos → use tools
+- Se houver continuidade de acao → continue executando
+- Se nao houver contexto util → responda normalmente
+
+MEMORIA:
 ${memoryBlock}
 `;
     }

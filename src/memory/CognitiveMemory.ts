@@ -21,6 +21,7 @@ export type NodeResult = {
 export class CognitiveMemory {
     private db: Database.Database;
     private provider: LLMProvider;
+    private recentlyUsedNodes = new Set<string>();
 
     constructor(db: Database.Database, provider: LLMProvider) {
         this.db = db;
@@ -165,34 +166,36 @@ export class CognitiveMemory {
         return (node.edge_weight * 0.6) + (node.semantic_strength * 0.4);
     }
 
+    private computeCompositeScore(node: NodeResult): number {
+        const importance = node.importance || 0.5;
+        const freshness = node.freshness || 1.0;
+        const access = Math.min(node.score || 0, 1.0);
+        return (importance * 0.4) + (freshness * 0.3) + (access * 0.3);
+    }
+
     private computeFinalScore(node: NodeResult, queryEmbedding: number[]): number {
         // 1. Semantic Similarity
         let similarity = 0;
         if (node.embedding && queryEmbedding.length > 0) {
             const nodeVec = JSON.parse(node.embedding) as number[];
             similarity = this.cosineSimilarity(queryEmbedding, nodeVec);
-
-            // Normalize cosine similarity (roughly -1 to 1) to (0 to 1)
             similarity = (similarity + 1) / 2;
         }
 
-        // 2. Graph Score
-        const graphScore = this.computeGraphScore(node);
+        // 2. Composite Score (importance + freshness + access)
+        const composite = this.computeCompositeScore(node);
 
         // 3. Depth Factor
         const depthFactor = 1 / ((node.depth || 0) + 1);
 
-        // 4. Base Metrics
-        const importance = node.importance || 0.5;
-        const freshness = node.freshness || 1.0;
+        let score = (similarity * 0.4) + (composite * 0.5) + (depthFactor * 0.1);
 
-        return (
-            (similarity * 0.4) +
-            (graphScore * 0.25) +
-            (importance * 0.15) +
-            (freshness * 0.1) +
-            (depthFactor * 0.1)
-        );
+        // 4. Repetition Penalty
+        if (this.recentlyUsedNodes.has(node.id)) {
+            score *= 0.8;
+        }
+
+        return score;
     }
 
     private rankWithHybridScoring(seeds: NodeResult[], expanded: NodeResult[], queryEmbedding: number[], limit: number = 20): NodeResult[] {
@@ -210,8 +213,23 @@ export class CognitiveMemory {
             return finalNode;
         });
 
-        // Sort descending by final_score
-        return ranked.sort((a, b) => (b.final_score || 0) - (a.final_score || 0)).slice(0, limit);
+        ranked.sort((a, b) => (b.final_score || 0) - (a.final_score || 0));
+
+        // Controlled exploration: 80% top score, 20% random from top 20
+        const poolSize = Math.max(20, limit);
+        const pool = ranked.slice(0, poolSize);
+        const deterministicCount = Math.ceil(limit * 0.8);
+        const explorationCount = limit - deterministicCount;
+
+        const result = pool.slice(0, deterministicCount);
+        const remaining = pool.slice(deterministicCount);
+
+        for (let i = 0; i < explorationCount && remaining.length > 0; i++) {
+            const idx = Math.floor(Math.random() * remaining.length);
+            result.push(remaining.splice(idx, 1)[0]);
+        }
+
+        return result;
     }
 
     public async learn(input: {
@@ -236,10 +254,17 @@ export class CognitiveMemory {
             for (const node of nodes_used) {
                 updateNode.run(node.id);
                 updateEdges.run(node.id, node.id);
+                this.recentlyUsedNodes.add(node.id);
             }
             insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0);
         });
         tx();
+
+        // Evict oldest entries to prevent unbounded growth
+        if (this.recentlyUsedNodes.size > 200) {
+            const first = this.recentlyUsedNodes.values().next().value;
+            if (first) this.recentlyUsedNodes.delete(first);
+        }
     }
 
     private buildConversationTitle(content: string): string {

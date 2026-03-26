@@ -1,12 +1,10 @@
 import { Context } from 'grammy';
 import { AgentLoop } from '../engine/AgentLoop';
-import { PolicyEngine } from '../engine/PolicyEngine';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
 import { ContextBuilder } from '../memory/ContextBuilder';
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
-import { AgentGateway } from '../engine/AgentGateway';
 import { SessionManager } from '../shared/SessionManager';
 import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
@@ -24,7 +22,6 @@ export class AgentController {
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
     private logger = createLogger('AgentController');
-    private embeddingCache = new Map<string, number[]>();
 
     constructor(
         memory: CognitiveMemory,
@@ -141,123 +138,74 @@ export class AgentController {
             return sessionDirectiveReply;
         }
 
-        // ── Roteamento: projeto ativo → tools | sem projeto → resposta direta ──
-        if (session?.current_project_id) {
-            console.log(`[IALCLAW] Using tools (project: ${session.current_project_id})`);
-            logger.info('tools_mode_selected', 'Projeto ativo. Usando AgentLoop com tools.', {
-                cognitive_stage: 'decision',
-                decision: 'TOOLS_MODE',
-                current_project_id: session.current_project_id
-            });
+        // ── Fluxo unificado: LLM decide usar tools ou responder direto ──
+        console.log('[IALCLAW] Unified flow - LLM decides');
+        logger.info('unified_flow_started', 'Fluxo unificado. LLM decide se usa tools.', {
+            cognitive_stage: 'decision',
+            decision: 'UNIFIED',
+            has_project: Boolean(session?.current_project_id)
+        });
 
-            const provider = this.loop.getProvider();
-            const normalizedQuery = userQuery.trim().toLowerCase();
-            const isSimpleQuery =
-                normalizedQuery.length < 30 &&
-                !/[a-zA-Z]{4,}\s+[a-zA-Z]{4,}/.test(normalizedQuery);
-            let queryEmbedding: number[] = [];
-            if (!isSimpleQuery) {
-                const cached = this.embeddingCache.get(normalizedQuery);
-                if (cached) {
-                    queryEmbedding = cached;
-                } else {
-                    queryEmbedding = await provider.embed(userQuery);
-                    if (this.embeddingCache.size > 100) {
-                        const firstKey = this.embeddingCache.keys().next().value;
-                        if (firstKey) this.embeddingCache.delete(firstKey);
-                    }
-                    this.embeddingCache.set(normalizedQuery, queryEmbedding);
-                }
+        // Memória: embedding → retrieval → identidade → contexto
+        const provider = this.loop.getProvider();
+        const queryEmbedding = await provider.embed(userQuery);
+        const memoryNodes = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
+        const identity = await this.memory.getIdentityNodes();
+        const contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+
+        const history = this.memory.getConversationHistory(sessionId, 10);
+        const projectInfo = session?.current_project_id
+            ? `\nProjeto ativo: ${session.current_project_id}. Use tools para executar acoes reais nesse projeto.`
+            : '';
+        const messages: MessagePayload[] = [
+            {
+                role: 'system',
+                content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.${projectInfo}\n\nContexto relevante:\n${contextStr}`
             }
-            const gateway = new AgentGateway(this.memory, provider);
-            const agentId = await gateway.selectAgent(userQuery, queryEmbedding);
-            const memory = queryEmbedding.length > 0
-                ? await this.memory.retrieveWithTraversal(userQuery, queryEmbedding)
-                : [];
-            const identity = await this.memory.getIdentityNodes(agentId);
-            const policyEngine = new PolicyEngine();
-            const policy = policyEngine.resolvePolicy(identity);
-            const contextStr = this.contextBuilder.build({ identity, memory, policy });
-
-            const history = this.memory.getConversationHistory(sessionId, 10);
-            const messages: MessagePayload[] = [
-                {
-                    role: 'system',
-                    content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem um projeto ativo: ${session.current_project_id}. Use as tools disponiveis para executar acoes reais no projeto. Nao apenas descreva — EXECUTE.\nNao alucine fatos.\n\n${contextStr}`
-                }
-            ];
-            for (const message of history) {
-                if (message.role === 'user' || message.role === 'assistant' || message.role === 'tool') {
-                    messages.push({ role: message.role, content: message.content });
-                }
+        ];
+        for (const msg of history) {
+            if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') {
+                messages.push({ role: msg.role, content: msg.content });
             }
-            messages.push({ role: 'user', content: userQuery });
+        }
+        messages.push({ role: 'user', content: userQuery });
 
-            const result = await this.loop.run(messages, policy);
-
-            for (const newMessage of result.newMessages) {
-                this.memory.saveMessage(
-                    sessionId,
-                    newMessage.role,
-                    newMessage.content,
-                    newMessage.tool_name,
-                    newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
-                );
+        const policy = {
+            limits: {
+                max_steps: 3,
+                max_tool_calls: 2
             }
+        };
 
-            SessionManager.addToHistory(sessionId, 'user', userQuery);
-            SessionManager.addToHistory(sessionId, 'assistant', result.answer);
-            await this.memory.learn({
-                query: userQuery,
-                nodes_used: memory,
-                success: true,
-                response: result.answer
-            });
+        const result = await this.loop.run(messages, policy);
 
-            logger.info('tools_mode_completed', 'Pipeline com tools concluido.', {
-                cognitive_stage: 'result',
-                result: 'SUCCESS',
-                duration_ms: Date.now() - startedAt,
-                response_length: result.answer.length
-            });
-
-            return result.answer;
+        for (const newMessage of result.newMessages) {
+            this.memory.saveMessage(
+                sessionId,
+                newMessage.role,
+                newMessage.content,
+                newMessage.tool_name,
+                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
+            );
         }
 
-        // ── Fallback: resposta direta sem tools (barata) ────────────────────
-        console.log('[IALCLAW] Using direct response');
-        logger.info('direct_response_selected', 'Sem projeto ativo. Resposta direta sem tools.', {
-            cognitive_stage: 'decision',
-            decision: 'DIRECT_RESPONSE'
-        });
-
-        const provider = this.loop.getProvider();
-        const directMessages: MessagePayload[] = [
-            { role: 'system', content: 'Voce e o IalClaw, um agente cognitivo local. Responda de forma direta, util e sem usar tools. Seja conciso.' },
-            { role: 'user', content: userQuery }
-        ];
-
-        const directResult = await provider.generate(directMessages);
-        const answer = directResult.final_answer || 'Nao consegui gerar uma resposta.';
-
         SessionManager.addToHistory(sessionId, 'user', userQuery);
-        SessionManager.addToHistory(sessionId, 'assistant', answer);
-        this.memory.saveMessage(sessionId, 'assistant', answer);
+        SessionManager.addToHistory(sessionId, 'assistant', result.answer);
         await this.memory.learn({
             query: userQuery,
-            nodes_used: [],
+            nodes_used: memoryNodes,
             success: true,
-            response: answer
+            response: result.answer
         });
 
-        logger.info('direct_response_completed', 'Resposta direta concluida.', {
+        logger.info('unified_flow_completed', 'Pipeline unificado concluido.', {
             cognitive_stage: 'result',
             result: 'SUCCESS',
             duration_ms: Date.now() - startedAt,
-            response_length: answer.length
+            response_length: result.answer.length
         });
 
-        return answer;
+        return result.answer;
     }
 
     /**
