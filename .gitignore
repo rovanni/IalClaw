@@ -7,6 +7,9 @@ db.sqlite-shm
 *.db
 ialclaw.db
 
+# Runtime state
+.ialclaw/
+
 # Diretórios Dinâmicos do Agente
 workspace/
 /runtime/

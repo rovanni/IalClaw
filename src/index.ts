@@ -17,11 +17,17 @@ import { SkillLoader } from './skills/SkillLoader';
 import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
 import { createLogger } from './shared/AppLogger';
+import { debugBus } from './shared/DebugBus';
 
-dotenv.config();
+dotenv.config({ debug: false });
 
 // ── Banner de inicialização ──────────────────────────────────────────────────
 {
+    const RESET = '\x1b[0m';
+    const CYAN = '\x1b[36m';
+    const GREEN = '\x1b[32m';
+    const DIM = '\x1b[2m';
+
     const pkg = require('../package.json');
     const version = pkg.version || '0.0.0';
     const logLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
@@ -29,20 +35,24 @@ dotenv.config();
     const channel = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_bot_token_here'
         ? 'telegram + web'
         : 'web only';
+    const model = process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
 
-    const banner = `
-===================================================
-   🐙  IALCLAW v${version}
-   ─────────────────────────────────
-   modo:    ${mode}
-   canal:   ${channel}
-   modelo:  ${process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2'}
-===================================================`;
-
-    console.log(banner);
+    console.log('');
+    console.log(`${CYAN}  🐙 IALCLAW${RESET} ${DIM}v${version}${RESET}`);
+    console.log(`${DIM}  ─────────────────────────────────${RESET}`);
+    console.log(`  modo:    ${GREEN}${mode}${RESET}`);
+    console.log(`  canal:   ${GREEN}${channel}${RESET}`);
+    console.log(`  modelo:  ${GREEN}${model}${RESET}`);
+    console.log('');
 }
 
 const logger = createLogger('Startup');
+const busLogger = createLogger('DebugBus');
+
+// ── DebugBus → Logger bridge ────────────────────────────────────────────────
+debugBus.on('agent:step', (data: any) => busLogger.debug('agent_step', data?.summary || data?.type));
+debugBus.on('agent:error', (data: any) => busLogger.error('agent_error', data?.error || data, data?.message));
+debugBus.on('tool:call', (data: any) => busLogger.debug('tool_call', `${data?.tool || 'unknown'}`));
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');

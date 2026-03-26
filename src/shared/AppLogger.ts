@@ -25,6 +25,38 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
     error: 40
 };
 
+// ANSI colors for pretty console output
+const ANSI = {
+    RESET: '\x1b[0m',
+    DIM: '\x1b[2m',
+    CYAN: '\x1b[36m',
+    GREEN: '\x1b[32m',
+    YELLOW: '\x1b[33m',
+    RED: '\x1b[31m',
+    MAGENTA: '\x1b[35m',
+};
+
+const LEVEL_COLOR: Record<LogLevel, string> = {
+    debug: ANSI.DIM,
+    info: ANSI.CYAN,
+    warn: ANSI.YELLOW,
+    error: ANSI.RED,
+};
+
+const LEVEL_ICON: Record<LogLevel, string> = {
+    debug: '│',
+    info: 'ℹ',
+    warn: '⚠',
+    error: '✖',
+};
+
+const STAGE_COLOR: Record<CognitiveStage, string> = {
+    start: ANSI.CYAN,
+    decision: ANSI.MAGENTA,
+    execution: ANSI.YELLOW,
+    result: ANSI.GREEN,
+};
+
 const configuredLevel = parseLevel(process.env.LOG_LEVEL);
 const consoleFormat = parseConsoleFormat(process.env.LOG_CONSOLE_FORMAT);
 const logDirectory = path.join(process.cwd(), process.env.LOG_DIR || 'logs');
@@ -300,13 +332,14 @@ function formatCognitiveDetails(payload: LogPayload, traceLabel?: string): strin
 function formatCognitiveConsoleLine(payload: LogPayload, stage: CognitiveStage): string {
     const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
     const stageLabel = stage.toUpperCase();
+    const color = STAGE_COLOR[stage];
     const label = formatCognitiveLabel(payload, stage);
     const details = formatCognitiveDetails(payload, traceLabel);
     const messagePart = payload.message && payload.message !== label ? ` - ${payload.message}` : '';
-    const detailPart = details.length > 0 ? ` (${details.join(' ')})` : '';
+    const detailPart = details.length > 0 ? ` ${ANSI.DIM}(${details.join(' ')})${ANSI.RESET}` : '';
     const errorPart = formatConsoleError(payload.error);
 
-    return `${payload.timestamp} [${stageLabel}] ${label}${detailPart}${messagePart}${errorPart ? `\n  error: ${errorPart}` : ''}`;
+    return `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}[${stageLabel}]${ANSI.RESET} ${label}${detailPart}${messagePart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
 }
 
 export function formatConsoleLogLine(payload: LogPayload): string {
@@ -316,7 +349,9 @@ export function formatConsoleLogLine(payload: LogPayload): string {
     }
 
     const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
-    const header = `${payload.timestamp} ${payload.level.toUpperCase()} ${payload.component}:${payload.event}`;
+    const color = LEVEL_COLOR[payload.level];
+    const icon = LEVEL_ICON[payload.level];
+    const header = `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} ${payload.level.toUpperCase()}${ANSI.RESET} ${payload.component}:${payload.event}`;
     const scopeBits = [traceLabel ? `trace=${traceLabel}` : null].filter(Boolean) as string[];
 
     const interestingKeys = [
@@ -344,10 +379,10 @@ export function formatConsoleLogLine(payload: LogPayload): string {
     }
 
     const messagePart = payload.message ? ` - ${payload.message}` : '';
-    const metaPart = scopeBits.length > 0 ? ` (${scopeBits.join(' ')})` : '';
+    const metaPart = scopeBits.length > 0 ? ` ${ANSI.DIM}(${scopeBits.join(' ')})${ANSI.RESET}` : '';
     const errorPart = formatConsoleError(payload.error);
 
-    return `${header}${messagePart}${metaPart}${errorPart ? `\n  error: ${errorPart}` : ''}`;
+    return `${header}${messagePart}${metaPart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
 }
 
 function writeLog(level: LogLevel, component: string, event: string, message?: string, meta?: LogMeta, error?: unknown) {

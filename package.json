@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "ialclaw": "./bin/ialclaw.js"
+  },
   "scripts": {
-    "dev": "ts-node src/index.ts",
-    "dev:debug": "cross-env LOG_LEVEL=debug ts-node src/index.ts",
-    "dev:debug:tail": "node src/scripts/devDebugTail.js",
+    "dev": "node bin/ialclaw.js start",
+    "dev:debug": "node bin/ialclaw.js start --debug",
+    "dev:debug:tail": "node bin/ialclaw.js start --debug --tail",
     "test": "ts-node src/tests/run.ts",
     "setup": "ts-node src/scripts/setup.ts",
     "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts"
