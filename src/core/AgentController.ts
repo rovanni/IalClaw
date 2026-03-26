@@ -191,6 +191,39 @@ export class AgentController {
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
+
+        // Detecção contextual de nome do usuário
+        const lastMessages = this.memory.getConversationHistory(sessionId, 3);
+        const lastAssistantMessage = lastMessages[lastMessages.length - 2]?.content || '';
+        const askedName = /nome|como voc[eê] se chama|qual [eé] o seu nome/i.test(lastAssistantMessage);
+        const trimmedQuery = userQuery.trim();
+        const isShortName = trimmedQuery.split(' ').length <= 2 && /^[A-Za-zÀ-ÿ\s]+$/.test(trimmedQuery);
+
+        if (askedName && isShortName) {
+            await this.memory.saveExecutionFix({
+                content: `O nome do usuario é ${trimmedQuery}`,
+                error_type: 'user_identity',
+                fingerprint: `user_name_${trimmedQuery.toLowerCase()}`
+            });
+            logger.info('user_name_detected', 'Nome do usuario detectado via contexto conversacional.', {
+                name: trimmedQuery
+            });
+        }
+
+        // Detecção direta: "meu nome é X" / "me chamo X"
+        const directNameMatch = userQuery.match(/(?:meu nome [eé]|me chamo)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+        if (directNameMatch) {
+            const name = directNameMatch[1].trim();
+            await this.memory.saveExecutionFix({
+                content: `O nome do usuario é ${name}`,
+                error_type: 'user_identity',
+                fingerprint: `user_name_${name.toLowerCase()}`
+            });
+            logger.info('user_name_detected', 'Nome do usuario detectado via frase direta.', {
+                name
+            });
+        }
+
         await this.memory.learn({
             query: userQuery,
             nodes_used: memoryNodes,
