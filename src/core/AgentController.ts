@@ -523,6 +523,7 @@ Voce ainda pode:
                     relative_path: relativePath,
                     raw_content: rawContent
                 });
+                this.memory.setActiveCodeFiles(projectId, [relativePath]);
             } catch (error: any) {
                 this.logger.debug('code_indexing_skipped', 'Falha ao indexar arquivo de codigo para memoria.', {
                     project_id: projectId,

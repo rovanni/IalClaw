@@ -24,6 +24,15 @@ export class CognitiveMemory {
     private provider: LLMProvider;
     private recentlyUsedNodes = new Set<string>();
     private recentlyUsedCodeNeighbors = new Set<string>();
+    private recentlyUsedCodeNeighborStrength = new Map<string, number>();
+    private recentNodeLastAccessedAt = new Map<string, number>();
+    private recentNodeAccessCount = new Map<string, number>();
+    private activeCodeFiles = new Set<string>();
+
+    private readonly RECENCY_HALF_LIFE_MS = 1000 * 60 * 60;
+    private readonly RECENCY_WEIGHT = 0.16;
+    private readonly ACTIVE_FILE_BONUS = 0.3;
+    private readonly NEIGHBOR_BASE_WEIGHT = 0.08;
 
     constructor(db: Database.Database, provider: LLMProvider) {
         this.db = db;
@@ -67,104 +76,125 @@ export class CognitiveMemory {
         `).all(`%${text}%`, limit) as NodeResult[];
     }
 
-        public async indexCodeNode(input: {
-                project_id: string;
-                relative_path: string;
-                raw_content: string;
-        }): Promise<void> {
-                const projectId = String(input.project_id || '').trim();
-                const relativePath = this.normalizeRelativePath(input.relative_path);
-                const rawContent = String(input.raw_content || '');
+    public async indexCodeNode(input: {
+        project_id: string;
+        relative_path: string;
+        raw_content: string;
+    }): Promise<void> {
+        const projectId = String(input.project_id || '').trim();
+        const relativePath = this.normalizeRelativePath(input.relative_path);
+        const rawContent = String(input.raw_content || '');
 
-                if (!projectId || !relativePath || !rawContent || !this.isCodePath(relativePath)) {
-                        return;
-                }
+        if (!projectId || !relativePath || !rawContent || !this.isCodePath(relativePath)) {
+            return;
+        }
 
-                const now = new Date().toISOString();
-                const codeNodeId = this.buildCodeNodeId(projectId, relativePath);
-                const preview = rawContent.slice(0, 280);
-                const subtype = path.posix.extname(relativePath).replace('.', '') || 'text';
-                const tags = JSON.stringify(['code', projectId, relativePath]);
-                const embeddingSource = rawContent.slice(0, 6000);
-                const embedding = await this.provider.embed(embeddingSource);
+        const now = new Date().toISOString();
+        const codeNodeId = this.buildCodeNodeId(projectId, relativePath);
+        const preview = rawContent.slice(0, 280);
+        const subtype = path.posix.extname(relativePath).replace('.', '') || 'text';
+        const tags = JSON.stringify(['code', projectId, relativePath]);
+        const embeddingSource = rawContent.slice(0, 6000);
+        const embedding = await this.provider.embed(embeddingSource);
 
-                this.db.prepare(`
+        this.db.prepare(`
             INSERT OR REPLACE INTO nodes
             (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-                        codeNodeId,
-                        'code',
-                        subtype,
-                        relativePath,
-                        rawContent,
-                        preview,
-                        JSON.stringify(embedding),
-                        'code',
-                        tags,
-                        0.75,
-                        0.6,
-                        1.0,
-                        1,
-                        now,
-                        now
-                );
+            codeNodeId,
+            'code',
+            subtype,
+            relativePath,
+            rawContent,
+            preview,
+            JSON.stringify(embedding),
+            'code',
+            tags,
+            0.75,
+            0.6,
+            1.0,
+            1,
+            now,
+            now
+        );
 
-                const projectNodeId = this.ensureProjectNode(projectId, now);
+        const projectNodeId = this.ensureProjectNode(projectId, now);
 
-                this.db.prepare(`
+        this.db.prepare(`
             DELETE FROM edges
             WHERE source = ? AND relation = 'part_of'
         `).run(codeNodeId);
 
-                this.db.prepare(`
+        this.db.prepare(`
             INSERT INTO edges
             (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
             VALUES (?, ?, 'part_of', ?, ?, 0, ?, ?)
         `).run(codeNodeId, projectNodeId, 0.95, 0.9, projectId, now);
 
-                const importedPaths = this.extractRelativeImports(relativePath, rawContent);
+        const importedPaths = this.extractRelativeImports(relativePath, rawContent);
 
-                this.db.prepare(`
+        this.db.prepare(`
             DELETE FROM edges
             WHERE source = ? AND relation = 'imports'
         `).run(codeNodeId);
 
-                const insertImportEdge = this.db.prepare(`
+        const insertImportEdge = this.db.prepare(`
             INSERT INTO edges
             (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
             VALUES (?, ?, 'imports', ?, ?, 0, ?, ?)
         `);
 
-                const insertPlaceholder = this.db.prepare(`
+        const insertPlaceholder = this.db.prepare(`
             INSERT OR IGNORE INTO nodes
             (id, type, subtype, name, content, content_preview, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
             VALUES (?, 'code', ?, ?, ?, ?, 'code', ?, ?, ?, ?, 1, ?, ?)
         `);
 
-                for (const targetPath of importedPaths) {
-                        const targetNodeId = this.buildCodeNodeId(projectId, targetPath);
-                        const targetSubtype = path.posix.extname(targetPath).replace('.', '') || 'text';
-                        const placeholderContent = `Placeholder para ${targetPath}`;
-                        const placeholderTags = JSON.stringify(['code', projectId, targetPath, 'placeholder']);
+        for (const targetPath of importedPaths) {
+            const targetNodeId = this.buildCodeNodeId(projectId, targetPath);
+            const targetSubtype = path.posix.extname(targetPath).replace('.', '') || 'text';
+            const placeholderContent = `Placeholder para ${targetPath}`;
+            const placeholderTags = JSON.stringify(['code', projectId, targetPath, 'placeholder']);
 
-                        insertPlaceholder.run(
-                                targetNodeId,
-                                targetSubtype,
-                                targetPath,
-                                placeholderContent,
-                                placeholderContent,
-                                placeholderTags,
-                                0.4,
-                                0.2,
-                                1.0,
-                                now,
-                                now
-                        );
+            insertPlaceholder.run(
+                targetNodeId,
+                targetSubtype,
+                targetPath,
+                placeholderContent,
+                placeholderContent,
+                placeholderTags,
+                0.4,
+                0.2,
+                1.0,
+                now,
+                now
+            );
 
-                        insertImportEdge.run(codeNodeId, targetNodeId, 0.7, 0.7, relativePath, now);
-                }
+            insertImportEdge.run(codeNodeId, targetNodeId, 0.7, 0.7, relativePath, now);
         }
+    }
+
+    public setActiveCodeFiles(projectId: string, relativePaths: string[]): void {
+        if (!projectId || !Array.isArray(relativePaths)) {
+            return;
+        }
+
+        for (const p of relativePaths) {
+            const normalized = this.normalizeRelativePath(p);
+            if (!normalized || !this.isCodePath(normalized)) {
+                continue;
+            }
+            this.activeCodeFiles.add(this.buildCodeNodeId(projectId, normalized));
+        }
+
+        if (this.activeCodeFiles.size > 80) {
+            const first = this.activeCodeFiles.values().next().value;
+            if (first) {
+                this.activeCodeFiles.delete(first);
+            }
+        }
+    }
 
     public async hybridSearch(query: string, queryEmbedding: number[], limit: number = 5): Promise<NodeResult[]> {
         const normalized = this.normalize(query);
@@ -303,10 +333,20 @@ export class CognitiveMemory {
 
         // 4. Context Bonus/Penalty
         if (node.type === 'code') {
-            if (this.recentlyUsedNodes.has(node.id)) {
-                score += 0.15;
-            } else if (this.recentlyUsedCodeNeighbors.has(node.id)) {
-                score += 0.08;
+            const decay = this.computeRecencyDecay(node.id);
+            score += decay * this.RECENCY_WEIGHT;
+
+            if (this.activeCodeFiles.has(node.id)) {
+                score += this.ACTIVE_FILE_BONUS;
+            }
+
+            const neighborStrength = this.recentlyUsedCodeNeighborStrength.get(node.id) || 0;
+            if (neighborStrength > 0 && this.recentlyUsedCodeNeighbors.has(node.id)) {
+                score += this.NEIGHBOR_BASE_WEIGHT * neighborStrength;
+            }
+
+            if ((this.recentNodeAccessCount.get(node.id) || 0) > 5) {
+                score *= 0.9;
             }
         } else if (this.recentlyUsedNodes.has(node.id)) {
             score *= 0.8;
@@ -372,6 +412,7 @@ export class CognitiveMemory {
                 updateNode.run(node.id);
                 updateEdges.run(node.id, node.id);
                 this.recentlyUsedNodes.add(node.id);
+                this.markNodeUsage(node.id);
             }
             insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0);
         });
@@ -383,6 +424,14 @@ export class CognitiveMemory {
         if (this.recentlyUsedNodes.size > 200) {
             const first = this.recentlyUsedNodes.values().next().value;
             if (first) this.recentlyUsedNodes.delete(first);
+        }
+
+        if (this.recentNodeLastAccessedAt.size > 500) {
+            const first = this.recentNodeLastAccessedAt.keys().next().value;
+            if (first) {
+                this.recentNodeLastAccessedAt.delete(first);
+                this.recentNodeAccessCount.delete(first);
+            }
         }
 
         this.refreshRecentlyUsedCodeNeighbors();
@@ -641,6 +690,7 @@ export class CognitiveMemory {
 
     private refreshRecentlyUsedCodeNeighbors(): void {
         this.recentlyUsedCodeNeighbors.clear();
+        this.recentlyUsedCodeNeighborStrength.clear();
         const ids = Array.from(this.recentlyUsedNodes);
         if (ids.length === 0) {
             return;
@@ -661,7 +711,54 @@ export class CognitiveMemory {
         for (const row of neighbors) {
             if (!this.recentlyUsedNodes.has(row.id)) {
                 this.recentlyUsedCodeNeighbors.add(row.id);
+                const strength = this.maxSourceDecayForNeighbor(row.id, ids) * 0.5;
+                this.recentlyUsedCodeNeighborStrength.set(row.id, strength);
             }
         }
+    }
+
+    private markNodeUsage(nodeId: string): void {
+        const now = Date.now();
+        this.recentNodeLastAccessedAt.set(nodeId, now);
+        this.recentNodeAccessCount.set(nodeId, (this.recentNodeAccessCount.get(nodeId) || 0) + 1);
+        if (nodeId.startsWith('code:')) {
+            this.activeCodeFiles.add(nodeId);
+        }
+    }
+
+    private computeRecencyDecay(nodeId: string): number {
+        const lastAccessedAt = this.recentNodeLastAccessedAt.get(nodeId);
+        if (!lastAccessedAt) {
+            return 0;
+        }
+
+        const age = Date.now() - lastAccessedAt;
+        if (age <= 0) {
+            return 1;
+        }
+
+        return Math.exp(-age / this.RECENCY_HALF_LIFE_MS);
+    }
+
+    private maxSourceDecayForNeighbor(neighborId: string, sourceIds: string[]): number {
+        const linkedSources = this.db.prepare(`
+      SELECT DISTINCT source AS id
+      FROM edges
+      WHERE relation = 'imports' AND target = ? AND source IN (${sourceIds.map(() => '?').join(',')})
+      UNION
+      SELECT DISTINCT target AS id
+      FROM edges
+      WHERE relation = 'imports' AND source = ? AND target IN (${sourceIds.map(() => '?').join(',')})
+    `).all(neighborId, ...sourceIds, neighborId, ...sourceIds) as Array<{ id: string }>;
+
+        let maxDecay = 0;
+        for (const source of linkedSources) {
+            const sourceDecay = this.computeRecencyDecay(source.id);
+            if (sourceDecay > maxDecay) {
+                maxDecay = sourceDecay;
+            }
+        }
+
+        return maxDecay;
     }
 }
