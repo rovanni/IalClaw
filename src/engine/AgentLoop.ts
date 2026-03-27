@@ -51,7 +51,7 @@ const INSTALL_EVIDENCE_PATTERNS: RegExp[] = [
 export class AgentLoop {
     private llm: LLMProvider;
     private registry: SkillRegistry;
-    private maxIterations = 5;
+    private maxIterations = 4;
     private logger = createLogger('AgentLoop');
 
     constructor(llm: LLMProvider, registry: SkillRegistry) {
@@ -65,11 +65,15 @@ export class AgentLoop {
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
-        const maxTools = policy?.limits?.max_tool_calls || 5;
+        const maxTools = policy?.limits?.max_tool_calls || 3;
+        const timeoutMs = 30000; // 30 segundos
         let toolCallsCount = 0;
         let consecutiveToolFailures = 0;
         const toolEvidence: string[] = [];
         const startedAt = Date.now();
+        let lastToolName: string | null = null;
+        let toolRepeatCount = 0;
+        let totalResponseLength = 0;
 
         let toolsDefinition = this.registry.getDefinitions();
 
@@ -144,6 +148,16 @@ export class AgentLoop {
                 return { answer: 'Execucao interrompida pelo usuario.', newMessages };
             }
 
+            // Verificar timeout global
+            const elapsedTime = Date.now() - startedAt;
+            if (elapsedTime > timeoutMs) {
+                this.logger.warn('loop_timeout', 'AgentLoop atingiu timeout global.', {
+                    elapsed_ms: elapsedTime,
+                    timeout_ms: timeoutMs
+                });
+                break;
+            }
+
             this.logger.debug('iteration_started', 'Nova iteracao do AgentLoop.', {
                 iteration: i + 1,
                 message_count: messages.length,
@@ -159,6 +173,26 @@ export class AgentLoop {
             }
 
             if (response.tool_call) {
+                // Detectar loop de ferramenta repetida
+                if (lastToolName === response.tool_call.name) {
+                    toolRepeatCount++;
+                    if (toolRepeatCount >= 2) {
+                        this.logger.warn('tool_loop_detected', 'Loop de ferramenta detectado.', {
+                            tool_name: response.tool_call.name,
+                            repeat_count: toolRepeatCount
+                        });
+                        const loopMsg: MessagePayload = {
+                            role: 'system',
+                            content: `Voce esta repetindo a mesma ferramenta "${response.tool_call.name}" multiplas vezes. Pare de usar tools e responda diretamente ao usuario.`
+                        };
+                        messages.push(loopMsg);
+                        continue;
+                    }
+                } else {
+                    lastToolName = response.tool_call.name;
+                    toolRepeatCount = 1;
+                }
+
                 if (toolCallsCount >= maxTools) {
                     const blockMsg: MessagePayload = { role: 'tool', content: `[POLICY ENGINE] Tool call limite reached. Max: ${maxTools}` };
                     const assistBlock: MessagePayload = { role: 'assistant', content: `[Tentei executar ${response.tool_call.name} mas fui bloqueado pela Policy de limites]` };
@@ -246,6 +280,16 @@ export class AgentLoop {
                 await emitProgress({ stage: 'completed', iteration: i + 1, duration_ms: duration });
                 return { answer: safeAnswer, newMessages };
             }
+
+            // Parada inteligente: se já há conteúdo suficiente acumulado
+            totalResponseLength += (response.final_answer || '').length;
+            if (totalResponseLength > 500 && toolCallsCount > 0) {
+                this.logger.info('loop_smart_stop', 'Parando loop: conteudo suficiente acumulado.', {
+                    total_response_length: totalResponseLength,
+                    tool_calls: toolCallsCount
+                });
+                break;
+            }
         }
 
         // Graceful fallback: pedir ao LLM uma resposta final sem tools
@@ -257,7 +301,7 @@ export class AgentLoop {
 
         messages.push({
             role: 'system',
-            content: 'Voce atingiu o limite de iteracoes. NAO use tools. Responda diretamente ao usuario com o melhor resultado possivel baseado no que ja foi feito, ou explique como ele pode realizar a tarefa manualmente.'
+            content: 'Voce atingiu o limite de iteracoes. NAO use tools. Responda de forma OBJETIVA e DIRETA ao usuario (maximo 3 linhas) com o resultado ou proximos passos.'
         });
 
         try {

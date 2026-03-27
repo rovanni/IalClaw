@@ -79,22 +79,49 @@ export class AgentController {
 
             return SessionManager.runWithSession(conversationId, async () => {
                 const progress = this.createTelegramProgressTracker(ctx);
+                let answer: string | null = null;
+                
                 try {
-                    const answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
+                    answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
                     await progress.complete();
-                    await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
-                    logger.info('message_flow_completed', 'Resposta enviada ao Telegram com sucesso.', {
-                        duration_ms: Date.now() - startedAt,
-                        response_length: answer.length,
-                        requires_audio_reply: payload.requires_audio_reply
-                    });
                 } catch (error: any) {
                     await progress.fail(error);
-                    logger.error('message_flow_failed', error, 'Falha ao processar mensagem do Telegram.', {
+                    logger.error('conversation_execution_failed', error, 'Falha ao executar conversação.', {
                         duration_ms: Date.now() - startedAt,
                         source_type: payload.source_type
                     });
-                    await ctx.reply(`Ocorreu um erro no pipeline cognitivo:\n${error.message}`);
+                    answer = `Ocorreu um erro no pipeline cognitivo:\n${error.message}`;
+                }
+                
+                // GARANTIA DE ENTREGA: Sempre tentar enviar resposta, mesmo se houve erro
+                if (answer) {
+                    try {
+                        await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
+                        logger.info('message_flow_completed', 'Resposta enviada ao Telegram com sucesso.', {
+                            duration_ms: Date.now() - startedAt,
+                            response_length: answer.length,
+                            requires_audio_reply: payload.requires_audio_reply
+                        });
+                    } catch (sendError: any) {
+                        // CRÍTICO: sendResponse falhou completamente (incluindo todos os retries e fallbacks)
+                        logger.error('send_response_critical_failure', sendError, '[IALCLAW] FALHA CRÍTICA: Impossível enviar resposta ao usuário.', {
+                            duration_ms: Date.now() - startedAt,
+                            response_length: answer.length,
+                            error_message: sendError.message
+                        });
+                        
+                        console.error(`\n[IALCLAW] ⚠️  FALHA CRÍTICA DE ENTREGA`);
+                        console.error(`[IALCLAW] 📱 Chat ID: ${conversationId}`);
+                        console.error(`[IALCLAW] ❌ Erro: ${sendError.message}`);
+                        console.error(`[IALCLAW] 📝 Resposta não entregue (${answer.length} caracteres)\n`);
+                        
+                        // Última tentativa: mensagem de erro mínima sem retry
+                        try {
+                            await ctx.reply('❌ Erro ao enviar resposta. Verifique os logs do sistema.');
+                        } catch {
+                            // Ignorar - já logamos tudo que podíamos
+                        }
+                    }
                 }
             });
         }, 'telegram_controller');
