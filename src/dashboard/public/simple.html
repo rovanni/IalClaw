@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IalClaw - Modo Simples</title>
   <link rel="icon" href="data:,">
+  <script src="/dashboard-ui-core.js"></script>
   <style>
     :root {
       --font-xs: 0.75rem;
@@ -315,7 +316,7 @@
       line-height: 1.45;
     }
 
-    #chat-messages {
+    #chat-container {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -325,7 +326,7 @@
       gap: 14px;
     }
 
-    #status-log {
+    #log-container {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -549,7 +550,7 @@
         border-bottom: 1px solid var(--border-color);
       }
 
-      #status-log {
+      #log-container {
         max-height: 180px;
       }
 
@@ -606,14 +607,14 @@
             <div class="section-title">Chat</div>
             <div class="section-subtitle">Somente mensagens do usuário e respostas finais aparecem aqui.</div>
           </div>
-          <div id="chat-messages"></div>
+          <div id="chat-container"></div>
         </div>
         <aside class="log-column">
           <div class="section-header">
             <div class="section-title">Logs</div>
             <div class="section-subtitle">Progresso, observações e ferramentas em execução.</div>
           </div>
-          <div id="status-log"></div>
+          <div id="log-container"></div>
         </aside>
       </div>
       <div id="typing-indicator">IalClaw está pensando...</div>
@@ -649,19 +650,19 @@
     let historyCursor = -1;
 
     function updateChatActionButtons() {
-      const isActive = pendingRequest;
-      actionBtn.textContent = isActive ? 'Parar' : 'Enviar';
-      actionBtn.title = isActive ? 'Interromper execução' : 'Enviar mensagem';
-      actionBtn.classList.toggle('is-stop', isActive);
-      actionBtn.disabled = chatInput.disabled && !isActive;
+      const state = IalclawDashboardUiCore.getActionButtonState(pendingRequest);
+      actionBtn.textContent = state.label;
+      actionBtn.title = state.title;
+      actionBtn.classList.toggle('is-stop', state.action === 'stop');
+      actionBtn.disabled = chatInput.disabled && state.action !== 'stop';
     }
 
     const chatInput = document.getElementById('chat-input');
     const actionBtn = document.getElementById('action-btn');
     const speechBtn = document.getElementById('speech-btn');
     const ttsToggleBtn = document.getElementById('tts-toggle');
-    const timeline = document.getElementById('chat-messages');
-    const statusLog = document.getElementById('status-log');
+    const chatContainer = document.getElementById('chat-container');
+    const logContainer = document.getElementById('log-container');
     const typing = document.getElementById('typing-indicator');
     const statusLabel = document.getElementById('status-label');
     const conversationList = document.getElementById('conversation-list');
@@ -698,22 +699,20 @@
       }
     }
 
-    function appendEvent(type, content, meta = {}) {
-      const normalizedType = EVENT_LABELS[type] ? type : 'obs';
-      if (normalizedType !== 'user' && normalizedType !== 'final') {
-        appendStatus(`[${EVENT_LABELS[normalizedType]}] ${eventContentToString(content)}`, meta);
-        return;
-      }
+    function renderChat(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (normalizedType !== 'user' && normalizedType !== 'final') return;
 
+      const labelType = EVENT_LABELS[normalizedType] ? normalizedType : 'final';
       const row = document.createElement('article');
-      row.className = `chat-message chat-${normalizedType}`;
+      row.className = `chat-message chat-${labelType}`;
 
       const metaEl = document.createElement('div');
       metaEl.className = 'chat-meta';
 
       const tagEl = document.createElement('span');
       tagEl.className = 'chat-tag';
-      tagEl.textContent = EVENT_LABELS[normalizedType];
+      tagEl.textContent = EVENT_LABELS[labelType];
 
       const timeEl = document.createElement('span');
       timeEl.textContent = nowLabel(meta.timestamp);
@@ -728,7 +727,7 @@
       row.appendChild(bubbleEl);
 
       const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
-      if (traceId && normalizedType === 'final') {
+      if (traceId && labelType === 'final') {
         const traceBtn = document.createElement('button');
         traceBtn.className = 'trace-btn';
         traceBtn.type = 'button';
@@ -737,27 +736,47 @@
         row.appendChild(traceBtn);
       }
 
-      timeline.appendChild(row);
-      timeline.scrollTop = timeline.scrollHeight;
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
 
       const maxRows = 1200;
-      if (timeline.children.length > maxRows) {
-        timeline.removeChild(timeline.firstChild);
+      if (chatContainer.children.length > maxRows) {
+        chatContainer.removeChild(chatContainer.firstChild);
       }
     }
 
-    function appendStatus(content, meta = {}) {
+    function renderLog(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type) || 'obs';
       const line = document.createElement('div');
       line.className = 'status-line';
-      line.textContent = `${nowLabel(meta.timestamp)}  ${eventContentToString(content)}`;
-      statusLog.appendChild(line);
-      statusLog.scrollTop = statusLog.scrollHeight;
+      line.textContent = `${nowLabel(meta.timestamp)}  [${EVENT_LABELS[normalizedType] || normalizedType.toUpperCase()}] ${eventContentToString(content)}`;
+      logContainer.appendChild(line);
+      logContainer.scrollTop = logContainer.scrollHeight;
 
       const maxRows = 300;
-      if (statusLog.children.length > maxRows) {
-        statusLog.removeChild(statusLog.firstChild);
+      if (logContainer.children.length > maxRows) {
+        logContainer.removeChild(logContainer.firstChild);
       }
     }
+
+    function routeEvent(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (IalclawDashboardUiCore.getEventChannel(normalizedType) === 'chat') {
+        renderChat(normalizedType, content, meta);
+        return;
+      }
+      renderLog(normalizedType || 'obs', content, meta);
+    }
+
+    function appendEvent(type, content, meta = {}) {
+      routeEvent(type, content, meta);
+    }
+
+    function appendStatus(content, meta = {}, type = 'obs') {
+      renderLog(type, content, meta);
+    }
+
+    window.routeEvent = routeEvent;
 
     function shouldConsumeEvent(payload) {
       if (!payload || typeof payload !== 'object') return true;
@@ -852,13 +871,14 @@
         const mapped = mapper(data);
         if (!mapped) return;
         if (mapped.channel === 'status') {
-          appendStatus(mapped.content, { timestamp: data.timestamp || data.created_at });
+          routeEvent(mapped.type || 'progress', mapped.content, { timestamp: data.timestamp || data.created_at, traceId: data.trace_id || data.traceId || '' });
           return;
         }
-        appendEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
+        routeEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
       };
 
       eventSource.addEventListener('thought', onEvent((data) => ({
+        type: 'obs',
         channel: 'status',
         content: data.content || 'evento thought sem conteudo'
       })));
@@ -866,22 +886,25 @@
       eventSource.addEventListener('tool', onEvent((data) => {
         const status = String(data.status || '').toLowerCase();
         if (status.includes('error') || status.includes('fail')) {
-          return { channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+          return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
         }
-        return { channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+        return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
       }));
 
       eventSource.addEventListener('rag', onEvent((data) => ({
+        type: 'rag',
         channel: 'status',
         content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
       })));
 
       eventSource.addEventListener('gateway', onEvent((data) => ({
+        type: 'obs',
         channel: 'status',
         content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
       })));
 
       eventSource.addEventListener('execution_summary', onEvent((data) => ({
+        type: 'progress',
         channel: 'status',
         content: data.summary || 'Resumo de execucao recebido'
       })));
@@ -905,12 +928,14 @@
         }
 
         return {
+          type: 'progress',
           channel: 'status',
           content: message
         };
       }));
 
       eventSource.addEventListener('agent_status', onEvent((data) => ({
+        type: 'progress',
         channel: 'status',
         content: data.message || 'Status de execucao atualizado'
       })));
@@ -980,8 +1005,8 @@
     }
 
     function resetConversationView() {
-      timeline.innerHTML = '';
-      statusLog.innerHTML = '';
+      chatContainer.innerHTML = '';
+      logContainer.innerHTML = '';
       appendStatus(`Sessao ativa: ${sessionId}`);
       appendStatus('Canal de status pronto para progresso interno.');
     }
@@ -1058,7 +1083,7 @@
         const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
         const messages = await res.json();
 
-        timeline.innerHTML = '';
+        chatContainer.innerHTML = '';
         appendStatus(`Sessao ativa: ${targetSessionId}`);
 
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -1068,11 +1093,11 @@
 
         messages.forEach(message => {
           if (message.role === 'user') {
-            appendEvent('user', message.content, { timestamp: message.created_at });
+            routeEvent('user', message.content, { timestamp: message.created_at });
           } else if (message.role === 'assistant') {
-            appendEvent('final', message.content, { timestamp: message.created_at });
+            routeEvent('final', message.content, { timestamp: message.created_at });
           } else if (message.role === 'tool') {
-            appendStatus(`Tool (historico): ${message.content}`, { timestamp: message.created_at });
+            routeEvent('tool', `Tool (historico): ${message.content}`, { timestamp: message.created_at });
           }
         });
       } catch {
@@ -1124,17 +1149,17 @@
           }
 
           if (event.type === 'thought') {
-            appendStatus(payload.content || 'thought', { timestamp: event.created_at });
+            routeEvent('obs', payload.content || 'thought', { timestamp: event.created_at });
           } else if (event.type === 'tool') {
-            appendStatus(`Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
+            routeEvent('tool', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
           } else if (event.type === 'rag') {
-            appendStatus(`Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
+            routeEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
           } else if (event.type === 'gateway') {
-            appendStatus(payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
+            routeEvent('obs', payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
           } else if (event.type === 'execution_summary') {
-            appendStatus(payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
+            routeEvent('progress', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
           } else {
-            appendStatus(`${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
+            routeEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
           }
 
           await new Promise((resolve) => setTimeout(resolve, 120));
@@ -1162,7 +1187,7 @@
       typing.style.display = 'block';
       typing.textContent = '[SYSTEM] Preparando execução...';
 
-      appendEvent('user', text);
+      routeEvent('user', text);
       commandHistory.push(text);
       if (commandHistory.length > 100) commandHistory.shift();
       historyCursor = commandHistory.length;
@@ -1182,7 +1207,7 @@
         }
 
         const responseText = data.response || data.answer || 'Sem resposta do agente.';
-        appendEvent('final', responseText, { traceId: data.trace_id || '' });
+        routeEvent('final', responseText, { traceId: data.trace_id || '' });
         speak(responseText);
 
         if (data.mode) {

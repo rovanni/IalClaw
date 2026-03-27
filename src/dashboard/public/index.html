@@ -7,6 +7,7 @@
   <title>IalClaw v3.0 - Cognitive Console</title>
   <link rel="icon" href="data:,">
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="/dashboard-ui-core.js"></script>
   <style>
     :root {
       --font-xs: 0.75rem;
@@ -415,7 +416,7 @@
       background: rgba(95, 99, 104, 0.04);
     }
 
-    #timeline {
+    #chat-container {
       flex: 1;
       overflow-y: auto;
       min-height: 0;
@@ -425,7 +426,7 @@
       gap: 14px;
     }
 
-    #status-log {
+    #log-container {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -687,7 +688,7 @@
         border-bottom: 1px solid var(--border-color);
       }
 
-      #status-log {
+      #log-container {
         max-height: 180px;
       }
 
@@ -766,7 +767,7 @@
               <div class="chat-panel-title">Conversa</div>
               <div class="chat-panel-subtitle">Somente mensagens do usuário e respostas finais ficam aqui.</div>
             </div>
-            <div id="timeline"></div>
+            <div id="chat-container"></div>
             <div id="typing-indicator">[SYSTEM] processando...</div>
           </section>
           <aside class="log-panel">
@@ -774,7 +775,7 @@
               <div class="log-panel-title">Logs de Execução</div>
               <div class="log-panel-subtitle">Progresso, observações e ferramentas em execução.</div>
             </div>
-            <div id="status-log"></div>
+            <div id="log-container"></div>
           </aside>
         </div>
         <div class="input-area">
@@ -798,8 +799,8 @@
     const actionBtn = document.getElementById('action-btn');
     const speechBtn = document.getElementById('speech-btn');
     const ttsToggleBtn = document.getElementById('tts-toggle');
-    const timeline = document.getElementById('timeline');
-    const statusLog = document.getElementById('status-log');
+    const chatContainer = document.getElementById('chat-container');
+    const logContainer = document.getElementById('log-container');
     const typingIndicator = document.getElementById('typing-indicator');
     const conversationList = document.getElementById('conversation-list');
     const conversationCount = document.getElementById('conversation-count');
@@ -823,11 +824,11 @@
     let requestInFlight = false;
 
     function updateChatActionButtons() {
-      const isActive = requestInFlight;
-      actionBtn.textContent = isActive ? 'Parar' : 'Enviar';
-      actionBtn.title = isActive ? 'Interromper execução' : 'Enviar mensagem';
-      actionBtn.classList.toggle('console-btn-stop', isActive);
-      actionBtn.disabled = chatInput.disabled && !isActive;
+      const state = IalclawDashboardUiCore.getActionButtonState(requestInFlight);
+      actionBtn.textContent = state.label;
+      actionBtn.title = state.title;
+      actionBtn.classList.toggle('console-btn-stop', state.action === 'stop');
+      actionBtn.disabled = chatInput.disabled && state.action !== 'stop';
     }
 
     const EVENT_LABELS = {
@@ -869,22 +870,20 @@
       }
     }
 
-    function appendEvent(type, content, meta = {}) {
-      const normalizedType = EVENT_LABELS[type] ? type : 'obs';
-      if (normalizedType !== 'user' && normalizedType !== 'final') {
-        appendStatus(`[${EVENT_LABELS[normalizedType]}] ${eventContentToString(content)}`, meta);
-        return;
-      }
+    function renderChat(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (normalizedType !== 'user' && normalizedType !== 'final') return;
 
+      const labelType = EVENT_LABELS[normalizedType] ? normalizedType : 'final';
       const row = document.createElement('article');
-      row.className = `chat-message chat-${normalizedType}`;
+      row.className = `chat-message chat-${labelType}`;
 
       const metaEl = document.createElement('div');
       metaEl.className = 'chat-meta';
 
       const tagEl = document.createElement('span');
       tagEl.className = 'chat-tag';
-      tagEl.textContent = EVENT_LABELS[normalizedType];
+      tagEl.textContent = EVENT_LABELS[labelType];
 
       const timeEl = document.createElement('span');
       timeEl.textContent = nowLabel(meta.timestamp);
@@ -899,7 +898,7 @@
       row.appendChild(bubbleEl);
 
       const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
-      if (traceId && normalizedType === 'final') {
+      if (traceId && labelType === 'final') {
         const traceBtn = document.createElement('button');
         traceBtn.className = 'trace-btn';
         traceBtn.type = 'button';
@@ -908,27 +907,47 @@
         row.appendChild(traceBtn);
       }
 
-      timeline.appendChild(row);
-      timeline.scrollTop = timeline.scrollHeight;
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
 
       const maxRows = 1500;
-      if (timeline.children.length > maxRows) {
-        timeline.removeChild(timeline.firstChild);
+      if (chatContainer.children.length > maxRows) {
+        chatContainer.removeChild(chatContainer.firstChild);
       }
     }
 
-    function appendStatus(content, meta = {}) {
+    function renderLog(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type) || 'obs';
       const line = document.createElement('div');
       line.className = 'status-line';
-      line.textContent = `${nowLabel(meta.timestamp)}  ${eventContentToString(content)}`;
-      statusLog.appendChild(line);
-      statusLog.scrollTop = statusLog.scrollHeight;
+      line.textContent = `${nowLabel(meta.timestamp)}  [${EVENT_LABELS[normalizedType] || normalizedType.toUpperCase()}] ${eventContentToString(content)}`;
+      logContainer.appendChild(line);
+      logContainer.scrollTop = logContainer.scrollHeight;
 
       const maxRows = 300;
-      if (statusLog.children.length > maxRows) {
-        statusLog.removeChild(statusLog.firstChild);
+      if (logContainer.children.length > maxRows) {
+        logContainer.removeChild(logContainer.firstChild);
       }
     }
+
+    function routeEvent(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (IalclawDashboardUiCore.getEventChannel(normalizedType) === 'chat') {
+        renderChat(normalizedType, content, meta);
+        return;
+      }
+      renderLog(normalizedType || 'obs', content, meta);
+    }
+
+    function appendEvent(type, content, meta = {}) {
+      routeEvent(type, content, meta);
+    }
+
+    function appendStatus(content, meta = {}, type = 'obs') {
+      renderLog(type, content, meta);
+    }
+
+    window.routeEvent = routeEvent;
 
     function applyZoom() {
       document.documentElement.style.fontSize = `${16 * currentZoom}px`;
@@ -1019,8 +1038,8 @@
     }
 
     function resetConversationView() {
-      timeline.innerHTML = '';
-      statusLog.innerHTML = '';
+      chatContainer.innerHTML = '';
+      logContainer.innerHTML = '';
       appendStatus(`Sessao ativa: ${sessionId}`);
       appendStatus('Canal de status pronto para progresso interno.');
     }
@@ -1130,7 +1149,7 @@
         const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
         const messages = await res.json();
 
-        timeline.innerHTML = '';
+        chatContainer.innerHTML = '';
         appendStatus(`Sessao ativa: ${targetSessionId}`);
 
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -1140,11 +1159,11 @@
 
         messages.forEach((message) => {
           if (message.role === 'user') {
-            appendEvent('user', message.content, { timestamp: message.created_at });
+            routeEvent('user', message.content, { timestamp: message.created_at });
           } else if (message.role === 'assistant') {
-            appendEvent('final', message.content, { timestamp: message.created_at });
+            routeEvent('final', message.content, { timestamp: message.created_at });
           } else if (message.role === 'tool') {
-            appendStatus(`Tool (historico): ${message.content}`, { timestamp: message.created_at });
+            routeEvent('tool', `Tool (historico): ${message.content}`, { timestamp: message.created_at });
           }
         });
       } catch (_err) {
@@ -1195,58 +1214,66 @@
         const mapped = mapper(data);
         if (!mapped) return;
         if (mapped.channel === 'status') {
-          appendStatus(mapped.content, { timestamp: data.timestamp || data.created_at });
+          routeEvent(mapped.type || eventType || 'progress', mapped.content, { timestamp: data.timestamp || data.created_at, traceId: data.trace_id || data.traceId || '' });
           return;
         }
-        appendEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
+        routeEvent(mapped.type || eventType, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
       };
 
-      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ channel: 'status', content: data.content || 'evento thought sem conteudo' })));
+      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'obs', channel: 'status', content: data.content || 'evento thought sem conteudo' })));
 
       eventSource.addEventListener('tool', onEvent('tool', (data) => {
         const status = String(data.status || '').toLowerCase();
         if (status.includes('error') || status.includes('fail')) {
-          return { channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+          return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
         }
-        return { channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+        return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
       }));
 
       eventSource.addEventListener('rag', onEvent('rag', (data) => ({
+        type: 'rag',
         channel: 'status',
         content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
       })));
 
       eventSource.addEventListener('gateway', onEvent('gateway', (data) => ({
+        type: 'obs',
         channel: 'status',
         content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
       })));
 
       eventSource.addEventListener('execution_summary', onEvent('execution_summary', (data) => ({
+        type: 'progress',
         channel: 'status',
         content: data.summary || 'Resumo de execucao recebido'
       })));
 
       eventSource.addEventListener('execution_mode', onEvent('execution_mode', (data) => ({
+        type: 'obs',
         channel: 'status',
         content: `Modo ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`
       })));
 
       eventSource.addEventListener('tool_input_error', onEvent('tool_input_error', (data) => ({
+        type: 'error',
         channel: 'status',
         content: `Erro de entrada de tool: ${data.tool || 'tool desconhecida'}`
       })));
 
       eventSource.addEventListener('self_healing', onEvent('self_healing', (data) => ({
+        type: 'progress',
         channel: 'status',
         content: `Self-healing ${data.stage || 'unknown'} tentativa ${data.attempt ?? '-'}`
       })));
 
       eventSource.addEventListener('self_healing_abort', onEvent('self_healing_abort', (data) => ({
+        type: 'error',
         channel: 'status',
         content: `Self-healing abortado: ${data.reason || 'sem motivo'}`
       })));
 
       eventSource.addEventListener('agent_status', onEvent('agent_status', (data) => ({
+        type: 'progress',
         channel: 'status',
         content: data.message || 'Status de execucao atualizado'
       })));
@@ -1254,6 +1281,7 @@
       eventSource.addEventListener('agent_config', onEvent('agent_config', (data) => {
         applyExecutionConfig(data);
         return {
+          type: 'obs',
           channel: 'status',
           content: `Configuracao atualizada: ${data.label || data.executionMode || 'modo'}`
         };
@@ -1273,6 +1301,7 @@
         }
 
         return {
+          type: 'progress',
           channel: 'status',
           content: message
         };
@@ -1306,17 +1335,17 @@
           }
 
           if (event.type === 'thought') {
-            appendStatus(payload.content || 'thought', { timestamp: event.created_at });
+            routeEvent('obs', payload.content || 'thought', { timestamp: event.created_at });
           } else if (event.type === 'tool') {
-            appendStatus(`Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
+            routeEvent('tool', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
           } else if (event.type === 'rag') {
-            appendStatus(`Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
+            routeEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
           } else if (event.type === 'gateway') {
-            appendStatus(payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
+            routeEvent('obs', payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
           } else if (event.type === 'execution_summary') {
-            appendStatus(payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
+            routeEvent('progress', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
           } else {
-            appendStatus(`${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
+            routeEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
           }
 
           await new Promise((resolve) => setTimeout(resolve, 150));
@@ -1340,7 +1369,7 @@
       typingIndicator.style.display = 'block';
       typingIndicator.textContent = '[SYSTEM] Preparando execução...';
 
-      appendEvent('user', text);
+      routeEvent('user', text);
 
       commandHistory.push(text);
       if (commandHistory.length > 100) commandHistory.shift();
@@ -1360,7 +1389,7 @@
 
         const responseText = data.response || data.answer || '';
         if (responseText) {
-          appendEvent('final', responseText, { traceId: data.trace_id || '' });
+          routeEvent('final', responseText, { traceId: data.trace_id || '' });
           speak(responseText);
         } else {
           appendStatus('Resposta vazia do backend.');
