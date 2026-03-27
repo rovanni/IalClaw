@@ -28,9 +28,10 @@ import { MemoryService } from './memory/MemoryService';
 import { MemoryLifecycleManager } from './memory/MemoryLifecycleManager';
 import { MemoryType } from './memory/MemoryTypes';
 import { setLanguage, t } from './i18n';
+import { resolveAppLanguage } from './config/languageConfig';
 
 dotenv.config({ debug: false });
-setLanguage((process.env.APP_LANG as any) || 'pt-BR');
+setLanguage(resolveAppLanguage());
 
 function getDisplayVersion(): string {
     const pkg = require('../package.json');

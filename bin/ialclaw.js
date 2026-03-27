@@ -1,23 +1,23 @@
 #!/usr/bin/env node
-/**
- * IalClaw CLI — mini process manager
- *
- * Uso:
- *   ialclaw start                → inicia em foreground
- *   ialclaw start --daemon       → inicia em background (desacoplado)
- *   ialclaw start --debug        → inicia com LOG_LEVEL=debug
- *   ialclaw start --debug --tail → debug + acompanha log em tempo real
- *   ialclaw stop                 → encerra o agente (via PID)
- *   ialclaw restart              → stop + start (preserva flags)
- *   ialclaw status               → verifica se está rodando
- *   ialclaw logs                 → exibe últimas linhas do log
- *   ialclaw logs --follow        → acompanha log em tempo real
- */
+
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// ── ANSI ─────────────────────────────────────────────────────────────────────
+const root = path.resolve(__dirname, '..');
+const stateDir = path.join(root, '.ialclaw');
+const pidPath = path.join(stateDir, 'pid');
+const lockPath = path.join(stateDir, 'lock');
+const metaPath = path.join(stateDir, 'meta.json');
+const configPath = path.join(root, 'config.json');
+const logDir = path.join(root, 'logs');
+const logPath = path.join(logDir, 'ialclaw.log');
+const tsNodeCli = path.join(root, 'node_modules', 'ts-node', 'dist', 'bin.js');
+
+const INITIAL_TAIL_LINES = 30;
+const MAX_LOG_SIZE = 5 * 1024 * 1024;
+const SUPPORTED_LANGS = ['pt-BR', 'en-US'];
+
 const RESET = '\x1b[0m';
 const CYAN = '\x1b[36m';
 const GREEN = '\x1b[32m';
@@ -25,27 +25,26 @@ const YELLOW = '\x1b[33m';
 const RED = '\x1b[31m';
 const DIM = '\x1b[2m';
 
-// ── Paths ────────────────────────────────────────────────────────────────────
-const root = path.resolve(__dirname, '..');
-const stateDir = path.join(root, '.ialclaw');
-const pidPath = path.join(stateDir, 'pid');
-const lockPath = path.join(stateDir, 'lock');
-const metaPath = path.join(stateDir, 'meta.json');
-const logDir = path.join(root, 'logs');
-const logPath = path.join(logDir, 'ialclaw.log');
-const tsNode = path.join(root, 'node_modules', '.bin', 'ts-node' + (process.platform === 'win32' ? '.cmd' : ''));
-const INITIAL_TAIL_LINES = 30;
-const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
+require('ts-node/register/transpile-only');
+const { t, setLanguage } = require('../src/i18n');
 
-// ── Parse args ───────────────────────────────────────────────────────────────
-const args = process.argv.slice(2);
-const command = args[0];
-const flags = args.slice(1);
+const argv = process.argv.slice(2);
+const command = argv[0];
+const commandArgs = argv.slice(1);
+const { langArg, cleanedArgs } = extractLangArg(commandArgs);
+const flags = cleanedArgs;
 const hasFlag = (name) => flags.includes(name);
+const envLangFromShell = process.env.APP_LANG;
 
-// ── Versão ───────────────────────────────────────────────────────────────────
+const cliLanguage = resolveCliLanguage({ langArg });
+setLanguage(cliLanguage);
+process.env.APP_LANG = cliLanguage;
+
 let version = '0.0.0';
-try { version = require(path.join(root, 'package.json')).version || version; } catch {}
+try {
+    version = require(path.join(root, 'package.json')).version || version;
+} catch {}
+
 try {
     const gitHash = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
         .toString()
@@ -53,13 +52,77 @@ try {
     const isDirty = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
         .toString()
         .trim().length > 0;
-
     if (gitHash) {
         version = `${version}+${gitHash}${isDirty ? '-dirty' : ''}`;
     }
 } catch {}
 
-// ── PID helpers ──────────────────────────────────────────────────────────────
+function normalizeLanguage(lang) {
+    return parseLanguage(lang) || 'en-US';
+}
+
+function parseLanguage(lang) {
+    const value = String(lang || '').trim().toLowerCase();
+    if (value === 'pt' || value === 'pt-br') return 'pt-BR';
+    if (value === 'en' || value === 'en-us') return 'en-US';
+    return null;
+}
+
+function extractLangArg(items) {
+    const cleaned = [];
+    let langArg = null;
+
+    for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+        if (!item) continue;
+
+        if (item.startsWith('--lang=')) {
+            langArg = item.slice('--lang='.length);
+            continue;
+        }
+
+        if (item === '--lang') {
+            const next = items[i + 1];
+            if (next && !next.startsWith('--')) {
+                langArg = next;
+                i += 1;
+            }
+            continue;
+        }
+
+        cleaned.push(item);
+    }
+
+    return { langArg, cleanedArgs: cleaned };
+}
+
+function readConfig() {
+    try {
+        const raw = fs.readFileSync(configPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function writeConfig(config) {
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+}
+
+function resolveCliLanguage({ langArg }) {
+    const argLang = parseLanguage(langArg);
+    if (argLang) return argLang;
+    if (process.env.APP_LANG) return normalizeLanguage(process.env.APP_LANG);
+
+    const config = readConfig();
+    if (typeof config.language === 'string' && config.language.trim()) {
+        return normalizeLanguage(config.language);
+    }
+
+    return 'en-US';
+}
+
 function ensureStateDir() {
     fs.mkdirSync(stateDir, { recursive: true });
 }
@@ -74,44 +137,60 @@ function readPID() {
         const raw = fs.readFileSync(pidPath, 'utf8').trim();
         const pid = parseInt(raw, 10);
         return Number.isFinite(pid) && pid > 0 ? pid : null;
-    } catch { return null; }
+    } catch {
+        return null;
+    }
 }
 
 function clearPID() {
-    try { fs.unlinkSync(pidPath); } catch {}
+    try {
+        fs.unlinkSync(pidPath);
+    } catch {}
 }
 
 function isRunning(pid) {
     if (!pid) return false;
-    try { process.kill(pid, 0); return true; } catch { return false; }
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function killPID(pid) {
-    try { process.kill(pid, 'SIGTERM'); return true; } catch { return false; }
+    try {
+        process.kill(pid, 'SIGTERM');
+        return true;
+    } catch {
+        return false;
+    }
 }
 
-// ── Lock helpers (evita race condition ao iniciar) ──────────────────────────
 function acquireLock() {
     ensureStateDir();
+
     if (fs.existsSync(lockPath)) {
         try {
             const lockPid = parseInt(fs.readFileSync(lockPath, 'utf8').trim(), 10);
             if (Number.isFinite(lockPid) && isRunning(lockPid)) {
-                console.log(`${YELLOW}⚠${RESET} IalClaw já está iniciando ${DIM}(PID ${lockPid})${RESET}`);
+                console.log(`${YELLOW}!${RESET} ${t('cli.lock.active', { pid: lockPid })}`);
                 process.exit(1);
             }
         } catch {}
-        // Lock stale — limpa
+
         fs.unlinkSync(lockPath);
     }
+
     fs.writeFileSync(lockPath, String(process.pid), 'utf8');
 }
 
 function releaseLock() {
-    try { fs.unlinkSync(lockPath); } catch {}
+    try {
+        fs.unlinkSync(lockPath);
+    } catch {}
 }
 
-// ── Meta helpers (salva info de inicialização) ──────────────────────────────
 function saveMeta(pid, mode, daemon) {
     ensureStateDir();
     const meta = { pid, mode, daemon, startedAt: Date.now() };
@@ -119,63 +198,71 @@ function saveMeta(pid, mode, daemon) {
 }
 
 function readMeta() {
-    try { return JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch { return null; }
+    try {
+        return JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    } catch {
+        return null;
+    }
 }
 
 function clearMeta() {
-    try { fs.unlinkSync(metaPath); } catch {}
+    try {
+        fs.unlinkSync(metaPath);
+    } catch {}
 }
 
-// ── Log rotation ────────────────────────────────────────────────────────────
 function rotateLogs() {
     try {
         if (!fs.existsSync(logPath)) return;
         const stats = fs.statSync(logPath);
         if (stats.size > MAX_LOG_SIZE) {
-            const oldPath = logPath + '.old';
+            const oldPath = `${logPath}.old`;
             if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
             fs.renameSync(logPath, oldPath);
         }
     } catch {}
 }
 
-// ── Tail engine (cross-platform, pure Node) ─────────────────────────────────
 function tailLog(follow) {
     fs.mkdirSync(logDir, { recursive: true });
 
     if (!fs.existsSync(logPath)) {
-        console.log(`${DIM}(log vazio)${RESET}`);
+        console.log(`${DIM}${t('cli.logs.empty')}${RESET}`);
         if (!follow) return;
-        // Cria o arquivo para poder acompanhar
         fs.closeSync(fs.openSync(logPath, 'a'));
     }
 
-    // Exibe últimas linhas
     try {
         const content = fs.readFileSync(logPath, 'utf8');
         const lines = content.split(/\r?\n/).filter(Boolean);
         if (lines.length > 0) {
             const tail = lines.slice(-INITIAL_TAIL_LINES);
-            process.stdout.write(`${DIM}── ${tail.length} linha(s) recentes ──${RESET}\n`);
+            process.stdout.write(`${DIM}${t('cli.logs.recent_header', { count: tail.length })}${RESET}\n`);
             process.stdout.write(`${tail.join('\n')}\n`);
         }
     } catch {}
 
     if (!follow) return;
 
-    // Follow mode — polling via fs.watchFile (funciona em Windows e Unix)
     let offset = 0;
-    try { offset = fs.statSync(logPath).size; } catch { offset = 0; }
+    try {
+        offset = fs.statSync(logPath).size;
+    } catch {
+        offset = 0;
+    }
 
-    process.stdout.write(`${DIM}── acompanhando... (Ctrl+C para sair) ──${RESET}\n`);
+    process.stdout.write(`${DIM}${t('cli.logs.following')}${RESET}\n`);
 
     function readNew() {
         try {
             const stats = fs.statSync(logPath);
-            if (stats.size < offset) offset = 0; // log rotacionou
+            if (stats.size < offset) offset = 0;
             if (stats.size === offset) return;
+
             const stream = fs.createReadStream(logPath, {
-                encoding: 'utf8', start: offset, end: stats.size - 1,
+                encoding: 'utf8',
+                start: offset,
+                end: stats.size - 1
             });
             offset = stats.size;
             stream.on('data', (chunk) => process.stdout.write(chunk));
@@ -188,26 +275,21 @@ function tailLog(follow) {
         fs.unwatchFile(logPath, readNew);
         process.exit(0);
     }
+
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 }
 
-// ── Comandos ─────────────────────────────────────────────────────────────────
-
 function start() {
-    // Verifica se já está rodando
     const existingPid = readPID();
     if (isRunning(existingPid)) {
-        console.log(`${YELLOW}⚠${RESET} IalClaw já está rodando ${DIM}(PID ${existingPid})${RESET}`);
-        console.log(`  Use ${GREEN}ialclaw restart${RESET} para reiniciar ou ${GREEN}ialclaw stop${RESET} para parar.`);
+        console.log(`${YELLOW}!${RESET} ${t('cli.start.already_running', { pid: existingPid })}`);
+        console.log(`  ${t('cli.start.already_running_hint')}`);
         return;
     }
-    clearPID(); // limpa PID stale
 
-    // Lock — impede dois starts simultâneos
+    clearPID();
     acquireLock();
-
-    // Rotação de logs antes de iniciar
     rotateLogs();
 
     const isDebug = hasFlag('--debug');
@@ -217,21 +299,21 @@ function start() {
 
     const env = {
         ...process.env,
-        LOG_LEVEL: isDebug ? 'debug' : (process.env.LOG_LEVEL || 'info'),
+        APP_LANG: cliLanguage,
+        LOG_LEVEL: isDebug ? 'debug' : (process.env.LOG_LEVEL || 'info')
     };
 
     if (isDaemon) {
-        // ── Daemon mode: desacoplado do terminal ─────────────────────
         fs.mkdirSync(logDir, { recursive: true });
         const outLog = fs.openSync(path.join(logDir, 'ialclaw-stdout.log'), 'a');
         const errLog = fs.openSync(path.join(logDir, 'ialclaw-stderr.log'), 'a');
 
-        const child = spawn(tsNode, ['src/index.ts'], {
+        const child = spawn(process.execPath, [tsNodeCli, 'src/index.ts'], {
             cwd: root,
             stdio: ['ignore', outLog, errLog],
             env,
             detached: true,
-            shell: process.platform === 'win32',
+            shell: false
         });
 
         savePID(child.pid);
@@ -240,18 +322,14 @@ function start() {
         child.unref();
 
         console.log('');
-        console.log(`${CYAN}  🐙 IALCLAW${RESET} ${DIM}v${version}${RESET}`);
-        console.log(`${DIM}  ─────────────────────────────────${RESET}`);
-        console.log(`  ${DIM}status:${RESET}  ${GREEN}● iniciado em background${RESET}`);
-        console.log(`  ${DIM}modo:${RESET}    ${GREEN}${mode}${RESET}`);
-        console.log(`  ${DIM}PID:${RESET}     ${GREEN}${child.pid}${RESET}`);
-        console.log('');
-        console.log(`  ${DIM}→${RESET} ialclaw ${GREEN}status${RESET}        ${DIM}verificar${RESET}`);
-        console.log(`  ${DIM}→${RESET} ialclaw ${GREEN}logs --follow${RESET} ${DIM}acompanhar${RESET}`);
-        console.log(`  ${DIM}→${RESET} ialclaw ${GREEN}stop${RESET}          ${DIM}encerrar${RESET}`);
+        console.log(`${CYAN}IALCLAW${RESET} ${DIM}v${version}${RESET}`);
+        console.log(`  ${t('cli.start.daemon')}`);
+        console.log(`  ${t('cli.start.mode', { mode })}`);
+        console.log(`  ${t('cli.start.pid', { pid: child.pid })}`);
+        console.log(`  ${t('cli.start.language', { language: cliLanguage })}`);
+        console.log(`  ${t('cli.start.success')}`);
         console.log('');
 
-        // Se pediu --tail junto com --daemon, entra em follow mode
         if (isTail) {
             tailLog(true);
         }
@@ -259,23 +337,25 @@ function start() {
         return;
     }
 
-    // ── Foreground mode: preso ao terminal (dev) ─────────────────────
     let exitScheduled = false;
     let shuttingDown = false;
-
-    // Tail setup para modo foreground com --tail
     let offset = 0;
+
     if (isTail) {
         fs.mkdirSync(logDir, { recursive: true });
         fs.closeSync(fs.openSync(logPath, 'a'));
-        try { offset = fs.statSync(logPath).size; } catch { offset = 0; }
+        try {
+            offset = fs.statSync(logPath).size;
+        } catch {
+            offset = 0;
+        }
 
         try {
             const content = fs.readFileSync(logPath, 'utf8');
             const lines = content.split(/\r?\n/).filter(Boolean);
             if (lines.length > 0) {
                 const tail = lines.slice(-INITIAL_TAIL_LINES);
-                process.stdout.write(`${DIM}── ${tail.length} linha(s) recentes ──${RESET}\n`);
+                process.stdout.write(`${DIM}${t('cli.logs.recent_header', { count: tail.length })}${RESET}\n`);
                 process.stdout.write(`${tail.join('\n')}\n`);
             }
         } catch {}
@@ -288,18 +368,20 @@ function start() {
             if (stats.size < offset) offset = 0;
             if (stats.size === offset) return;
             const stream = fs.createReadStream(logPath, {
-                encoding: 'utf8', start: offset, end: stats.size - 1,
+                encoding: 'utf8',
+                start: offset,
+                end: stats.size - 1
             });
             offset = stats.size;
             stream.on('data', (chunk) => process.stdout.write(chunk));
         } catch {}
     }
 
-    const child = spawn(tsNode, ['src/index.ts'], {
+    const child = spawn(process.execPath, [tsNodeCli, 'src/index.ts'], {
         cwd: root,
         stdio: isTail ? ['inherit', 'ignore', 'ignore'] : 'inherit',
         env,
-        shell: process.platform === 'win32',
+        shell: false
     });
 
     savePID(child.pid);
@@ -323,7 +405,7 @@ function start() {
     function stopChild(signal) {
         if (shuttingDown) return;
         shuttingDown = true;
-        if (isTail) process.stdout.write(`\n${DIM}[tail] encerrando...${RESET}\n`);
+        if (isTail) process.stdout.write(`\n${DIM}${t('cli.logs.tail_closing')}${RESET}\n`);
         if (!child.killed) child.kill(signal);
         setTimeout(() => cleanupAndExit(0), 500);
     }
@@ -332,7 +414,7 @@ function start() {
     process.on('SIGTERM', () => stopChild('SIGTERM'));
 
     child.on('error', (err) => {
-        process.stderr.write(`${RED}✖ falha ao iniciar: ${err.message}${RESET}\n`);
+        process.stderr.write(`${RED}${t('cli.start.error', { message: err.message })}${RESET}\n`);
         cleanupAndExit(1);
     });
 
@@ -347,26 +429,33 @@ function stop() {
     if (!pid || !isRunning(pid)) {
         clearPID();
         clearMeta();
-        console.log(`${DIM}○${RESET} Nenhum processo ativo.`);
+        console.log(`${DIM}${t('cli.stop.none_running')}${RESET}`);
         return;
     }
 
+    console.log(t('cli.stop.running'));
     killPID(pid);
     clearPID();
     clearMeta();
-    console.log(`${GREEN}✔${RESET} IalClaw encerrado ${DIM}(PID ${pid})${RESET}`);
+    console.log(`${GREEN}${t('cli.stop.success', { pid })}${RESET}`);
 }
 
 function restart() {
     const pid = readPID();
+    console.log(t('cli.restart'));
+
     if (pid && isRunning(pid)) {
-        console.log(`${CYAN}🔄${RESET} Parando IalClaw ${DIM}(PID ${pid})${RESET}...`);
         killPID(pid);
         clearPID();
     }
 
-    // Aguarda o processo anterior encerrar, depois inicia com as mesmas flags
     setTimeout(() => start(), 800);
+}
+
+function formatUptime(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
 function status() {
@@ -374,58 +463,103 @@ function status() {
     if (pid && isRunning(pid)) {
         const meta = readMeta();
         const mode = meta?.mode || 'normal';
-        const daemon = meta?.daemon ? 'sim' : 'não';
-        let uptimeStr = '';
+        const daemon = meta?.daemon ? t('cli.status.yes') : t('cli.status.no');
+
+        console.log(t('cli.status.running'));
+        console.log(t('cli.status.pid', { pid }));
         if (meta?.startedAt) {
             const secs = Math.floor((Date.now() - meta.startedAt) / 1000);
-            if (secs < 60) uptimeStr = `${secs}s`;
-            else if (secs < 3600) uptimeStr = `${Math.floor(secs / 60)}m ${secs % 60}s`;
-            else uptimeStr = `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+            console.log(t('cli.status.uptime', { uptime: formatUptime(secs) }));
         }
-        console.log('');
-        console.log(`  ${GREEN}●${RESET} IalClaw rodando`);
-        console.log(`  ${DIM}PID:${RESET}     ${pid}`);
-        if (uptimeStr) console.log(`  ${DIM}uptime:${RESET}  ${uptimeStr}`);
-        console.log(`  ${DIM}modo:${RESET}    ${mode}`);
-        console.log(`  ${DIM}daemon:${RESET}  ${daemon}`);
-        console.log('');
-    } else {
-        if (pid) { clearPID(); clearMeta(); }
-        console.log(`${DIM}○${RESET} IalClaw parado`);
+        console.log(t('cli.status.mode', { mode }));
+        console.log(t('cli.status.daemon', { daemon }));
+        console.log(t('cli.status.language', { language: cliLanguage }));
+        return;
     }
+
+    if (pid) {
+        clearPID();
+        clearMeta();
+    }
+
+    console.log(t('cli.status.stopped'));
 }
 
 function logs() {
     const follow = hasFlag('--follow') || hasFlag('-f');
+    console.log(t('cli.logs.loading'));
     tailLog(follow);
 }
 
-function help() {
-    console.log(`
-${CYAN}🐙 IALCLAW CLI${RESET} ${DIM}v${version}${RESET}
+function lang() {
+    const maybeLang = flags[0];
 
-${DIM}Comandos:${RESET}
-  ialclaw ${GREEN}start${RESET}                 Inicia o agente (foreground)
-  ialclaw ${GREEN}start --daemon${RESET}         Inicia em background
-  ialclaw ${GREEN}start --debug${RESET}          Inicia com log detalhado
-  ialclaw ${GREEN}start --debug --tail${RESET}   Debug + log em tempo real
-  ialclaw ${GREEN}stop${RESET}                  Encerra o agente
-  ialclaw ${GREEN}restart${RESET}               Reinicia o agente
-  ialclaw ${GREEN}status${RESET}                Verifica se está rodando
-  ialclaw ${GREEN}logs${RESET}                  Exibe últimas linhas do log
-  ialclaw ${GREEN}logs --follow${RESET}          Acompanha log em tempo real
-`);
+    if (!maybeLang) {
+        const config = readConfig();
+        const configured = typeof config.language === 'string' ? normalizeLanguage(config.language) : t('cli.lang.not_set');
+        console.log(t('cli.lang.current', { language: cliLanguage }));
+        console.log(t('cli.lang.configured', { language: configured }));
+        if (envLangFromShell) {
+            console.log(t('cli.lang.env_override', { language: normalizeLanguage(envLangFromShell) }));
+        }
+        return;
+    }
+
+    const parsed = parseLanguage(maybeLang);
+    if (!parsed || !SUPPORTED_LANGS.includes(parsed)) {
+        console.error(t('cli.lang.invalid', { value: maybeLang, supported: SUPPORTED_LANGS.join(', ') }));
+        process.exit(1);
+    }
+
+    const config = readConfig();
+    config.language = parsed;
+    writeConfig(config);
+
+    setLanguage(parsed);
+    process.env.APP_LANG = parsed;
+    console.log(t('cli.lang.updated', { language: parsed }));
 }
 
-// ── Router ───────────────────────────────────────────────────────────────────
+function help() {
+    console.log(`${CYAN}IALCLAW CLI${RESET} ${DIM}v${version}${RESET}`);
+    console.log(t('cli.help.title'));
+    console.log(t('cli.help.start'));
+    console.log(t('cli.help.start_daemon'));
+    console.log(t('cli.help.start_debug'));
+    console.log(t('cli.help.start_debug_tail'));
+    console.log(t('cli.help.stop'));
+    console.log(t('cli.help.restart'));
+    console.log(t('cli.help.status'));
+    console.log(t('cli.help.logs'));
+    console.log(t('cli.help.logs_follow'));
+    console.log(t('cli.help.lang')); 
+    console.log(t('cli.help.lang_set'));
+    console.log(t('cli.help.lang_flag'));
+}
+
 switch (command) {
-    case 'start':   start();   break;
-    case 'stop':    stop();    break;
-    case 'restart': restart(); break;
-    case 'status':  status();  break;
-    case 'logs':    logs();    break;
+    case 'start':
+        start();
+        break;
+    case 'stop':
+        stop();
+        break;
+    case 'restart':
+        restart();
+        break;
+    case 'status':
+        status();
+        break;
+    case 'logs':
+        logs();
+        break;
+    case 'lang':
+        lang();
+        break;
     case 'help':
     case '--help':
-    case '-h':      help();    break;
-    default:        help();    break;
+    case '-h':
+    default:
+        help();
+        break;
 }
