@@ -8,6 +8,7 @@ import { debugBus } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
 import { createLogger } from '../shared/AppLogger';
 import { getTraceId } from '../shared/TraceContext';
+import { normalizeLanguage, resolveAppLanguage } from '../config/languageConfig';
 
 const dashLogger = createLogger('Dashboard');
 
@@ -41,6 +42,12 @@ export class DashboardServer {
 
         this.app.get('/help', (_req, res) => {
             res.sendFile(path.join(__dirname, 'public', 'help.html'));
+        });
+
+        this.app.get('/api/i18n/language', (req, res) => {
+            const queryLang = typeof req.query?.lang === 'string' ? req.query.lang : undefined;
+            const language = queryLang ? normalizeLanguage(queryLang) : resolveAppLanguage();
+            res.json({ success: true, language });
         });
 
         // API route for graph data

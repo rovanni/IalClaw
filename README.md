@@ -3,6 +3,10 @@
 # IalClaw Cognitive System v3.0
 ### OpenClaw-powered local cognitive agent
 
+<p align="center">
+  <img src="./docs/assets/logo_ialclaw.png" alt="IalClaw Logo" width="220" />
+</p>
+
 ![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Powered by OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
 
 IalClaw is a 100% local and private Cognitive Agent developed in Node.js (TypeScript). Integrated directly with Telegram, it features an interactive **Local Web Dashboard** for real-time thought visualization.
@@ -129,13 +133,31 @@ node bin/ialclaw.js logs --follow    # tail logs in real time (cross-platform)
 | `ialclaw status` | Show PID, uptime, mode, daemon status |
 | `ialclaw logs` | Print last 30 log lines |
 | `ialclaw logs --follow` | Tail logs in real time |
+| `ialclaw lang` | Show current language and configured language |
+| `ialclaw lang pt-BR` | Persist language to `config.json` |
 | `ialclaw help` | Show all commands |
+
+You can override the language for a single command with:
+- `ialclaw status --lang=en-US`
+- `ialclaw start --lang=pt-BR`
 
 Internal features:
 - **Lock file** — prevents two simultaneous starts (race condition protection)
 - **PID management** — stale PID detection and cleanup (`.ialclaw/pid`)
 - **Log rotation** — auto-rotates `ialclaw.log` when it exceeds 5 MB
 - **Cross-platform** — works on Linux, macOS, and Windows
+
+---
+
+## 🌐 Internationalization (i18n)
+
+The system now has unified language behavior across CLI, backend, and web dashboard:
+
+- Resolution priority: `--lang` (CLI) → `APP_LANG` → `config.json` → `en-US`
+- Persistent language command: `ialclaw lang <pt-BR|en-US>`
+- CLI output fully translated with `t(...)`
+- Backend startup language resolved from the same source of truth
+- Dashboard (`/advanced` and `/simple`) integrated with frontend i18n and runtime language loading
 
 ---
 
@@ -280,6 +302,10 @@ Contributions are welcome! Feel free to open an **issue** to discuss new ideas o
 # IalClaw Cognitive System v3.0
 ### Agente cognitivo local baseado em OpenClaw
 
+<p align="center">
+  <img src="./docs/assets/logo_ialclaw.png" alt="Logo do IalClaw" width="220" />
+</p>
+
 ![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Baseado em OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
 
 O IalClaw é um Agente Cognitivo 100% local e privado, desenvolvido em Node.js (TypeScript). Integrado diretamente no Telegram, ele conta com um **Dashboard Web Local** interativo para visualização de pensamentos em tempo real.
@@ -403,13 +429,31 @@ node bin/ialclaw.js logs --follow    # acompanha log em tempo real (cross-platfo
 | `ialclaw status` | Mostra PID, uptime, modo, daemon |
 | `ialclaw logs` | Últimas 30 linhas do log |
 | `ialclaw logs --follow` | Tail do log em tempo real |
+| `ialclaw lang` | Mostra idioma atual e idioma configurado |
+| `ialclaw lang pt-BR` | Persiste idioma no `config.json` |
 | `ialclaw help` | Exibe todos os comandos |
+
+Você pode sobrescrever o idioma em um único comando com:
+- `ialclaw status --lang=en-US`
+- `ialclaw start --lang=pt-BR`
 
 Recursos internos:
 - **Lock file** — impede dois starts simultâneos (proteção contra race condition)
 - **Gerenciamento de PID** — detecção e limpeza de PID stale (`.ialclaw/pid`)
 - **Rotação de logs** — rotaciona `ialclaw.log` automaticamente ao ultrapassar 5 MB
 - **Cross-platform** — funciona em Linux, macOS e Windows
+
+---
+
+## 🌐 Internacionalização (i18n)
+
+O sistema agora possui comportamento unificado de idioma entre CLI, backend e dashboard web:
+
+- Prioridade de resolução: `--lang` (CLI) → `APP_LANG` → `config.json` → `en-US`
+- Comando de idioma persistente: `ialclaw lang <pt-BR|en-US>`
+- Saída da CLI totalmente traduzida com `t(...)`
+- Idioma de inicialização do backend resolvido pela mesma fonte de verdade
+- Dashboard (`/advanced` e `/simple`) integrado com i18n no frontend e carregamento dinâmico de idioma
 
 ---
 

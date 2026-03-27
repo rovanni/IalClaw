@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
@@ -7,6 +7,7 @@
   <title>IalClaw v3.0 - Cognitive Console</title>
   <link rel="icon" href="data:,">
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="/dashboard-i18n.js"></script>
   <script src="/dashboard-ui-core.js"></script>
   <style>
     :root {
@@ -787,14 +788,14 @@
         <option value="balanced" selected>Equilibrado</option>
         <option value="aggressive">Livre</option>
       </select>
-      <button class="zoom-btn" id="memory-toggle-btn" type="button">ðŸ§  MemÃ³ria</button>
+      <button class="zoom-btn" id="memory-toggle-btn" type="button">Ã°Å¸Â§Â  MemÃƒÂ³ria</button>
       <a href="/simple" class="zoom-btn">Modo simples</a>
       <a href="/help" class="zoom-btn">Ajuda</a>
       <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
       <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
       <span id="zoom-level" style="color: var(--text-muted); width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
       <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
-      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">ðŸŒ“ Theme</button>
+      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">Ã°Å¸Å’â€œ Theme</button>
     </div>
 
     <div>|</div>
@@ -809,41 +810,41 @@
           <span>Conversas</span>
           <span id="conversation-count">0</span>
         </div>
-        <div class="sidebar-subtitle">Continue uma sessÃ£o anterior ou comece uma nova conversa.</div>
+        <div class="sidebar-subtitle">Continue uma sessÃƒÂ£o anterior ou comece uma nova conversa.</div>
         <button class="sidebar-btn btn-primary" id="new-chat-btn">+ Nova conversa</button>
       </div>
       <div id="conversation-list">
-        <div class="conversation-empty">Carregando histÃ³rico...</div>
+        <div class="conversation-empty">Carregando histÃƒÂ³rico...</div>
       </div>
     </aside>
 
     <div id="main-col">
       <div class="panel" id="timeline-panel">
         <div class="panel-header">
-          <span>InteraÃ§Ã£o com o Agente</span>
+          <span>InteraÃƒÂ§ÃƒÂ£o com o Agente</span>
           <span id="console-status">sse: conectando...</span>
         </div>
         <div class="interaction-layout">
           <section class="chat-panel">
             <div class="chat-panel-header">
               <div class="chat-panel-title">Conversa</div>
-              <div class="chat-panel-subtitle">Somente mensagens do usuÃ¡rio e respostas finais ficam aqui.</div>
+              <div class="chat-panel-subtitle">Somente mensagens do usuÃƒÂ¡rio e respostas finais ficam aqui.</div>
             </div>
             <div id="chat-container"></div>
             <div id="typing-indicator">[SYSTEM] processando...</div>
           </section>
           <aside class="log-panel">
             <div class="log-panel-header">
-              <div class="log-panel-title">Logs de ExecuÃ§Ã£o</div>
-              <div class="log-panel-subtitle">Progresso, observaÃ§Ãµes e ferramentas em execuÃ§Ã£o.</div>
+              <div class="log-panel-title">Logs de ExecuÃƒÂ§ÃƒÂ£o</div>
+              <div class="log-panel-subtitle">Progresso, observaÃƒÂ§ÃƒÂµes e ferramentas em execuÃƒÂ§ÃƒÂ£o.</div>
             </div>
             <div id="log-container"></div>
           </aside>
         </div>
         <div class="input-area">
           <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
-          <button id="speech-btn" class="console-btn" title="Entrada por voz">ðŸŽ¤</button>
-          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">ðŸ”ˆ</button>
+          <button id="speech-btn" class="console-btn" title="Entrada por voz">Ã°Å¸Å½Â¤</button>
+          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">Ã°Å¸â€Ë†</button>
           <button id="action-btn" class="console-btn" title="Enviar mensagem">Enviar</button>
         </div>
       </div>
@@ -863,7 +864,7 @@
       </div>
     </div>
     <div class="memory-drawer-body">
-      <div id="memory-empty" class="memory-empty">Nenhuma memória ativa</div>
+      <div id="memory-empty" class="memory-empty">Nenhuma memÃ³ria ativa</div>
       <div id="mynetwork-container">
         <div id="mynetwork"></div>
       </div>
@@ -912,6 +913,8 @@
     let requestInFlight = false;
     let memoryDrawerOpen = false;
     let latestGraphSnapshot = { nodes: [], edges: [] };
+    const dashboardI18n = window.IalclawDashboardI18n;
+    const tf = (key, params, fallback) => dashboardI18n?.t?.(key, params, fallback) || fallback || key;
 
     function updateChatActionButtons() {
       const state = IalclawDashboardUiCore.getActionButtonState(requestInFlight);
@@ -939,7 +942,7 @@
 
     function nowLabel(ts) {
       const dt = ts ? new Date(ts) : new Date();
-      return dt.toLocaleTimeString('pt-BR', { hour12: false });
+      return dt.toLocaleTimeString(dashboardI18n?.getLanguage?.() || 'en-US', { hour12: false });
     }
 
     function escapeHtml(value) {
@@ -992,7 +995,7 @@
         const traceBtn = document.createElement('button');
         traceBtn.className = 'trace-btn';
         traceBtn.type = 'button';
-        traceBtn.textContent = 'ðŸ” Ver execucao';
+        traceBtn.textContent = tf('dashboard.view.trace', undefined, 'View execution');
         traceBtn.addEventListener('click', () => replayTrace(traceId));
         row.appendChild(traceBtn);
       }
@@ -1107,28 +1110,35 @@
 
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? 'ðŸŒ™ Escuro' : 'â˜€ï¸ Claro';
+      document.getElementById('theme-toggle-btn').innerText = theme === 'light'
+        ? `Ã°Å¸Å’â„¢ ${tf('dashboard.theme.dark', undefined, 'Dark')}`
+        : `Ã¢Ëœâ‚¬Ã¯Â¸Â ${tf('dashboard.theme.light', undefined, 'Light')}`;
       if (network) network.setOptions(getGraphOptions());
     }
 
-    function toggleTheme() {
-      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('ialclaw_theme', currentTheme);
-      applyTheme(currentTheme);
+    
+    function applyStaticTranslations() {
+      chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
+      newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
+      const loading = conversationList.querySelector('.conversation-empty');
+      if (loading) {
+        loading.textContent = tf('dashboard.conversation.loading', undefined, loading.textContent);
+      }
+      consoleStatus.textContent = 'sse: connecting...';
     }
 
     function setTtsState(enabled) {
       ttsEnabled = enabled;
       localStorage.setItem('ialclaw_tts', enabled ? '1' : '0');
       ttsToggleBtn.classList.toggle('active', enabled);
-      ttsToggleBtn.textContent = enabled ? 'ðŸ”Š' : 'ðŸ”ˆ';
+      ttsToggleBtn.textContent = enabled ? 'Ã°Å¸â€Å ' : 'Ã°Å¸â€Ë†';
     }
 
     function speak(text) {
       if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(String(text));
-      utterance.lang = 'pt-BR';
+      utterance.lang = dashboardI18n?.getLanguage?.() || 'en-US';
       utterance.rate = 1;
       utterance.pitch = 1;
       window.speechSynthesis.speak(utterance);
@@ -1137,21 +1147,21 @@
     function handleSpeechInput() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        appendStatus('Web Speech API nao suportada neste navegador.');
+        appendStatus(tf('dashboard.error.speech_not_supported', undefined, 'Web Speech API is not supported in this browser.'));
         speechBtn.disabled = true;
         return;
       }
 
       recognition = new SpeechRecognition();
-      recognition.lang = 'pt-BR';
+      recognition.lang = dashboardI18n?.getLanguage?.() || 'en-US';
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
         isRecording = true;
         speechBtn.classList.add('recording');
-        speechBtn.textContent = 'ðŸ”´';
-        appendStatus('Captura de voz iniciada.');
+        speechBtn.textContent = 'Ã°Å¸â€Â´';
+        appendStatus(tf('dashboard.voice.started', undefined, 'Voice capture started.'));
       };
 
       recognition.onresult = (event) => {
@@ -1159,17 +1169,17 @@
         if (!transcript) return;
         chatInput.value = transcript;
         chatInput.focus();
-        appendStatus(`Voz capturada: ${transcript}`);
+        appendStatus(tf('dashboard.voice.captured', { transcript }, `Voice captured: ${transcript}`));
       };
 
       recognition.onerror = (event) => {
-        appendStatus(`Falha no reconhecimento de voz: ${event.error || 'desconhecido'}`);
+        appendStatus(tf('dashboard.error.speech_failed', { error: event.error || 'unknown' }, `Voice recognition failed: ${event.error || 'unknown'}`));
       };
 
       recognition.onend = () => {
         isRecording = false;
         speechBtn.classList.remove('recording');
-        speechBtn.textContent = 'ðŸŽ¤';
+        speechBtn.textContent = 'Ã°Å¸Å½Â¤';
       };
 
       speechBtn.addEventListener('click', () => {
@@ -1185,8 +1195,8 @@
     function resetConversationView() {
       chatContainer.innerHTML = '';
       logContainer.innerHTML = '';
-      appendStatus(`Sessao ativa: ${sessionId}`);
-      appendStatus('Canal de status pronto para progresso interno.');
+      appendStatus(tf('dashboard.session.active', { sessionId }, `Active session: ${sessionId}`));
+      appendStatus(tf('dashboard.session.channel_ready', undefined, 'Status channel ready for internal progress.'));
     }
 
     async function resetSessionState(targetSessionId) {
@@ -1218,7 +1228,7 @@
         const data = await res.json();
         if (res.ok && data?.config) applyExecutionConfig(data.config);
       } catch (_err) {
-        appendStatus('Falha ao carregar configuracao de execucao.');
+        appendStatus(tf('dashboard.mode.update_failed', { error: 'load-config' }, 'Could not update mode: load-config'));
       }
     }
 
@@ -1231,13 +1241,13 @@
           body: JSON.stringify({ mode: nextMode })
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data?.config) throw new Error(data.error || `Falha HTTP ${res.status}`);
+        if (!res.ok || !data?.config) throw new Error(data.error || tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
 
         applyExecutionConfig(data.config);
-        appendStatus(`Modo de execucao alterado para ${data.config.label}.`);
+        appendStatus(tf('dashboard.mode.updated', { label: data.config.label }, `Execution mode changed to ${data.config.label}.`));
       } catch (err) {
         executionModeSelect.value = previousMode;
-        appendStatus(`Nao foi possivel atualizar o modo: ${err.message || err}`);
+        appendStatus(tf('dashboard.mode.update_failed', { error: err.message || err }, `Could not update mode: ${err.message || err}`));
       } finally {
         executionModeSelect.disabled = false;
       }
@@ -1249,19 +1259,19 @@
         const conversations = await res.json();
 
         if (!Array.isArray(conversations)) {
-          throw new Error('Resposta invalida');
+          throw new Error(tf('dashboard.error.invalid_response', undefined, 'Invalid response'));
         }
 
         conversationCount.innerText = String(conversations.length);
         renderConversationList(conversations);
       } catch (_err) {
-        conversationList.innerHTML = '<div class="conversation-empty">Nao foi possivel carregar o historico.</div>';
+        conversationList.innerHTML = `<div class="conversation-empty">${tf('dashboard.error.history_load', undefined, 'Could not load history.')}</div>`;
       }
     }
 
     function renderConversationList(conversations) {
       if (!conversations.length) {
-        conversationList.innerHTML = '<div class="conversation-empty">Nenhuma conversa salva ainda. Use "Nova conversa" para comecar.</div>';
+        conversationList.innerHTML = `<div class="conversation-empty">${tf('dashboard.error.empty_history', undefined, 'History is empty. Type a cognitive command.')}</div>`;
         return;
       }
 
@@ -1277,10 +1287,10 @@
 
         item.innerHTML = `
           <div class="conversation-name">${escapeHtml(label.slice(0, 64))}</div>
-          <div class="conversation-preview">${escapeHtml(lastContent || 'Sem mensagens')}</div>
+          <div class="conversation-preview">${escapeHtml(lastContent || tf('dashboard.conversation.no_messages', undefined, 'No messages'))}</div>
           <div class="conversation-meta">
             <span>${escapeHtml(conversation.conversation_id)}</span>
-            <span>${conversation.message_count || 0} msgs</span>
+            <span>${tf('dashboard.conversation.msg_count', { count: conversation.message_count || 0 }, `${conversation.message_count || 0} msgs`)}</span>
           </div>
         `;
 
@@ -1295,10 +1305,10 @@
         const messages = await res.json();
 
         chatContainer.innerHTML = '';
-        appendStatus(`Sessao ativa: ${targetSessionId}`);
+        appendStatus(tf('dashboard.session.active', { sessionId: targetSessionId }, `Active session: ${targetSessionId}`));
 
         if (!Array.isArray(messages) || messages.length === 0) {
-          appendStatus('Historico vazio. Digite um comando cognitivo.');
+          appendStatus(tf('dashboard.error.empty_history', undefined, 'History is empty. Type a cognitive command.'));
           return;
         }
 
@@ -1308,7 +1318,7 @@
           } else if (message.role === 'assistant') {
             routeEvent('final', message.content, { timestamp: message.created_at });
           } else if (message.role === 'tool') {
-            routeEvent('tool', `Tool (historico): ${message.content}`, { timestamp: message.created_at });
+            routeEvent('tool', tf('dashboard.logs.tool_history', { content: message.content }, `Tool (history): ${message.content}`), { timestamp: message.created_at });
           }
         });
       } catch (_err) {
@@ -1351,7 +1361,7 @@
       }
 
       eventSource = new EventSource('/debug/stream');
-      consoleStatus.textContent = 'sse: conectado';
+      consoleStatus.textContent = 'sse: connected';
 
       const onEvent = (eventType, mapper) => (event) => {
         const data = parseSsePayload(event);
@@ -1365,62 +1375,62 @@
         routeEvent(mapped.type || eventType, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
       };
 
-      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'obs', channel: 'status', content: data.content || 'evento thought sem conteudo' })));
+      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'obs', channel: 'status', content: data.content || tf('dashboard.logs.thought_empty', undefined, 'thought event without content') })));
 
       eventSource.addEventListener('tool', onEvent('tool', (data) => {
         const status = String(data.status || '').toLowerCase();
         if (status.includes('error') || status.includes('fail')) {
-          return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+          return { type: 'tool', channel: 'status', content: tf('dashboard.logs.tool_failed', { name: data.name || 'unknown', status }, `Tool ${data.name || 'unknown'} failed: ${status}`) };
         }
-        return { type: 'tool', channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+        return { type: 'tool', channel: 'status', content: tf('dashboard.logs.tool_done', { name: data.name || 'unknown', status: data.status || 'done', latency: data.latency || 0 }, `Tool ${data.name || 'unknown'}: ${data.status || 'done'} (${data.latency || 0}ms)`) };
       }));
 
       eventSource.addEventListener('rag', onEvent('rag', (data) => ({
         type: 'rag',
         channel: 'status',
-        content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
+        content: tf('dashboard.logs.rag', { count: data.nodes?.length || 0, score: data.nodes?.[0]?.score || 0 }, `Retrieved nodes: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`)
       })));
 
       eventSource.addEventListener('gateway', onEvent('gateway', (data) => ({
         type: 'obs',
         channel: 'status',
-        content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
+        content: tf('dashboard.logs.gateway', { summary: data.summary || data.route || data.decision || 'event received' }, `Gateway: ${data.summary || data.route || data.decision || 'event received'}`)
       })));
 
       eventSource.addEventListener('execution_summary', onEvent('execution_summary', (data) => ({
         type: 'progress',
         channel: 'status',
-        content: data.summary || 'Resumo de execucao recebido'
+        content: data.summary || tf('dashboard.logs.exec_summary', undefined, 'Execution summary received')
       })));
 
       eventSource.addEventListener('execution_mode', onEvent('execution_mode', (data) => ({
         type: 'obs',
         channel: 'status',
-        content: `Modo ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`
+        content: tf('dashboard.logs.exec_mode', { mode: data.selected || data.executionMode || 'balanced', stage: data.stage || 'runtime' }, `Mode ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`)
       })));
 
       eventSource.addEventListener('tool_input_error', onEvent('tool_input_error', (data) => ({
         type: 'error',
         channel: 'status',
-        content: `Erro de entrada de tool: ${data.tool || 'tool desconhecida'}`
+        content: tf('dashboard.logs.tool_input_error', { tool: data.tool || 'unknown tool' }, `Tool input error: ${data.tool || 'unknown tool'}`)
       })));
 
       eventSource.addEventListener('self_healing', onEvent('self_healing', (data) => ({
         type: 'progress',
         channel: 'status',
-        content: `Self-healing ${data.stage || 'unknown'} tentativa ${data.attempt ?? '-'}`
+        content: tf('dashboard.logs.self_healing', { stage: data.stage || 'unknown', attempt: data.attempt ?? '-' }, `Self-healing ${data.stage || 'unknown'} attempt ${data.attempt ?? '-'}`)
       })));
 
       eventSource.addEventListener('self_healing_abort', onEvent('self_healing_abort', (data) => ({
         type: 'error',
         channel: 'status',
-        content: `Self-healing abortado: ${data.reason || 'sem motivo'}`
+        content: tf('dashboard.logs.self_healing_abort', { reason: data.reason || 'no reason' }, `Self-healing aborted: ${data.reason || 'no reason'}`)
       })));
 
       eventSource.addEventListener('agent_status', onEvent('agent_status', (data) => ({
         type: 'progress',
         channel: 'status',
-        content: data.message || 'Status de execucao atualizado'
+        content: data.message || tf('dashboard.logs.agent_status', undefined, 'Execution status updated')
       })));
 
       eventSource.addEventListener('agent_config', onEvent('agent_config', (data) => {
@@ -1433,7 +1443,7 @@
       }));
 
       eventSource.addEventListener('web_progress', onEvent('web_progress', (data) => {
-        const message = String(data.message || 'Processando...');
+        const message = String(data.message || tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...'));
         typingIndicator.style.display = 'block';
         typingIndicator.textContent = `[SYSTEM] ${message}`;
 
@@ -1441,7 +1451,7 @@
         if (stage === 'completed' || stage === 'failed' || stage === 'stopped') {
           setTimeout(() => {
             typingIndicator.style.display = 'none';
-            typingIndicator.textContent = '[SYSTEM] processando...';
+            typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
           }, 700);
         }
 
@@ -1453,21 +1463,21 @@
       }));
 
       eventSource.onerror = () => {
-        consoleStatus.textContent = 'sse: reconectando...';
+        consoleStatus.textContent = 'sse: reconnecting...';
       };
     }
 
     async function replayTrace(traceId) {
       if (!traceId) return;
-      appendStatus(`Replay do trace ${traceId} iniciado...`);
+      appendStatus(tf('dashboard.trace.start', { traceId }, `Trace replay ${traceId} started...`));
 
       try {
         const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
-        if (!res.ok) throw new Error(`Falha HTTP ${res.status}`);
+        if (!res.ok) throw new Error(tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
 
         const events = await res.json();
         if (!Array.isArray(events) || events.length === 0) {
-          appendStatus('Nenhum evento encontrado para este trace.');
+          appendStatus(tf('dashboard.trace.empty', undefined, 'No events found for this trace.'));
           return;
         }
 
@@ -1488,7 +1498,7 @@
           } else if (event.type === 'gateway') {
             routeEvent('obs', payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
           } else if (event.type === 'execution_summary') {
-            routeEvent('progress', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
+            routeEvent('progress', payload.answer || payload.summary || tf('dashboard.logs.replay_summary', undefined, 'Final execution summary'), { timestamp: event.created_at });
           } else {
             routeEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
           }
@@ -1496,9 +1506,9 @@
           await new Promise((resolve) => setTimeout(resolve, 150));
         }
 
-        appendStatus(`Replay do trace ${traceId} finalizado.`);
+        appendStatus(tf('dashboard.trace.end', { traceId }, `Trace replay ${traceId} finished.`));
       } catch (err) {
-        appendStatus(`Erro ao reproduzir trace: ${err.message || err}`);
+        appendStatus(tf('dashboard.error.trace_replay', { error: err.message || err }, `Trace replay failed: ${err.message || err}`));
       }
     }
 
@@ -1512,7 +1522,7 @@
       updateChatActionButtons();
       speechBtn.disabled = true;
       typingIndicator.style.display = 'block';
-      typingIndicator.textContent = '[SYSTEM] Preparando execuÃ§Ã£o...';
+      typingIndicator.textContent = tf('dashboard.typing.preparing', undefined, '[SYSTEM] Preparing execution...');
 
       routeEvent('user', text);
 
@@ -1530,31 +1540,31 @@
         });
 
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Falha HTTP ${res.status}`);
+        if (!res.ok) throw new Error(data.error || tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
 
         const responseText = data.response || data.answer || '';
         if (responseText) {
           routeEvent('final', responseText, { traceId: data.trace_id || '' });
           speak(responseText);
         } else {
-          appendStatus('Resposta vazia do backend.');
+          appendStatus(tf('dashboard.error.empty_response', undefined, 'Empty backend response.'));
         }
 
         if (data.mode) {
-          appendStatus(`Modo efetivo: ${data.mode} | confianca: ${data.confidence ?? 'n/a'}`);
+          appendStatus(tf('dashboard.mode.effective', { mode: data.mode, confidence: data.confidence ?? 'n/a' }, `Effective mode: ${data.mode} | confidence: ${data.confidence ?? 'n/a'}`));
         }
 
         await loadGraph();
         await loadConversationList();
       } catch (err) {
         if (err.name === 'AbortError') {
-          appendStatus('Execucao interrompida pelo usuario.');
+          appendStatus(tf('dashboard.execution.cancelled', undefined, 'Execution stopped by user.'));
         } else {
-          appendStatus(`Erro ao falar com IalClaw: ${err.message || err}`);
+          appendStatus(tf('dashboard.chat.error', { error: err.message || err }, `Error talking to IalClaw: ${err.message || err}`));
         }
       } finally {
         typingIndicator.style.display = 'none';
-        typingIndicator.textContent = '[SYSTEM] processando...';
+        typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
         chatInput.disabled = false;
         requestInFlight = false;
         updateChatActionButtons();
@@ -1568,7 +1578,7 @@
       if (!requestInFlight) return;
 
       typingIndicator.style.display = 'block';
-      typingIndicator.textContent = '[SYSTEM] Interrompendo execuÃ§Ã£o...';
+      typingIndicator.textContent = tf('dashboard.typing.stopping', undefined, '[SYSTEM] Stopping execution...');
       updateChatActionButtons();
       actionBtn.disabled = true;
 
@@ -1687,12 +1697,12 @@
 
         renderMemoryState();
       } catch (_err) {
-        appendStatus('Falha ao carregar grafo cognitivo.');
+        appendStatus(tf('dashboard.graph.load_failed', undefined, 'Failed to load cognitive graph.'));
       }
     }
 
     async function promptReplay() {
-      const traceId = prompt('Cole o trace_id para reproduzir na timeline:');
+      const traceId = prompt('trace_id:');
       if (!traceId) return;
       await replayTrace(traceId.trim());
     }
@@ -1712,20 +1722,24 @@
 
     ttsToggleBtn.addEventListener('click', () => {
       setTtsState(!ttsEnabled);
-      appendStatus(`Leitura por voz ${ttsEnabled ? 'ativada' : 'desativada'}.`);
+      appendStatus(tf('dashboard.voice.reading', { state: ttsEnabled ? tf('dashboard.voice.enabled', undefined, 'enabled') : tf('dashboard.voice.disabled', undefined, 'disabled') }, `Voice reading ${ttsEnabled ? 'enabled' : 'disabled'}.`));
     });
 
-    applyZoom();
-    applyTheme(currentTheme);
-    setTtsState(ttsEnabled);
-    updateChatActionButtons();
-    resetConversationView();
-    loadConversationMessages(sessionId);
-    loadConversationList();
-    loadExecutionConfig();
-    loadGraph();
-    connectSSE();
-    handleSpeechInput();
+    async function bootstrapDashboard() {
+      await dashboardI18n?.init?.();
+applyStaticTranslations();
+      applyZoom();
+      applyTheme(currentTheme);
+      setTtsState(ttsEnabled);
+      updateChatActionButtons();
+      resetConversationView();
+      loadConversationMessages(sessionId);
+      loadConversationList();
+      loadExecutionConfig();
+      loadGraph();
+      connectSSE();
+      handleSpeechInput();
+    }
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && memoryDrawerOpen) {
@@ -1733,8 +1747,12 @@
       }
     });
 
+    bootstrapDashboard();
     setInterval(loadGraph, 10000);
   </script>
 </body>
 
 </html>
+
+
+
