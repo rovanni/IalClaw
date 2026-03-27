@@ -163,6 +163,38 @@ The system now has unified language behavior across CLI, backend, and web dashbo
 
 ---
 
+## 🔍 Semantic Search System
+
+IalClaw includes a **semantic search system** based on intelligent indexing without embeddings or vector databases.
+
+### Features
+
+- **Inverted Index**: Fast term-based search
+- **Smart Tokenization**: With normalization and stopwords
+- **Auto-tagging**: Generates semantic structure using LLM (tokens, keywords, tags, category)
+- **LLM Re-ranking**: Optional re-ranking of top results
+- **Synonym Expansion**: Local synonym expansion for better results
+
+### Usage
+
+```typescript
+import { createSearchEngine } from './search';
+
+const engine = createSearchEngine();
+
+await engine.indexDocument({
+  id: '1',
+  title: 'Machine Learning Basics',
+  content: 'Machine learning is a subset of AI...'
+});
+
+const results = await engine.search('machine learning');
+```
+
+> For technical specification, see [specs/search-system.md](./specs/search-system.md).
+
+---
+
 ## 🧩 Skills System
 
 IalClaw extends its capabilities through **Skills** — self-contained instruction packages that are resolved **before** the LLM is invoked.
@@ -459,6 +491,38 @@ O sistema agora possui comportamento unificado de idioma entre CLI, backend e da
 - Saída da CLI totalmente traduzida com `t(...)`
 - Idioma de inicialização do backend resolvido pela mesma fonte de verdade
 - Dashboard (`/advanced` e `/simple`) integrado com i18n no frontend e carregamento dinâmico de idioma
+
+---
+
+## 🔍 Sistema de Busca Semântica
+
+O IalClaw inclui um **sistema de busca semântica** baseado em indexação inteligente sem uso de embeddings ou vector databases.
+
+### Funcionalidades
+
+- **Índice Invertido**: Busca rápida por termos
+- **Tokenização Inteligente**: Com normalização e stopwords
+- **Auto-tagging**: Gera estrutura semântica usando LLM (tokens, keywords, tags, categoria)
+- **Re-ranking LLM**: Opcional, re-ordena top resultados
+- **Expansão de Sinônimos**: Expansão local de sinônimos para melhores resultados
+
+### Uso
+
+```typescript
+import { createSearchEngine } from './search';
+
+const engine = createSearchEngine();
+
+await engine.indexDocument({
+  id: '1',
+  title: 'Machine Learning Basics',
+  content: 'Machine learning is a subset of AI...'
+});
+
+const results = await engine.search('machine learning');
+```
+
+> Para especificação técnica, veja [specs/search-system.md](./specs/search-system.md).
 
 ---
 
