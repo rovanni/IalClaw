@@ -24,6 +24,15 @@ export class AgentController {
     private skillResolver?: SkillResolver;
     private logger = createLogger('AgentController');
 
+    private emitStatus(sessionId: string, message: string, channel: 'web' | 'telegram', extra?: Record<string, any>): void {
+        emitDebug('agent_status', {
+            session_id: sessionId,
+            channel,
+            message,
+            ...extra
+        });
+    }
+
     constructor(
         memory: CognitiveMemory,
         contextBuilder: ContextBuilder,
@@ -108,13 +117,20 @@ export class AgentController {
             });
 
             const emitWebProgress = async (event: AgentProgressEvent) => {
+                const message = this.formatProgressMessage(event);
+                this.emitStatus(sessionId, message, 'web', {
+                    stage: event.stage,
+                    iteration: event.iteration,
+                    tool_name: event.tool_name,
+                    duration_ms: event.duration_ms
+                });
                 emitDebug('web_progress', {
                     session_id: sessionId,
                     stage: event.stage,
                     iteration: event.iteration,
                     tool_name: event.tool_name,
                     duration_ms: event.duration_ms,
-                    message: this.formatProgressMessage(event)
+                    message
                 });
             };
 
@@ -349,7 +365,7 @@ export class AgentController {
         const messages: MessagePayload[] = [
             {
                 role: 'system',
-                content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\nSe o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\nNao peca confirmacao redundante.\nNao ignore a escolha.\nNao continue conversa generica quando houver uma selecao valida.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
+                content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\nSe o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\nNao peca confirmacao redundante.\nNao ignore a escolha.\nNao continue conversa generica quando houver uma selecao valida.\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
             }
         ];
         for (const msg of history) {
@@ -466,6 +482,9 @@ export class AgentController {
             `Nao peca confirmacao redundante.\n` +
             `Nao ignore a escolha.\n` +
             `Nao continue conversa generica quando houver uma selecao valida.\n\n` +
+            `GIT E GITHUB:\n` +
+            `Nao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\n` +
+            `So fale sobre commit/push/PR se o usuario pedir isso explicitamente.\n\n` +
             `## Skill ativa: ${skill.name}\n\n` +
             `${adaptedBody}\n\n` +
             `${contextStr}`;
@@ -622,7 +641,7 @@ Voce ainda pode:
         fail: (error: any) => Promise<void>;
     } {
         const chatId = ctx.chat?.id;
-        let statusMessageId: number | null = null;
+        const sessionId = String(chatId || 'telegram-session');
         let lastStatusText = '';
         let lastUpdateAt = 0;
         const MIN_UPDATE_INTERVAL_MS = 1200;
@@ -631,29 +650,15 @@ Voce ainda pode:
             ctx.replyWithChatAction('typing').catch(() => undefined);
         }, 4500);
 
-        const updateStatus = async (text: string, force: boolean = false) => {
-            if (!chatId) {
-                return;
-            }
-
+        const emitStatus = async (text: string, force: boolean = false) => {
             const now = Date.now();
             if (!force && (text === lastStatusText || now - lastUpdateAt < MIN_UPDATE_INTERVAL_MS)) {
                 return;
             }
 
-            const content = `⏳ ${text}`;
-            try {
-                if (!statusMessageId) {
-                    const sent: any = await ctx.reply(content);
-                    statusMessageId = sent?.message_id || null;
-                } else {
-                    await ctx.api.editMessageText(chatId, statusMessageId, content);
-                }
-                lastStatusText = text;
-                lastUpdateAt = now;
-            } catch {
-                // Se não for possível editar, não interrompe o fluxo principal
-            }
+            this.emitStatus(sessionId, text, 'telegram');
+            lastStatusText = text;
+            lastUpdateAt = now;
         };
 
         const onEvent = async (event: AgentProgressEvent) => {
@@ -661,34 +666,34 @@ Voce ainda pode:
 
             switch (event.stage) {
                 case 'loop_started':
-                    await updateStatus('Iniciando análise do pedido...');
+                    await emitStatus('Iniciando análise do pedido...');
                     break;
                 case 'iteration_started':
-                    await updateStatus(`Processando etapa ${event.iteration || 1}...`);
+                    await emitStatus(`Processando etapa ${event.iteration || 1}...`);
                     break;
                 case 'llm_started':
-                    await updateStatus('Pensando na próxima ação...');
+                    await emitStatus('Pensando na próxima ação...');
                     break;
                 case 'tool_started':
-                    await updateStatus(`Executando ferramenta: ${event.tool_name || 'tool'}`);
+                    await emitStatus(`Executando ferramenta: ${event.tool_name || 'tool'}`);
                     break;
                 case 'tool_completed':
-                    await updateStatus(`Ferramenta concluída: ${event.tool_name || 'tool'}`);
+                    await emitStatus(`Ferramenta concluída: ${event.tool_name || 'tool'}`);
                     break;
                 case 'tool_failed':
-                    await updateStatus(`Ferramenta falhou: ${event.tool_name || 'tool'}. Tentando recuperar...`);
+                    await emitStatus(`Ferramenta falhou: ${event.tool_name || 'tool'}. Tentando recuperar...`);
                     break;
                 case 'finalizing':
-                    await updateStatus('Finalizando resposta...');
+                    await emitStatus('Finalizando resposta...');
                     break;
                 case 'completed':
-                    await updateStatus('Concluído. Enviando resposta...', true);
+                    await emitStatus('Concluído. Enviando resposta...', true);
                     break;
                 case 'failed':
-                    await updateStatus('Falha no processamento.', true);
+                    await emitStatus('Falha no processamento.', true);
                     break;
                 case 'stopped':
-                    await updateStatus('Execucao interrompida pelo usuario.', true);
+                    await emitStatus('Execucao interrompida pelo usuario.', true);
                     break;
                 default:
                     break;
@@ -697,12 +702,12 @@ Voce ainda pode:
 
         const complete = async () => {
             clearInterval(heartbeat);
-            await updateStatus('Concluído. Enviando resposta...', true);
+            await emitStatus('Concluído. Enviando resposta...', true);
         };
 
         const fail = async (error: any) => {
             clearInterval(heartbeat);
-            await updateStatus(`Erro no processamento: ${String(error?.message || error)}`, true);
+            await emitStatus(`Erro no processamento: ${String(error?.message || error)}`, true);
         };
 
         return { onEvent, complete, fail };

@@ -370,6 +370,38 @@
       background: linear-gradient(180deg, rgba(128, 128, 128, 0.06) 0%, transparent 80px);
     }
 
+    .status-panel {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+    }
+
+    .status-panel-header {
+      padding: 8px 12px;
+      font-size: var(--font-xs);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #status-log {
+      max-height: 130px;
+      overflow-y: auto;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: var(--font-xs);
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
+
+    .status-line {
+      padding: 3px 0;
+      border-bottom: 1px dashed rgba(128, 128, 128, 0.12);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     .event-line {
       display: flex;
       gap: 10px;
@@ -660,6 +692,10 @@
         </div>
         <div id="timeline"></div>
         <div id="typing-indicator">[SYSTEM] processando...</div>
+        <div class="status-panel">
+          <div class="status-panel-header">Status de execução</div>
+          <div id="status-log"></div>
+        </div>
         <div class="input-area">
           <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
           <button id="speech-btn" class="console-btn" title="Entrada por voz">🎤</button>
@@ -684,6 +720,7 @@
     const ttsToggleBtn = document.getElementById('tts-toggle');
     const stopBtn = document.getElementById('stop-btn');
     const timeline = document.getElementById('timeline');
+    const statusLog = document.getElementById('status-log');
     const typingIndicator = document.getElementById('typing-indicator');
     const conversationList = document.getElementById('conversation-list');
     const conversationCount = document.getElementById('conversation-count');
@@ -705,6 +742,14 @@
     let isRecording = false;
     let activeChatRequestController = null;
     let requestInFlight = false;
+
+    function updateChatActionButtons() {
+      const isActive = requestInFlight;
+      sendBtn.style.display = isActive ? 'none' : 'inline-flex';
+      stopBtn.style.display = isActive ? 'inline-flex' : 'none';
+      sendBtn.disabled = isActive || chatInput.disabled;
+      stopBtn.disabled = !isActive;
+    }
 
     const EVENT_LABELS = {
       user: 'USER',
@@ -788,6 +833,19 @@
       }
     }
 
+    function appendStatus(content, meta = {}) {
+      const line = document.createElement('div');
+      line.className = 'status-line';
+      line.textContent = `${nowLabel(meta.timestamp)}  ${eventContentToString(content)}`;
+      statusLog.appendChild(line);
+      statusLog.scrollTop = statusLog.scrollHeight;
+
+      const maxRows = 300;
+      if (statusLog.children.length > maxRows) {
+        statusLog.removeChild(statusLog.firstChild);
+      }
+    }
+
     function applyZoom() {
       document.documentElement.style.fontSize = `${16 * currentZoom}px`;
       document.getElementById('zoom-level').innerText = `${Math.round(currentZoom * 100)}%`;
@@ -831,7 +889,7 @@
     function handleSpeechInput() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        appendEvent('error', 'Web Speech API nao suportada neste navegador.');
+        appendStatus('Web Speech API nao suportada neste navegador.');
         speechBtn.disabled = true;
         return;
       }
@@ -845,7 +903,7 @@
         isRecording = true;
         speechBtn.classList.add('recording');
         speechBtn.textContent = '🔴';
-        appendEvent('obs', 'Captura de voz iniciada.');
+        appendStatus('Captura de voz iniciada.');
       };
 
       recognition.onresult = (event) => {
@@ -853,11 +911,11 @@
         if (!transcript) return;
         chatInput.value = transcript;
         chatInput.focus();
-        appendEvent('obs', `Voz capturada: ${transcript}`);
+        appendStatus(`Voz capturada: ${transcript}`);
       };
 
       recognition.onerror = (event) => {
-        appendEvent('error', `Falha no reconhecimento de voz: ${event.error || 'desconhecido'}`);
+        appendStatus(`Falha no reconhecimento de voz: ${event.error || 'desconhecido'}`);
       };
 
       recognition.onend = () => {
@@ -878,8 +936,10 @@
 
     function resetConversationView() {
       timeline.innerHTML = '';
-      appendEvent('obs', `Sessao ativa: ${sessionId}`);
-      appendEvent('obs', 'Console cognitivo pronto para comandos.');
+      statusLog.innerHTML = '';
+      appendStatus(`Sessao ativa: ${sessionId}`);
+      appendStatus(`Sessao ativa: ${sessionId}`);
+      appendStatus('Canal de status pronto para progresso interno.');
     }
 
     async function resetSessionState(targetSessionId) {
@@ -911,7 +971,7 @@
         const data = await res.json();
         if (res.ok && data?.config) applyExecutionConfig(data.config);
       } catch (_err) {
-        appendEvent('error', 'Falha ao carregar configuracao de execucao.');
+        appendStatus('Falha ao carregar configuracao de execucao.');
       }
     }
 
@@ -927,10 +987,10 @@
         if (!res.ok || !data?.config) throw new Error(data.error || `Falha HTTP ${res.status}`);
 
         applyExecutionConfig(data.config);
-        appendEvent('obs', `Modo de execucao alterado para ${data.config.label}.`);
+        appendStatus(`Modo de execucao alterado para ${data.config.label}.`);
       } catch (err) {
         executionModeSelect.value = previousMode;
-        appendEvent('error', `Nao foi possivel atualizar o modo: ${err.message || err}`);
+        appendStatus(`Nao foi possivel atualizar o modo: ${err.message || err}`);
       } finally {
         executionModeSelect.disabled = false;
       }
@@ -988,10 +1048,10 @@
         const messages = await res.json();
 
         timeline.innerHTML = '';
-        appendEvent('obs', `Sessao ativa: ${targetSessionId}`);
+        appendStatus(`Sessao ativa: ${targetSessionId}`);
 
         if (!Array.isArray(messages) || messages.length === 0) {
-          appendEvent('obs', 'Historico vazio. Digite um comando cognitivo.');
+          appendStatus('Historico vazio. Digite um comando cognitivo.');
           return;
         }
 
@@ -1001,7 +1061,7 @@
           } else if (message.role === 'assistant') {
             appendEvent('final', message.content, { timestamp: message.created_at });
           } else if (message.role === 'tool') {
-            appendEvent('action', message.content, { timestamp: message.created_at });
+            appendStatus(`Tool (historico): ${message.content}`, { timestamp: message.created_at });
           }
         });
       } catch (_err) {
@@ -1051,52 +1111,61 @@
         if (!shouldConsumeEvent(data)) return;
         const mapped = mapper(data);
         if (!mapped) return;
+        if (mapped.channel === 'status') {
+          appendStatus(mapped.content, { timestamp: data.timestamp || data.created_at });
+          return;
+        }
         appendEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
       };
 
-      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'thought', content: data.content || 'evento thought sem conteudo' })));
+      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ channel: 'status', content: data.content || 'evento thought sem conteudo' })));
 
       eventSource.addEventListener('tool', onEvent('tool', (data) => {
         const status = String(data.status || '').toLowerCase();
         if (status.includes('error') || status.includes('fail')) {
-          return { type: 'obs', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+          return { channel: 'status', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
         }
-        return { type: 'action', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+        return { channel: 'status', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
       }));
 
       eventSource.addEventListener('rag', onEvent('rag', (data) => ({
-        type: 'rag',
+        channel: 'status',
         content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
       })));
 
       eventSource.addEventListener('gateway', onEvent('gateway', (data) => ({
-        type: 'debug',
+        channel: 'status',
         content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
       })));
 
       eventSource.addEventListener('execution_summary', onEvent('execution_summary', (data) => ({
-        type: 'final',
-        content: data.answer || data.response || data.summary || 'Resumo de execucao recebido'
+        channel: 'status',
+        content: data.summary || 'Resumo de execucao recebido'
       })));
 
       eventSource.addEventListener('execution_mode', onEvent('execution_mode', (data) => ({
-        type: 'obs',
+        channel: 'status',
         content: `Modo ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`
       })));
 
       eventSource.addEventListener('tool_input_error', onEvent('tool_input_error', (data) => ({
-        type: 'error',
+        channel: 'status',
         content: `Erro de entrada de tool: ${data.tool || 'tool desconhecida'}`
       })));
 
       eventSource.addEventListener('self_healing', onEvent('self_healing', (data) => ({
-        type: 'obs',
+        channel: 'status',
         content: `Self-healing ${data.stage || 'unknown'} tentativa ${data.attempt ?? '-'}`
       })));
 
       eventSource.addEventListener('self_healing_abort', onEvent('self_healing_abort', (data) => ({
-        type: 'error',
+        channel: 'status',
         content: `Self-healing abortado: ${data.reason || 'sem motivo'}`
+      })));
+
+      eventSource.addEventListener('agent_status', onEvent('agent_status', (data) => ({
+        channel: 'status',
+        content: data.message || 'Status de execucao atualizado'
       })));
 
       eventSource.addEventListener('agent_config', onEvent('agent_config', (data) => {
@@ -1133,7 +1202,7 @@
 
     async function replayTrace(traceId) {
       if (!traceId) return;
-      appendEvent('obs', `Replay do trace ${traceId} iniciado...`);
+      appendStatus(`Replay do trace ${traceId} iniciado...`);
 
       try {
         const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
@@ -1141,7 +1210,7 @@
 
         const events = await res.json();
         if (!Array.isArray(events) || events.length === 0) {
-          appendEvent('obs', 'Nenhum evento encontrado para este trace.');
+          appendStatus('Nenhum evento encontrado para este trace.');
           return;
         }
 
@@ -1154,25 +1223,25 @@
           }
 
           if (event.type === 'thought') {
-            appendEvent('thought', payload.content || 'thought', { timestamp: event.created_at, traceId });
+            appendStatus(payload.content || 'thought', { timestamp: event.created_at });
           } else if (event.type === 'tool') {
-            appendEvent('action', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at, traceId });
+            appendStatus(`Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
           } else if (event.type === 'rag') {
-            appendEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at, traceId });
+            appendStatus(`Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
           } else if (event.type === 'gateway') {
-            appendEvent('debug', payload.summary || JSON.stringify(payload), { timestamp: event.created_at, traceId });
+            appendStatus(payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
           } else if (event.type === 'execution_summary') {
-            appendEvent('final', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at, traceId });
+            appendStatus(payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at });
           } else {
-            appendEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at, traceId });
+            appendStatus(`${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
           }
 
           await new Promise((resolve) => setTimeout(resolve, 150));
         }
 
-        appendEvent('obs', `Replay do trace ${traceId} finalizado.`);
+        appendStatus(`Replay do trace ${traceId} finalizado.`);
       } catch (err) {
-        appendEvent('error', `Erro ao reproduzir trace: ${err.message || err}`);
+        appendStatus(`Erro ao reproduzir trace: ${err.message || err}`);
       }
     }
 
@@ -1182,9 +1251,8 @@
 
       chatInput.value = '';
       chatInput.disabled = true;
-      sendBtn.disabled = true;
-      stopBtn.disabled = false;
       requestInFlight = true;
+      updateChatActionButtons();
       speechBtn.disabled = true;
       typingIndicator.style.display = 'block';
       typingIndicator.textContent = '[SYSTEM] Preparando execução...';
@@ -1212,28 +1280,27 @@
           appendEvent('final', responseText, { traceId: data.trace_id || '' });
           speak(responseText);
         } else {
-          appendEvent('error', 'Resposta vazia do backend.');
+          appendStatus('Resposta vazia do backend.');
         }
 
         if (data.mode) {
-          appendEvent('obs', `Modo efetivo: ${data.mode} | confianca: ${data.confidence ?? 'n/a'}`);
+          appendStatus(`Modo efetivo: ${data.mode} | confianca: ${data.confidence ?? 'n/a'}`);
         }
 
         await loadGraph();
         await loadConversationList();
       } catch (err) {
         if (err.name === 'AbortError') {
-          appendEvent('obs', 'Execução interrompida pelo usuário.');
+          appendStatus('Execucao interrompida pelo usuario.');
         } else {
-          appendEvent('error', `Erro ao falar com IalClaw: ${err.message || err}`);
+          appendStatus(`Erro ao falar com IalClaw: ${err.message || err}`);
         }
       } finally {
         typingIndicator.style.display = 'none';
         typingIndicator.textContent = '[SYSTEM] processando...';
         chatInput.disabled = false;
-        sendBtn.disabled = false;
-        stopBtn.disabled = true;
         requestInFlight = false;
+        updateChatActionButtons();
         activeChatRequestController = null;
         speechBtn.disabled = false;
         chatInput.focus();
@@ -1245,6 +1312,7 @@
 
       typingIndicator.style.display = 'block';
       typingIndicator.textContent = '[SYSTEM] Interrompendo execução...';
+      updateChatActionButtons();
       stopBtn.disabled = true;
 
       try {
@@ -1354,7 +1422,7 @@
         nodesData.update(processedNodes);
         edgesData.update(processedEdges);
       } catch (_err) {
-        appendEvent('error', 'Falha ao carregar grafo cognitivo.');
+        appendStatus('Falha ao carregar grafo cognitivo.');
       }
     }
 
@@ -1377,12 +1445,13 @@
 
     ttsToggleBtn.addEventListener('click', () => {
       setTtsState(!ttsEnabled);
-      appendEvent('obs', `Leitura por voz ${ttsEnabled ? 'ativada' : 'desativada'}.`);
+      appendStatus(`Leitura por voz ${ttsEnabled ? 'ativada' : 'desativada'}.`);
     });
 
     applyZoom();
     applyTheme(currentTheme);
     setTtsState(ttsEnabled);
+    updateChatActionButtons();
     initGraph();
     resetConversationView();
     loadConversationMessages(sessionId);
