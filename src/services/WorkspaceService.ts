@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { resolvePath } from '../utils/pathResolver';
 import { getTraceId } from '../shared/TraceContext';
 import { emitDebug } from '../shared/DebugBus';
 import { sanitizePath } from '../shared/sanitizePath';
@@ -21,7 +22,7 @@ export class WorkspaceService {
     private basePath: string;
 
     constructor() {
-        this.basePath = path.join(process.cwd(), 'workspace');
+        this.basePath = resolvePath('/workspace');
         this.initWorkspace();
     }
 
@@ -33,7 +34,7 @@ export class WorkspaceService {
         }
 
         for (const dir of dirs) {
-            const dirPath = path.join(this.basePath, dir);
+            const dirPath = resolvePath(`/workspace/${dir}`);
             if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
             }
@@ -41,7 +42,7 @@ export class WorkspaceService {
     }
 
     private getProjectPath(projectId: string): string {
-        return path.join(this.basePath, 'projects', projectId);
+        return resolvePath(`/workspace/projects/${projectId}`);
     }
 
     public getProjectRootPath(projectId: string): string {
@@ -49,7 +50,7 @@ export class WorkspaceService {
     }
 
     public getProjectOutputPath(projectId: string): string {
-        return path.join(this.getProjectPath(projectId), 'output');
+        return resolvePath(`/workspace/projects/${projectId}/output`);
     }
 
     public resolveProjectIdFromPath(inputPath: string): string | null {
@@ -58,7 +59,7 @@ export class WorkspaceService {
         }
 
         const normalizedInput = path.resolve(inputPath.trim());
-        const projectsRoot = path.resolve(path.join(this.basePath, 'projects'));
+        const projectsRoot = resolvePath('/workspace/projects');
 
         if (!normalizedInput.startsWith(projectsRoot)) {
             return null;
@@ -141,7 +142,7 @@ export class WorkspaceService {
     }
 
     public updateStatus(projectId: string, status: ProjectMetadata['status']) {
-        const file = path.join(this.basePath, 'projects', projectId, 'project.json');
+        const file = resolvePath(`/workspace/projects/${projectId}/project.json`);
         if (!fs.existsSync(file)) {
             throw new Error(`Metadados do projeto ${projectId} nao encontrados.`);
         }
@@ -152,7 +153,7 @@ export class WorkspaceService {
     }
 
     public readProjectMetadata(projectId: string): ProjectMetadata | null {
-        const file = path.join(this.getProjectPath(projectId), 'project.json');
+        const file = resolvePath(`/workspace/projects/${projectId}/project.json`);
         if (!fs.existsSync(file)) {
             return null;
         }
@@ -161,13 +162,13 @@ export class WorkspaceService {
     }
 
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
-        const projectPath = path.join(this.basePath, 'projects', projectId);
+        const projectPath = resolvePath(`/workspace/projects/${projectId}`);
         if (!fs.existsSync(projectPath)) {
             throw new Error(`Projeto ${projectId} nao encontrado.`);
         }
 
         const safePath = sanitizePath(filename);
-        const outputPath = path.join(projectPath, 'output', safePath);
+        const outputPath = resolvePath(`/workspace/projects/${projectId}/output/${safePath}`);
         const dir = path.dirname(outputPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -186,13 +187,13 @@ export class WorkspaceService {
     }
 
     public readArtifact(projectId: string, filename: string): string | null {
-        const projectPath = path.join(this.basePath, 'projects', projectId);
+        const projectPath = resolvePath(`/workspace/projects/${projectId}`);
         if (!fs.existsSync(projectPath)) {
             throw new Error(`Projeto ${projectId} nao encontrado.`);
         }
 
         const safePath = sanitizePath(filename);
-        const outputPath = path.join(projectPath, 'output', safePath);
+        const outputPath = resolvePath(`/workspace/projects/${projectId}/output/${safePath}`);
 
         if (!fs.existsSync(outputPath)) {
             return null;
@@ -202,7 +203,7 @@ export class WorkspaceService {
     }
 
     public listProjects(): Array<{ id: string; metadata: ProjectMetadata; files_count: number }> {
-        const projectsPath = path.join(this.basePath, 'projects');
+        const projectsPath = resolvePath('/workspace/projects');
         if (!fs.existsSync(projectsPath)) return [];
 
         const results: Array<{ id: string; metadata: ProjectMetadata; files_count: number }> = [];
@@ -212,7 +213,7 @@ export class WorkspaceService {
             const meta = this.readProjectMetadata(entry.name);
             if (!meta) continue;
 
-            const outputPath = path.join(projectsPath, entry.name, 'output');
+            const outputPath = resolvePath(`/workspace/projects/${entry.name}/output`);
             let files_count = 0;
             if (fs.existsSync(outputPath)) {
                 const countFiles = (dir: string): number => {
