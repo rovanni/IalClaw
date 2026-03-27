@@ -16,3 +16,6 @@ workspace/
 data/
 backups/
 logs/
+
+# Diretórios não utilizados pelo projeto
+.opencode/
