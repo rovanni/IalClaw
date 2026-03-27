@@ -3,6 +3,24 @@ import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 
+export type AgentProgressEvent = {
+    stage:
+    | 'loop_started'
+    | 'iteration_started'
+    | 'llm_started'
+    | 'llm_completed'
+    | 'tool_started'
+    | 'tool_completed'
+    | 'tool_failed'
+    | 'finalizing'
+    | 'completed'
+    | 'stopped'
+    | 'failed';
+    iteration?: number;
+    tool_name?: string;
+    duration_ms?: number;
+};
+
 const EXECUTION_CLAIM_PATTERNS: RegExp[] = [
     /\binstalled\b/i,
     /\binstalad[oa]\b/i,
@@ -80,6 +98,34 @@ export class AgentLoop {
 
         const messages = [...initialMessages];
         const newMessages: MessagePayload[] = [];
+        const progressCb = typeof policy?.progress?.onEvent === 'function'
+            ? policy.progress.onEvent as ((event: AgentProgressEvent) => Promise<void> | void)
+            : undefined;
+        const shouldStop = typeof policy?.control?.shouldStop === 'function'
+            ? policy.control.shouldStop as (() => boolean)
+            : undefined;
+
+        const emitProgress = async (event: AgentProgressEvent) => {
+            if (!progressCb) return;
+            try {
+                await progressCb(event);
+            } catch {
+                // Non-critical: progresso não pode interromper o loop principal
+            }
+        };
+
+        const stopIfRequested = async (): Promise<boolean> => {
+            if (!shouldStop || !shouldStop()) {
+                return false;
+            }
+
+            const stoppedAnswer = 'Execucao interrompida pelo usuario.';
+            const finalMsg: MessagePayload = { role: 'assistant', content: stoppedAnswer };
+            newMessages.push(finalMsg);
+            await emitProgress({ stage: 'stopped' });
+            this.logger.warn('loop_stopped_by_user', 'Execucao interrompida por solicitacao do usuario.');
+            return true;
+        };
 
         this.logger.info('loop_started', 'AgentLoop iniciado.', {
             initial_messages: initialMessages.length,
@@ -87,14 +133,30 @@ export class AgentLoop {
             max_tools: maxTools,
             available_tools: toolsDefinition.length
         });
+        await emitProgress({ stage: 'loop_started' });
+
+        if (await stopIfRequested()) {
+            return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+        }
 
         for (let i = 0; i < maxIter; i++) {
+            if (await stopIfRequested()) {
+                return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+            }
+
             this.logger.debug('iteration_started', 'Nova iteracao do AgentLoop.', {
                 iteration: i + 1,
                 message_count: messages.length,
                 tool_calls_count: toolCallsCount
             });
+            await emitProgress({ stage: 'iteration_started', iteration: i + 1 });
+            await emitProgress({ stage: 'llm_started', iteration: i + 1 });
             const response = await this.llm.generate(messages, toolsDefinition);
+            await emitProgress({ stage: 'llm_completed', iteration: i + 1 });
+
+            if (await stopIfRequested()) {
+                return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+            }
 
             if (response.tool_call) {
                 if (toolCallsCount >= maxTools) {
@@ -117,6 +179,7 @@ export class AgentLoop {
                         tool_name: response.tool_call.name,
                         tool_calls_count: toolCallsCount
                     });
+                    await emitProgress({ stage: 'tool_started', iteration: i + 1, tool_name: response.tool_call.name });
                     const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
                     toolEvidence.push(String(result).slice(0, 2000));
                     consecutiveToolFailures = 0;
@@ -137,6 +200,11 @@ export class AgentLoop {
                         tool_name: response.tool_call.name,
                         result_length: result.length
                     });
+                    await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: response.tool_call.name });
+
+                    if (await stopIfRequested()) {
+                        return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+                    }
 
                     continue;
                 } catch (error: any) {
@@ -144,6 +212,7 @@ export class AgentLoop {
                         iteration: i + 1,
                         tool_name: response.tool_call.name
                     });
+                    await emitProgress({ stage: 'tool_failed', iteration: i + 1, tool_name: response.tool_call.name });
                     const errMsg: MessagePayload = { role: 'tool', content: `Erro ao executar tool: ${error.message}` };
                     messages.push(errMsg);
                     newMessages.push(errMsg);
@@ -161,17 +230,20 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
+                await emitProgress({ stage: 'finalizing', iteration: i + 1 });
                 const sanitizedAnswer = this.sanitizeUserFacingAnswer(response.final_answer);
                 const safeAnswer = this.applyExecutionClaimGuard(sanitizedAnswer, toolCallsCount, toolEvidence);
                 const finalMsg: MessagePayload = { role: 'assistant', content: safeAnswer };
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
+                const duration = Date.now() - startedAt;
                 this.logger.info('loop_completed', 'AgentLoop finalizado com resposta final.', {
-                    duration_ms: Date.now() - startedAt,
+                    duration_ms: duration,
                     iterations_used: i + 1,
                     tool_calls_count: toolCallsCount,
                     answer_length: safeAnswer.length
                 });
+                await emitProgress({ stage: 'completed', iteration: i + 1, duration_ms: duration });
                 return { answer: safeAnswer, newMessages };
             }
         }
@@ -189,20 +261,24 @@ export class AgentLoop {
         });
 
         try {
+            await emitProgress({ stage: 'finalizing' });
             const fallbackResponse = await this.llm.generate(messages, []);
             const fallbackAnswer = fallbackResponse.final_answer || 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.';
             const sanitized = this.sanitizeUserFacingAnswer(fallbackAnswer);
             const finalMsg: MessagePayload = { role: 'assistant', content: sanitized };
             newMessages.push(finalMsg);
+            const duration = Date.now() - startedAt;
             this.logger.info('loop_completed_via_fallback', 'AgentLoop finalizado via fallback.', {
-                duration_ms: Date.now() - startedAt,
+                duration_ms: duration,
                 answer_length: sanitized.length
             });
+            await emitProgress({ stage: 'completed', duration_ms: duration });
             return { answer: sanitized, newMessages };
         } catch (fallbackError: any) {
             this.logger.error('loop_fallback_failed', fallbackError, 'Fallback tambem falhou.', {
                 duration_ms: Date.now() - startedAt
             });
+            await emitProgress({ stage: 'failed' });
             return { answer: 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.', newMessages };
         }
     }

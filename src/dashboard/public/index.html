@@ -664,6 +664,7 @@
           <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
           <button id="speech-btn" class="console-btn" title="Entrada por voz">🎤</button>
           <button id="tts-toggle" class="console-btn" title="Ler respostas finais">🔈</button>
+          <button id="stop-btn" class="console-btn" title="Interromper execução" disabled>Parar</button>
           <button id="send-btn" class="console-btn">Enviar</button>
         </div>
       </div>
@@ -681,6 +682,7 @@
     const sendBtn = document.getElementById('send-btn');
     const speechBtn = document.getElementById('speech-btn');
     const ttsToggleBtn = document.getElementById('tts-toggle');
+    const stopBtn = document.getElementById('stop-btn');
     const timeline = document.getElementById('timeline');
     const typingIndicator = document.getElementById('typing-indicator');
     const conversationList = document.getElementById('conversation-list');
@@ -701,12 +703,15 @@
     let ttsEnabled = localStorage.getItem('ialclaw_tts') === '1';
     let recognition = null;
     let isRecording = false;
+    let activeChatRequestController = null;
+    let requestInFlight = false;
 
     const EVENT_LABELS = {
       user: 'USER',
       thought: 'THOUGHT',
       action: 'ACTION',
       obs: 'OBS',
+      progress: 'PROGRESS',
       final: 'FINAL',
       error: 'ERROR',
       debug: 'DEBUG',
@@ -1102,6 +1107,25 @@
         };
       }));
 
+      eventSource.addEventListener('web_progress', onEvent('web_progress', (data) => {
+        const message = String(data.message || 'Processando...');
+        typingIndicator.style.display = 'block';
+        typingIndicator.textContent = `[SYSTEM] ${message}`;
+
+        const stage = String(data.stage || '');
+        if (stage === 'completed' || stage === 'failed' || stage === 'stopped') {
+          setTimeout(() => {
+            typingIndicator.style.display = 'none';
+            typingIndicator.textContent = '[SYSTEM] processando...';
+          }, 700);
+        }
+
+        return {
+          type: 'progress',
+          content: message
+        };
+      }));
+
       eventSource.onerror = () => {
         consoleStatus.textContent = 'sse: reconectando...';
       };
@@ -1159,8 +1183,11 @@
       chatInput.value = '';
       chatInput.disabled = true;
       sendBtn.disabled = true;
+      stopBtn.disabled = false;
+      requestInFlight = true;
       speechBtn.disabled = true;
       typingIndicator.style.display = 'block';
+      typingIndicator.textContent = '[SYSTEM] Preparando execução...';
 
       appendEvent('user', text);
 
@@ -1169,10 +1196,12 @@
       historyCursor = commandHistory.length;
 
       try {
+        activeChatRequestController = new AbortController();
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, sessionId })
+          body: JSON.stringify({ message: text, sessionId }),
+          signal: activeChatRequestController.signal
         });
 
         const data = await res.json().catch(() => ({}));
@@ -1193,13 +1222,43 @@
         await loadGraph();
         await loadConversationList();
       } catch (err) {
-        appendEvent('error', `Erro ao falar com IalClaw: ${err.message || err}`);
+        if (err.name === 'AbortError') {
+          appendEvent('obs', 'Execução interrompida pelo usuário.');
+        } else {
+          appendEvent('error', `Erro ao falar com IalClaw: ${err.message || err}`);
+        }
       } finally {
         typingIndicator.style.display = 'none';
+        typingIndicator.textContent = '[SYSTEM] processando...';
         chatInput.disabled = false;
         sendBtn.disabled = false;
+        stopBtn.disabled = true;
+        requestInFlight = false;
+        activeChatRequestController = null;
         speechBtn.disabled = false;
         chatInput.focus();
+      }
+    }
+
+    async function stopCurrentExecution() {
+      if (!requestInFlight) return;
+
+      typingIndicator.style.display = 'block';
+      typingIndicator.textContent = '[SYSTEM] Interrompendo execução...';
+      stopBtn.disabled = true;
+
+      try {
+        await fetch('/api/chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+      } catch (_err) {
+        // best effort
+      }
+
+      if (activeChatRequestController) {
+        activeChatRequestController.abort();
       }
     }
 
@@ -1306,6 +1365,7 @@
     }
 
     sendBtn.addEventListener('click', sendMessage);
+    stopBtn.addEventListener('click', stopCurrentExecution);
     chatInput.addEventListener('keydown', handleInputKeyboard);
     newChatBtn.addEventListener('click', startNewConversation);
     replayBtn.addEventListener('click', promptReplay);

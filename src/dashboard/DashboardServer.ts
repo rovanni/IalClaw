@@ -15,6 +15,7 @@ export class DashboardServer {
     private app: express.Express;
     private db: Database.Database;
     private controller?: AgentController;
+    private webExecutionControl = new Map<string, { cancelRequested: boolean }>();
 
     constructor(db: Database.Database) {
         this.db = db;
@@ -76,7 +77,16 @@ export class DashboardServer {
                 const { message, sessionId = 'web-session' } = req.body;
                 if (!message) return res.status(400).json({ error: 'Message payload required' });
 
-                const answer = await this.controller.handleWebMessage(sessionId, message);
+                const sessionKey = String(sessionId);
+                const control = { cancelRequested: false };
+                this.webExecutionControl.set(sessionKey, control);
+
+                const answer = await this.controller.handleWebMessageWithOptions(sessionKey, message, {
+                    shouldStop: () => {
+                        const state = this.webExecutionControl.get(sessionKey);
+                        return Boolean(state?.cancelRequested);
+                    }
+                });
                 const mode = agentConfig.getExecutionMode();
                 const confidenceByMode: Record<string, number> = {
                     strict: 0.96,
@@ -92,6 +102,22 @@ export class DashboardServer {
                     confidence: confidenceByMode[mode] ?? 0.9,
                     mode
                 });
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            } finally {
+                const sessionKey = String(req.body?.sessionId || 'web-session');
+                this.webExecutionControl.delete(sessionKey);
+            }
+        });
+
+        this.app.post('/api/chat/stop', (req, res) => {
+            try {
+                const { sessionId = 'web-session' } = req.body || {};
+                const sessionKey = String(sessionId);
+                const state = this.webExecutionControl.get(sessionKey) || { cancelRequested: false };
+                state.cancelRequested = true;
+                this.webExecutionControl.set(sessionKey, state);
+                res.json({ success: true, sessionId: sessionKey });
             } catch (err: any) {
                 res.status(500).json({ error: err.message });
             }
@@ -236,6 +262,7 @@ export class DashboardServer {
             const executionSummaryListener = (payload: any) => forwardEvent('execution_summary', payload);
             const executionModeListener = (payload: any) => forwardEvent('execution_mode', payload);
             const agentConfigListener = (payload: any) => forwardEvent('agent_config', payload);
+            const webProgressListener = (payload: any) => forwardEvent('web_progress', payload);
 
             debugBus.on('gateway', gatewayListener);
             debugBus.on('thought', thoughtListener);
@@ -250,6 +277,7 @@ export class DashboardServer {
             debugBus.on('execution_summary', executionSummaryListener);
             debugBus.on('execution_mode', executionModeListener);
             debugBus.on('agent_config', agentConfigListener);
+            debugBus.on('web_progress', webProgressListener);
 
             const heartbeat = setInterval(() => {
                 res.write(': ping\n\n');
@@ -270,6 +298,7 @@ export class DashboardServer {
                 debugBus.off('execution_summary', executionSummaryListener);
                 debugBus.off('execution_mode', executionModeListener);
                 debugBus.off('agent_config', agentConfigListener);
+                debugBus.off('web_progress', webProgressListener);
                 res.end();
             });
         });
