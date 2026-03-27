@@ -4,7 +4,7 @@
 ### OpenClaw-powered local cognitive agent
 
 <p align="center">
-  <img src="./docs/assets/logo_ialclaw.png" alt="IalClaw Logo" width="220" />
+  <img src="./docs/assets/logo_ialclaw_banner.png" alt="IalClaw Logo Banner" width="760" />
 </p>
 
 ![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Powered by OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
@@ -303,7 +303,7 @@ Contributions are welcome! Feel free to open an **issue** to discuss new ideas o
 ### Agente cognitivo local baseado em OpenClaw
 
 <p align="center">
-  <img src="./docs/assets/logo_ialclaw.png" alt="Logo do IalClaw" width="220" />
+  <img src="./docs/assets/logo_ialclaw_banner.png" alt="Banner do Logo do IalClaw" width="760" />
 </p>
 
 ![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Baseado em OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
