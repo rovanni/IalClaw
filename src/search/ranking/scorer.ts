@@ -11,6 +11,7 @@ export interface ScoredDocument {
         tagMatches: number;
         categoryMatch: boolean;
         keywordMatches: number;
+        graphRelationMatches?: number;
     };
 }
 
@@ -21,6 +22,7 @@ export interface ScoringWeights {
     categoryMatch: number;
     keywordMatch: number;
     positionBonus: number;
+    graphRelationMatch: number;
 }
 
 export const DEFAULT_WEIGHTS: ScoringWeights = {
@@ -29,7 +31,8 @@ export const DEFAULT_WEIGHTS: ScoringWeights = {
     tagMatch: 5,
     categoryMatch: 3,
     keywordMatch: 2,
-    positionBonus: 0.1
+    positionBonus: 0.1,
+    graphRelationMatch: 2
 };
 
 export class Scorer {

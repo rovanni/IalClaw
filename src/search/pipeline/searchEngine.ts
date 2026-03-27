@@ -1,10 +1,12 @@
 import { tokenize } from '../core/tokenizer';
 import { normalize, normalize as normalizeTerm } from '../core/normalizer';
 import { InvertedIndex, IndexedDocument } from '../index/invertedIndex';
-import { Scorer, ScoredDocument } from '../ranking/scorer';
+import { Scorer, ScoredDocument, ScoringWeights } from '../ranking/scorer';
 import { AutoTagger, SemanticStructure } from '../llm/autoTagger';
 import { LlmReranker } from '../llm/llmReranker';
 import { createLogger } from '../../shared/AppLogger';
+import { SemanticGraphBridge, getSemanticGraphBridge, ExpansionResult } from '../graph/semanticGraphBridge';
+import { GraphNode } from '../graph/graphAdapter';
 
 export interface SearchDocument {
     id: string;
@@ -32,6 +34,38 @@ export interface SearchOptions {
     useRerank?: boolean;
     expandSynonyms?: boolean;
     minScore?: number;
+    expandWithGraph?: boolean;
+    graphMaxTerms?: number;
+    debug?: boolean;
+}
+
+export interface SearchResult extends SearchResultBase {
+    debugInfo?: SearchDebugInfo;
+}
+
+export interface SearchResultBase {
+    doc: SearchDocument;
+    score: number;
+    matchDetails: {
+        titleMatches: number;
+        contentMatches: number;
+        tagMatches: number;
+        categoryMatch: boolean;
+        keywordMatches: number;
+        graphRelationMatches?: number;
+    };
+}
+
+export interface SearchDebugInfo {
+    expandedTerms: string[];
+    graphTerms: string[];
+    graphNodes: GraphNode[];
+    scoreBreakdown: {
+        tokenMatch: number;
+        tagMatch: number;
+        graphRelationMatch: number;
+        semanticBoost: number;
+    };
 }
 
 interface SynonymMap {
@@ -56,26 +90,31 @@ export class SearchEngine {
     private scorer: Scorer;
     private autoTagger: AutoTagger;
     private llmReranker: LlmReranker;
+    private graphBridge: SemanticGraphBridge;
     private logger = createLogger('SearchEngine');
     private synonyms: SynonymMap;
     private useCache: boolean;
     private documentCache: Map<string, SearchDocument>;
+    private enableGraphExpansion: boolean = true;
 
     constructor(options: {
         useLLM?: boolean;
         useRerank?: boolean;
         synonyms?: SynonymMap;
+        useGraphExpansion?: boolean;
     } = {}) {
         this.index = new InvertedIndex();
         this.scorer = new Scorer();
         this.autoTagger = new AutoTagger();
         this.llmReranker = new LlmReranker(options.useRerank ?? false);
+        this.graphBridge = getSemanticGraphBridge();
         this.synonyms = { ...DEFAULT_SYNONYMS, ...options.synonyms };
         this.useCache = true;
         this.documentCache = new Map();
+        this.enableGraphExpansion = options.useGraphExpansion ?? true;
     }
 
-    async indexDocument(doc: SearchDocument): Promise<void> {
+    async indexDocument(doc: SearchDocument, syncToGraph: boolean = true): Promise<void> {
         this.logger.info('indexing_document', 'Indexando documento', { docId: doc.id, title: doc.title });
 
         let semanticStructure: SemanticStructure;
@@ -109,6 +148,21 @@ export class SearchEngine {
             this.documentCache.set(doc.id, doc);
         }
 
+        if (syncToGraph && this.graphBridge.isEnabled()) {
+            try {
+                await this.graphBridge.syncDocumentRelations(
+                    doc.id,
+                    semanticStructure.tags,
+                    semanticStructure.relacoes
+                );
+            } catch (error) {
+                this.logger.warn('graph_sync_failed', 'Falha ao sincronizar com grafo', {
+                    docId: doc.id,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+
         this.logger.info('document_indexed', 'Documento indexado com sucesso', {
             docId: doc.id,
             tokensCount: semanticStructure.tokens.length,
@@ -130,10 +184,13 @@ export class SearchEngine {
             useLLM = false,
             useRerank = false,
             expandSynonyms = true,
-            minScore = 0
+            minScore = 0,
+            expandWithGraph = this.enableGraphExpansion,
+            graphMaxTerms = 20,
+            debug = false
         } = options;
 
-        this.logger.info('search_started', 'Iniciando busca', { query: query.slice(0, 50), limit });
+        this.logger.info('search_started', 'Iniciando busca', { query: query.slice(0, 50), limit, expandWithGraph });
 
         const normalizedQuery = normalize(query, { removeAccents: true });
         let queryTokens = tokenize(normalizedQuery);
@@ -141,6 +198,29 @@ export class SearchEngine {
         if (expandSynonyms) {
             queryTokens = this.expandWithSynonyms(queryTokens);
             queryTokens = Array.from(new Set(queryTokens));
+        }
+
+        let expansionResult: ExpansionResult | null = null;
+        
+        if (expandWithGraph && this.graphBridge.isEnabled()) {
+            try {
+                expansionResult = await this.graphBridge.expandWithGraph(queryTokens, {
+                    maxTerms: graphMaxTerms
+                });
+                
+                if (expansionResult.graphTerms.length > 0) {
+                    queryTokens = [...new Set([...queryTokens, ...expansionResult.graphTerms])];
+                    this.logger.debug('graph_expansion', 'Termos expandidos via grafo', {
+                        original: queryTokens.length,
+                        expanded: expansionResult.expandedTerms.length,
+                        graphTerms: expansionResult.graphTerms.length
+                    });
+                }
+            } catch (error) {
+                this.logger.warn('graph_expansion_failed', 'Falha na expansão via grafo, continuando sem ela', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
         }
 
         this.logger.debug('query_tokens', 'Tokens da query processados', { tokens: queryTokens });
@@ -157,11 +237,56 @@ export class SearchEngine {
         const searchResultsFinal: SearchResult[] = scoredDocs
             .filter(scored => scored.score >= minScore)
             .slice(offset, offset + limit)
-            .map(scored => ({
-                doc: this.getSearchDocument(scored.doc),
-                score: scored.score,
-                matchDetails: scored.matchDetails
-            }));
+            .map(scored => {
+                const baseResult: SearchResultBase = {
+                    doc: this.getSearchDocument(scored.doc),
+                    score: scored.score,
+                    matchDetails: scored.matchDetails
+                };
+
+                if (debug) {
+                    let graphRelationScore = 0;
+                    let semanticBoost = 0;
+                    let connectedNodes: GraphNode[] = [];
+
+                    if (expandWithGraph && expansionResult && this.graphBridge.isEnabled()) {
+                        const docTags = scored.doc.tags || [];
+                        const docKeywords = scored.doc.keywords || [];
+                        const docRelations = scored.doc.relacoes || [];
+
+                        graphRelationScore = this.graphBridge.calculateGraphScore(
+                            docTags,
+                            expansionResult.graphTerms,
+                            expansionResult.graphNodes
+                        );
+
+                        baseResult.matchDetails.graphRelationMatches = Math.floor(graphRelationScore);
+                        baseResult.score += graphRelationScore;
+
+                        semanticBoost = graphRelationScore * 0.1;
+                        baseResult.score += semanticBoost;
+
+                        connectedNodes = expansionResult.graphNodes;
+                    }
+
+                    return {
+                        ...baseResult,
+                        debugInfo: {
+                            expandedTerms: expansionResult?.expandedTerms || queryTokens,
+                            graphTerms: expansionResult?.graphTerms || [],
+                            graphNodes: connectedNodes,
+                            scoreBreakdown: {
+                                tokenMatch: scored.matchDetails.contentMatches,
+                                tagMatch: scored.matchDetails.tagMatches * 5,
+                                graphRelationMatch: graphRelationScore,
+                                semanticBoost
+                            }
+                        }
+                    } as SearchResult;
+                }
+
+                return baseResult as SearchResult;
+            });
 
         if (useRerank && searchResultsFinal.length > 1) {
             const reranked = await this.llmReranker.rerank(query, scoredDocs.map(s => s.doc));
@@ -222,14 +347,6 @@ export class SearchEngine {
         this.documentCache.delete(docId);
     }
 
-    getStats(): {
-        documentCount: number;
-        uniqueTerms: number;
-        avgTokensPerDoc: number;
-    } {
-        return this.index.getIndexStats();
-    }
-
     clearIndex(): void {
         this.index.clear();
         this.documentCache.clear();
@@ -240,18 +357,42 @@ export class SearchEngine {
         this.synonyms = { ...DEFAULT_SYNONYMS, ...synonyms };
     }
 
-    setWeights(weights: Partial<{
-        titleMatch: number;
-        contentMatch: number;
-        tagMatch: number;
-        categoryMatch: number;
-        keywordMatch: number;
-    }>): void {
+    setWeights(weights: Partial<ScoringWeights>): void {
         this.scorer.setWeights(weights);
     }
 
     setRerankEnabled(enabled: boolean): void {
         this.llmReranker.setEnabled(enabled);
+    }
+
+    setGraphExpansionEnabled(enabled: boolean): void {
+        this.enableGraphExpansion = enabled;
+        this.graphBridge.setEnabled(enabled);
+    }
+
+    isGraphExpansionEnabled(): boolean {
+        return this.enableGraphExpansion && this.graphBridge.isEnabled();
+    }
+
+    getGraphBridge(): SemanticGraphBridge {
+        return this.graphBridge;
+    }
+
+    getStats(): {
+        documentCount: number;
+        uniqueTerms: number;
+        avgTokensPerDoc: number;
+        graphEnabled: boolean;
+        graphCacheStats: {
+            expansionCacheSize: number;
+            enrichmentCacheSize: number;
+        };
+    } {
+        return {
+            ...this.index.getIndexStats(),
+            graphEnabled: this.isGraphExpansionEnabled(),
+            graphCacheStats: this.graphBridge.getCacheStats()
+        };
     }
 }
 
@@ -259,6 +400,7 @@ export function createSearchEngine(options?: {
     useLLM?: boolean;
     useRerank?: boolean;
     synonyms?: SynonymMap;
+    useGraphExpansion?: boolean;
 }): SearchEngine {
     return new SearchEngine(options);
 }

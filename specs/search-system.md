@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-Sistema de busca semântica baseado em **indexação inteligente** sem uso de embeddings ou vector databases. Implementa busca por índice invertido com re-ranking opcional via LLM.
+Sistema de busca semântica híbrido que combina **indexação inteligente** com **expansão semântica via grafo cognitivo**. Implementa busca por índice invertido com re-ranking opcional via LLM e integração com o Graph-RAG.
 
 ## Arquitetura
 
@@ -21,6 +21,9 @@ src/search/
 │   ├── promptBuilder.ts    # Templates seguros
 │   ├── autoTagger.ts       # Geração de estrutura semântica
 │   └── llmReranker.ts      # Re-ranking com LLM
+├── graph/
+│   ├── graphAdapter.ts     # Adapter para CognitiveMemory
+│   └── semanticGraphBridge.ts # Ponte semântica search↔graph
 └── index.ts                # Exports
 ```
 
@@ -147,20 +150,104 @@ const results = await engine.search('machine learning', {
 });
 ```
 
-## Fluxo de Busca
+## Sistema Híbrido Search + Graph-RAG
+
+O sistema agora integra busca semântica com o grafo cognitivo para fornecer resultados mais rico semanticamente.
+
+### Componentes de Integração
+
+#### 1. Graph Adapter (`graph/graphAdapter.ts`)
+
+Adapter que expõe interface simples para o CognitiveMemory:
+
+```typescript
+interface GraphAdapterInterface {
+  getNodeByTerm(term: string): Promise<GraphNode | null>;
+  getRelatedNodes(term: string): Promise<GraphNode[]>;
+  getNodeEmbedding(term: string): Promise<number[] | null>;
+  getRelatedTerms(term: string): Promise<string[]>;
+  syncTagsToGraph(tags: string[], docId: string): Promise<void>;
+  syncRelationsToGraph(relations: string[], docId: string): Promise<void>;
+}
+```
+
+#### 2. Semantic Graph Bridge (`graph/semanticGraphBridge.ts`)
+
+Ponte entre busca e grafo cognitivo:
+
+```typescript
+class SemanticGraphBridge {
+  // Expande termos via relações do grafo
+  expandWithGraph(terms: string[], options): Promise<ExpansionResult>;
+  
+  // Enriquece documento com dados do grafo
+  enrichDocument(docId, docTags, docKeywords): Promise<GraphEnrichmentResult>;
+  
+  // Calcula score baseado em conexões
+  calculateGraphScore(docTags, graphTerms, graphNodes): number;
+  
+  // Sincroniza tags/relações do autoTagger para o grafo
+  syncDocumentRelations(docId, tags, relations): Promise<void>;
+}
+```
+
+### Fluxo de Busca Híbrido
 
 ```
 1. Normalizar query
    ↓
 2. Expandir sinônimos (local)
    ↓
-3. Buscar no índice invertido
+3. EXPANSÃO VIA GRAFO (NOVO)
+   - Para cada termo, buscar nós relacionados no grafo
+   - Adicionar termos relacionados à query
+   - Evitar duplicação com cache
    ↓
-4. Calcular scores (title > tag > keyword > content)
+4. Buscar no índice invertido
    ↓
-5. Opcional: Re-ranking com LLM
+5. Calcular scores híbridos:
+   - titleMatch * 1
+   - tagMatch * 3
+   - graphRelationMatch * 2
+   - semanticBoost (baseado em conexões)
    ↓
-6. Retornar top resultados
+6. Opcional: Re-ranking com LLM
+   ↓
+7. Retornar top resultados
+```
+
+### Configuração de Pesos
+
+```typescript
+interface ScoringWeights {
+  titleMatch: number;        // default: 10
+  contentMatch: number;      // default: 1
+  tagMatch: number;          // default: 5
+  categoryMatch: number;    // default: 3
+  keywordMatch: number;     // default: 2
+  positionBonus: number;    // default: 0.1
+  graphRelationMatch: number; // default: 2 (NOVO)
+}
+```
+
+### Modo Debug
+
+Para debugging, adicione `debug: true` na busca:
+
+```typescript
+const results = await engine.search('machine learning', { debug: true });
+
+results.forEach(r => {
+  console.log(r.debugInfo.expandedTerms);   // Termos expandidos
+  console.log(r.debugInfo.graphTerms);       // Termos do grafo
+  console.log(r.debugInfo.scoreBreakdown);   // Detalhamento de scores
+  // {
+  //   tokenMatch: 5,
+  //   tagMatch: 15,
+  //   graphRelationMatch: 4,
+  //   semanticBoost: 0.4
+  // }
+});
 ```
 
 ## Sinônimos Padrão
