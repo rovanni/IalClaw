@@ -28,6 +28,8 @@
       --accent: #1a73e8;
       --accent-hover: #174ea6;
       --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+      --shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.18);
+      --overlay-bg: rgba(15, 23, 42, 0.38);
 
       --stat-ok: #1e8e3e;
       --stat-warn: #f29900;
@@ -52,6 +54,8 @@
       --accent: #8ab4f8;
       --accent-hover: #aecbfa;
       --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+      --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.46);
+      --overlay-bg: rgba(2, 6, 23, 0.7);
 
       --stat-ok: #81c995;
       --stat-warn: #fde293;
@@ -322,12 +326,6 @@
       min-height: 0;
     }
 
-    #graph-panel {
-      height: 36%;
-      min-height: 220px;
-      max-height: 420px;
-    }
-
     #mynetwork-container {
       flex: 1;
       background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
@@ -358,6 +356,87 @@
     #timeline-panel {
       flex: 1;
       min-height: 0;
+    }
+
+    .memory-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-bg);
+      z-index: 120;
+    }
+
+    .memory-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(420px, 92vw);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-lg);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+      z-index: 130;
+    }
+
+    .memory-drawer.is-open {
+      transform: translateX(0);
+    }
+
+    .memory-drawer-header {
+      padding: 14px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .memory-drawer-title {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .memory-drawer-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+
+    .memory-drawer-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .memory-drawer-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 12px;
+    }
+
+    .memory-empty {
+      display: none;
+      padding: 18px;
+      border: 1px dashed var(--border-color);
+      border-radius: 12px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.55;
+      background: rgba(95, 99, 104, 0.04);
+    }
+
+    .memory-empty.is-visible {
+      display: block;
     }
 
     .interaction-layout {
@@ -658,9 +737,6 @@
         min-width: 240px;
       }
 
-      #graph-panel {
-        height: 32%;
-      }
     }
 
     @media (max-width: 960px) {
@@ -672,11 +748,6 @@
         width: 100%;
         min-width: 0;
         max-height: 260px;
-      }
-
-      #graph-panel {
-        height: 220px;
-        max-height: none;
       }
 
       .interaction-layout {
@@ -716,13 +787,14 @@
         <option value="balanced" selected>Equilibrado</option>
         <option value="aggressive">Livre</option>
       </select>
+      <button class="zoom-btn" id="memory-toggle-btn" type="button">ðŸ§  MemÃ³ria</button>
       <a href="/simple" class="zoom-btn">Modo simples</a>
       <a href="/help" class="zoom-btn">Ajuda</a>
       <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
       <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
       <span id="zoom-level" style="color: var(--text-muted); width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
       <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
-      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">🌓 Theme</button>
+      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">ðŸŒ“ Theme</button>
     </div>
 
     <div>|</div>
@@ -737,56 +809,66 @@
           <span>Conversas</span>
           <span id="conversation-count">0</span>
         </div>
-        <div class="sidebar-subtitle">Continue uma sessão anterior ou comece uma nova conversa.</div>
+        <div class="sidebar-subtitle">Continue uma sessÃ£o anterior ou comece uma nova conversa.</div>
         <button class="sidebar-btn btn-primary" id="new-chat-btn">+ Nova conversa</button>
       </div>
       <div id="conversation-list">
-        <div class="conversation-empty">Carregando histórico...</div>
+        <div class="conversation-empty">Carregando histÃ³rico...</div>
       </div>
     </aside>
 
     <div id="main-col">
-      <div class="panel" id="graph-panel">
-        <div class="panel-header">
-          <span>Memoria Cognitiva</span>
-          <button class="zoom-btn btn-primary" id="replay-btn">▶ Replay por Trace</button>
-        </div>
-        <div id="mynetwork-container">
-          <div id="mynetwork"></div>
-        </div>
-      </div>
-
       <div class="panel" id="timeline-panel">
         <div class="panel-header">
-          <span>Interação com o Agente</span>
+          <span>InteraÃ§Ã£o com o Agente</span>
           <span id="console-status">sse: conectando...</span>
         </div>
         <div class="interaction-layout">
           <section class="chat-panel">
             <div class="chat-panel-header">
               <div class="chat-panel-title">Conversa</div>
-              <div class="chat-panel-subtitle">Somente mensagens do usuário e respostas finais ficam aqui.</div>
+              <div class="chat-panel-subtitle">Somente mensagens do usuÃ¡rio e respostas finais ficam aqui.</div>
             </div>
             <div id="chat-container"></div>
             <div id="typing-indicator">[SYSTEM] processando...</div>
           </section>
           <aside class="log-panel">
             <div class="log-panel-header">
-              <div class="log-panel-title">Logs de Execução</div>
-              <div class="log-panel-subtitle">Progresso, observações e ferramentas em execução.</div>
+              <div class="log-panel-title">Logs de ExecuÃ§Ã£o</div>
+              <div class="log-panel-subtitle">Progresso, observaÃ§Ãµes e ferramentas em execuÃ§Ã£o.</div>
             </div>
             <div id="log-container"></div>
           </aside>
         </div>
         <div class="input-area">
           <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
-          <button id="speech-btn" class="console-btn" title="Entrada por voz">🎤</button>
-          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">🔈</button>
+          <button id="speech-btn" class="console-btn" title="Entrada por voz">ðŸŽ¤</button>
+          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">ðŸ”ˆ</button>
           <button id="action-btn" class="console-btn" title="Enviar mensagem">Enviar</button>
         </div>
       </div>
     </div>
   </div>
+
+  <div id="memory-drawer-backdrop" class="memory-drawer-backdrop" hidden></div>
+  <aside id="memory-drawer" class="memory-drawer" aria-hidden="true">
+    <div class="memory-drawer-header">
+      <div>
+        <div class="memory-drawer-title">Memoria Cognitiva</div>
+        <div class="memory-drawer-subtitle">Visualizacao sob demanda para nao competir com o chat.</div>
+      </div>
+      <div class="memory-drawer-actions">
+        <button class="zoom-btn btn-primary" id="replay-btn" type="button">Replay por Trace</button>
+        <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memoria">Fechar</button>
+      </div>
+    </div>
+    <div class="memory-drawer-body">
+      <div id="memory-empty" class="memory-empty">Nenhuma memória ativa</div>
+      <div id="mynetwork-container">
+        <div id="mynetwork"></div>
+      </div>
+    </div>
+  </aside>
 
   <script type="text/javascript">
     let sessionId = localStorage.getItem('ialclaw_session_id');
@@ -806,6 +888,12 @@
     const conversationCount = document.getElementById('conversation-count');
     const newChatBtn = document.getElementById('new-chat-btn');
     const replayBtn = document.getElementById('replay-btn');
+    const memoryToggleBtn = document.getElementById('memory-toggle-btn');
+    const memoryCloseBtn = document.getElementById('memory-close-btn');
+    const memoryDrawer = document.getElementById('memory-drawer');
+    const memoryDrawerBackdrop = document.getElementById('memory-drawer-backdrop');
+    const memoryEmpty = document.getElementById('memory-empty');
+    const memoryNetworkContainer = document.getElementById('mynetwork-container');
     const executionModeSelect = document.getElementById('execution-mode');
     const modeBadge = document.getElementById('mode-badge');
     const modeBehavior = document.getElementById('mode-behavior');
@@ -822,6 +910,8 @@
     let isRecording = false;
     let activeChatRequestController = null;
     let requestInFlight = false;
+    let memoryDrawerOpen = false;
+    let latestGraphSnapshot = { nodes: [], edges: [] };
 
     function updateChatActionButtons() {
       const state = IalclawDashboardUiCore.getActionButtonState(requestInFlight);
@@ -902,7 +992,7 @@
         const traceBtn = document.createElement('button');
         traceBtn.className = 'trace-btn';
         traceBtn.type = 'button';
-        traceBtn.textContent = '🔍 Ver execucao';
+        traceBtn.textContent = 'ðŸ” Ver execucao';
         traceBtn.addEventListener('click', () => replayTrace(traceId));
         row.appendChild(traceBtn);
       }
@@ -960,9 +1050,64 @@
       applyZoom();
     }
 
+    function ensureGraphInitialized() {
+      if (network) return;
+      const container = document.getElementById('mynetwork');
+      network = new vis.Network(container, { nodes: nodesData, edges: edgesData }, getGraphOptions());
+    }
+
+    function renderMemoryState() {
+      const hasNodes = Array.isArray(latestGraphSnapshot.nodes) && latestGraphSnapshot.nodes.length > 0;
+      memoryEmpty.classList.toggle('is-visible', !hasNodes);
+      memoryNetworkContainer.hidden = !hasNodes;
+
+      if (!hasNodes) {
+        nodesData.clear();
+        edgesData.clear();
+        return;
+      }
+
+      if (!memoryDrawerOpen) {
+        return;
+      }
+
+      ensureGraphInitialized();
+
+      nodesData.clear();
+      edgesData.clear();
+      nodesData.update(latestGraphSnapshot.nodes);
+      edgesData.update(latestGraphSnapshot.edges);
+      network.fit({
+        animation: { duration: 250, easingFunction: 'easeInOutQuad' }
+      });
+    }
+
+    function openMemoryDrawer() {
+      memoryDrawerOpen = true;
+      memoryDrawer.classList.add('is-open');
+      memoryDrawer.setAttribute('aria-hidden', 'false');
+      memoryDrawerBackdrop.hidden = false;
+      renderMemoryState();
+    }
+
+    function closeMemoryDrawer() {
+      memoryDrawerOpen = false;
+      memoryDrawer.classList.remove('is-open');
+      memoryDrawer.setAttribute('aria-hidden', 'true');
+      memoryDrawerBackdrop.hidden = true;
+    }
+
+    function toggleMemoryDrawer() {
+      if (memoryDrawerOpen) {
+        closeMemoryDrawer();
+      } else {
+        openMemoryDrawer();
+      }
+    }
+
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? '🌙 Escuro' : '☀️ Claro';
+      document.getElementById('theme-toggle-btn').innerText = theme === 'light' ? 'ðŸŒ™ Escuro' : 'â˜€ï¸ Claro';
       if (network) network.setOptions(getGraphOptions());
     }
 
@@ -976,7 +1121,7 @@
       ttsEnabled = enabled;
       localStorage.setItem('ialclaw_tts', enabled ? '1' : '0');
       ttsToggleBtn.classList.toggle('active', enabled);
-      ttsToggleBtn.textContent = enabled ? '🔊' : '🔈';
+      ttsToggleBtn.textContent = enabled ? 'ðŸ”Š' : 'ðŸ”ˆ';
     }
 
     function speak(text) {
@@ -1005,7 +1150,7 @@
       recognition.onstart = () => {
         isRecording = true;
         speechBtn.classList.add('recording');
-        speechBtn.textContent = '🔴';
+        speechBtn.textContent = 'ðŸ”´';
         appendStatus('Captura de voz iniciada.');
       };
 
@@ -1024,7 +1169,7 @@
       recognition.onend = () => {
         isRecording = false;
         speechBtn.classList.remove('recording');
-        speechBtn.textContent = '🎤';
+        speechBtn.textContent = 'ðŸŽ¤';
       };
 
       speechBtn.addEventListener('click', () => {
@@ -1367,7 +1512,7 @@
       updateChatActionButtons();
       speechBtn.disabled = true;
       typingIndicator.style.display = 'block';
-      typingIndicator.textContent = '[SYSTEM] Preparando execução...';
+      typingIndicator.textContent = '[SYSTEM] Preparando execuÃ§Ã£o...';
 
       routeEvent('user', text);
 
@@ -1423,7 +1568,7 @@
       if (!requestInFlight) return;
 
       typingIndicator.style.display = 'block';
-      typingIndicator.textContent = '[SYSTEM] Interrompendo execução...';
+      typingIndicator.textContent = '[SYSTEM] Interrompendo execuÃ§Ã£o...';
       updateChatActionButtons();
       actionBtn.disabled = true;
 
@@ -1513,11 +1658,6 @@
       };
     }
 
-    function initGraph() {
-      const container = document.getElementById('mynetwork');
-      network = new vis.Network(container, { nodes: nodesData, edges: edgesData }, getGraphOptions());
-    }
-
     async function loadGraph() {
       try {
         const res = await fetch('/api/graph');
@@ -1540,8 +1680,12 @@
           id: edge.id || `${edge.source || edge.from}-${edge.target || edge.to}-${edge.relation || edge.label}`
         }));
 
-        nodesData.update(processedNodes);
-        edgesData.update(processedEdges);
+        latestGraphSnapshot = {
+          nodes: processedNodes,
+          edges: processedEdges
+        };
+
+        renderMemoryState();
       } catch (_err) {
         appendStatus('Falha ao carregar grafo cognitivo.');
       }
@@ -1557,6 +1701,9 @@
     chatInput.addEventListener('keydown', handleInputKeyboard);
     newChatBtn.addEventListener('click', startNewConversation);
     replayBtn.addEventListener('click', promptReplay);
+    memoryToggleBtn.addEventListener('click', toggleMemoryDrawer);
+    memoryCloseBtn.addEventListener('click', closeMemoryDrawer);
+    memoryDrawerBackdrop.addEventListener('click', closeMemoryDrawer);
 
     executionModeSelect.addEventListener('change', (event) => {
       const previousMode = modeBadge.dataset.mode || 'balanced';
@@ -1572,7 +1719,6 @@
     applyTheme(currentTheme);
     setTtsState(ttsEnabled);
     updateChatActionButtons();
-    initGraph();
     resetConversationView();
     loadConversationMessages(sessionId);
     loadConversationList();
@@ -1580,6 +1726,12 @@
     loadGraph();
     connectSSE();
     handleSpeechInput();
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && memoryDrawerOpen) {
+        closeMemoryDrawer();
+      }
+    });
 
     setInterval(loadGraph, 10000);
   </script>
