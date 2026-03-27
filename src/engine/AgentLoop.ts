@@ -1045,7 +1045,39 @@ Considere:
         return scores.sort((a, b) => b.score - a.score);
     }
 
-    private static readonly EXPLORATION_RATE = 0.2;
+    private static readonly EXPLORATION_RATE_HIGH = 0.4;
+    private static readonly EXPLORATION_RATE_MEDIUM = 0.2;
+    private static readonly EXPLORATION_RATE_LOW = 0.05;
+    private static readonly CONFIDENCE_HIGH = 0.8;
+    private static readonly CONFIDENCE_MEDIUM = 0.5;
+
+    private getDecisionConfidence(stepType: string, scores: ToolScore[]): number {
+        if (scores.length === 0) {
+            return 0;
+        }
+
+        const bestScore = scores[0];
+        if (!bestScore) {
+            return 0;
+        }
+
+        const totalAttempts = bestScore.successes + bestScore.failures;
+        if (totalAttempts === 0) {
+            return 0;
+        }
+
+        return bestScore.successes / totalAttempts;
+    }
+
+    private getAdaptiveExplorationRate(confidence: number): number {
+        if (confidence >= AgentLoop.CONFIDENCE_HIGH) {
+            return AgentLoop.EXPLORATION_RATE_LOW;
+        } else if (confidence >= AgentLoop.CONFIDENCE_MEDIUM) {
+            return AgentLoop.EXPLORATION_RATE_MEDIUM;
+        } else {
+            return AgentLoop.EXPLORATION_RATE_HIGH;
+        }
+    }
 
     private getBestToolForStep(stepDescription: string, candidateTools: string[]): string | null {
         const stepType = this.getStepType(stepDescription);
@@ -1055,7 +1087,10 @@ Considere:
             return null;
         }
         
-        const shouldExplore = candidateTools.length > 1 && Math.random() < AgentLoop.EXPLORATION_RATE;
+        const decisionConfidence = this.getDecisionConfidence(stepType, scores);
+        const explorationRate = this.getAdaptiveExplorationRate(decisionConfidence);
+        
+        const shouldExplore = candidateTools.length > 1 && Math.random() < explorationRate;
         
         if (shouldExplore) {
             const validAlternatives = candidateTools.filter(tool => {
@@ -1065,7 +1100,7 @@ Considere:
             
             if (validAlternatives.length > 1) {
                 const randomTool = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
-                this.logger.info('tool_selection', `[EXPLORATION] tentando tool alternativa: ${randomTool} para ${stepType}`);
+                this.logger.info('tool_selection', `[EXPLORATION] confidence=${decisionConfidence.toFixed(2)} rate=${explorationRate} escolhendo tool alternativa: ${randomTool} para ${stepType}`);
                 return randomTool;
             }
         }
