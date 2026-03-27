@@ -49,7 +49,6 @@ dotenv.config({ debug: false });
     console.log(`  modelo:  ${GREEN}${model}${RESET}`);
     console.log('========================================================');
     console.log('');
-    console.log('');    
 }
 
 const logger = createLogger('Startup');
