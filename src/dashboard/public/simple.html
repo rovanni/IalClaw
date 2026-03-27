@@ -268,118 +268,146 @@
       min-width: 0;
     }
 
+    .interaction-layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.9fr);
+      gap: 0;
+    }
+
+    .chat-column,
+    .log-column {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .chat-column {
+      border-right: 1px solid var(--border-color);
+      background: linear-gradient(180deg, rgba(26, 115, 232, 0.04) 0%, transparent 110px);
+    }
+
+    .log-column {
+      background: rgba(95, 99, 104, 0.04);
+    }
+
+    .section-header {
+      padding: 12px var(--space-md);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .section-title {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .section-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
     #chat-messages {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding: var(--space-md);
-      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
-      font-size: 0.9rem;
-      line-height: 1.45;
-      background: linear-gradient(180deg, rgba(128, 128, 128, 0.06) 0%, transparent 70px);
-    }
-
-    .status-panel {
-      border-top: 1px solid var(--border-color);
-      background: var(--bg-surface);
-    }
-
-    .status-panel-header {
-      padding: 8px var(--space-md);
-      font-size: var(--font-xs);
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      border-bottom: 1px solid var(--border-color);
+      padding: 18px var(--space-md) 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
 
     #status-log {
-      max-height: 130px;
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
-      padding: 8px var(--space-md);
+      padding: 12px var(--space-md);
       font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
       font-size: var(--font-xs);
       line-height: 1.4;
       color: var(--text-muted);
+      background: rgba(95, 99, 104, 0.04);
     }
 
     .status-line {
-      padding: 3px 0;
+      padding: 8px 0;
       border-bottom: 1px dashed rgba(128, 128, 128, 0.12);
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
 
-    .event-line {
+    .chat-message {
       display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      padding: 5px 0;
-      border-bottom: 1px dashed rgba(128, 128, 128, 0.15);
-      word-break: break-word;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 86%;
     }
 
-    .event-time {
+    .chat-user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .chat-final {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .chat-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       color: var(--text-muted);
-      min-width: 70px;
-      opacity: 0.9;
       font-size: var(--font-xs);
-      padding-top: 2px;
       user-select: none;
     }
 
-    .event-body {
-      flex: 1;
+    .chat-tag {
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .chat-bubble {
       min-width: 0;
+      padding: 14px 16px;
+      border-radius: 18px;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      line-height: 1.55;
+      font-size: var(--font-md);
+      background: var(--bg-surface);
+      border: 1px solid rgba(26, 115, 232, 0.08);
     }
 
-    .event-tag {
-      font-weight: 700;
-      margin-right: 8px;
-      letter-spacing: 0.01em;
+    .chat-user .chat-bubble {
+      background: linear-gradient(180deg, rgba(26, 115, 232, 0.12) 0%, rgba(26, 115, 232, 0.06) 100%);
+      border-bottom-right-radius: 6px;
     }
 
-    .event-user .event-tag {
+    .chat-final .chat-bubble {
+      border-bottom-left-radius: 6px;
+    }
+
+    .chat-user .chat-tag {
       color: var(--chat-user-text);
     }
 
-    .event-thought .event-tag {
-      color: #681da8;
-    }
-
-    .event-action .event-tag {
-      color: #b06000;
-    }
-
-    .event-obs .event-tag {
-      color: #0d652d;
-    }
-
-    .event-final .event-tag {
+    .chat-final .chat-tag {
       color: var(--accent);
     }
 
-    .event-error .event-tag {
-      color: #c5221f;
-    }
-
-    .event-debug .event-tag {
-      color: var(--text-muted);
-    }
-
-    .event-rag .event-tag {
-      color: #c5221f;
-    }
-
-    .event-progress .event-tag {
-      color: var(--accent-hover);
-    }
-
     .trace-btn {
-      margin-left: 10px;
+      align-self: flex-start;
       background: transparent;
       border: 1px solid var(--border-color);
       color: var(--accent);
@@ -392,11 +420,15 @@
 
     #typing-indicator {
       display: none;
-      padding: 0 var(--space-md) var(--space-sm);
+      margin: 0 var(--space-md) var(--space-sm);
+      padding: 10px 12px;
       color: var(--text-muted);
       font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
       font-size: var(--font-xs);
       flex-shrink: 0;
+      background: rgba(95, 99, 104, 0.06);
+      border: 1px dashed rgba(95, 99, 104, 0.22);
+      border-radius: 12px;
     }
 
     .starter-list {
@@ -446,7 +478,7 @@
       box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
     }
 
-    #send-btn {
+    #action-btn {
       background: var(--accent);
       color: #fff;
       border: none;
@@ -459,8 +491,7 @@
     }
 
     #speech-btn,
-    #tts-toggle,
-    #stop-btn {
+    #tts-toggle {
       background: transparent;
       color: var(--text-main);
       border: 1px solid var(--border-color);
@@ -482,10 +513,14 @@
       background: var(--bg-input);
     }
 
-    #send-btn:disabled {
+    #action-btn:disabled {
       background: var(--border-color);
       color: var(--text-muted);
       cursor: not-allowed;
+    }
+
+    #action-btn.is-stop {
+      background: #c5221f;
     }
 
     @media (max-width: 980px) {
@@ -503,6 +538,23 @@
         width: 100%;
         min-width: 0;
         max-height: 240px;
+      }
+
+      .interaction-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .chat-column {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      #status-log {
+        max-height: 180px;
+      }
+
+      .chat-message {
+        max-width: 100%;
       }
     }
   </style>
@@ -548,10 +600,21 @@
         <span>Conversa</span>
         <span id="status-label">Pronto</span>
       </div>
-      <div id="chat-messages"></div>
-      <div class="status-panel">
-        <div class="status-panel-header">Status de execução</div>
-        <div id="status-log"></div>
+      <div class="interaction-layout">
+        <div class="chat-column">
+          <div class="section-header">
+            <div class="section-title">Chat</div>
+            <div class="section-subtitle">Somente mensagens do usuário e respostas finais aparecem aqui.</div>
+          </div>
+          <div id="chat-messages"></div>
+        </div>
+        <aside class="log-column">
+          <div class="section-header">
+            <div class="section-title">Logs</div>
+            <div class="section-subtitle">Progresso, observações e ferramentas em execução.</div>
+          </div>
+          <div id="status-log"></div>
+        </aside>
       </div>
       <div id="typing-indicator">IalClaw está pensando...</div>
       <div class="starter-list">
@@ -563,8 +626,7 @@
         <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
         <button id="speech-btn" type="button" title="Entrada por voz">🎤</button>
         <button id="tts-toggle" type="button" title="Ler respostas finais">🔈</button>
-        <button id="stop-btn" type="button" title="Interromper execução" disabled>Parar</button>
-        <button id="send-btn" type="button">Enviar</button>
+        <button id="action-btn" type="button">Enviar</button>
       </div>
     </section>
   </main>
@@ -588,17 +650,16 @@
 
     function updateChatActionButtons() {
       const isActive = pendingRequest;
-      sendBtn.style.display = isActive ? 'none' : 'inline-flex';
-      stopBtn.style.display = isActive ? 'inline-flex' : 'none';
-      sendBtn.disabled = isActive || chatInput.disabled;
-      stopBtn.disabled = !isActive;
+      actionBtn.textContent = isActive ? 'Parar' : 'Enviar';
+      actionBtn.title = isActive ? 'Interromper execução' : 'Enviar mensagem';
+      actionBtn.classList.toggle('is-stop', isActive);
+      actionBtn.disabled = chatInput.disabled && !isActive;
     }
 
     const chatInput = document.getElementById('chat-input');
-    const sendBtn = document.getElementById('send-btn');
+    const actionBtn = document.getElementById('action-btn');
     const speechBtn = document.getElementById('speech-btn');
     const ttsToggleBtn = document.getElementById('tts-toggle');
-    const stopBtn = document.getElementById('stop-btn');
     const timeline = document.getElementById('chat-messages');
     const statusLog = document.getElementById('status-log');
     const typing = document.getElementById('typing-indicator');
@@ -639,38 +700,43 @@
 
     function appendEvent(type, content, meta = {}) {
       const normalizedType = EVENT_LABELS[type] ? type : 'obs';
-      const row = document.createElement('div');
-      row.className = `event-line event-${normalizedType}`;
+      if (normalizedType !== 'user' && normalizedType !== 'final') {
+        appendStatus(`[${EVENT_LABELS[normalizedType]}] ${eventContentToString(content)}`, meta);
+        return;
+      }
 
-      const timeEl = document.createElement('div');
-      timeEl.className = 'event-time';
-      timeEl.textContent = nowLabel(meta.timestamp);
+      const row = document.createElement('article');
+      row.className = `chat-message chat-${normalizedType}`;
 
-      const bodyEl = document.createElement('div');
-      bodyEl.className = 'event-body';
+      const metaEl = document.createElement('div');
+      metaEl.className = 'chat-meta';
 
       const tagEl = document.createElement('span');
-      tagEl.className = 'event-tag';
-      tagEl.textContent = `[${EVENT_LABELS[normalizedType]}]`;
+      tagEl.className = 'chat-tag';
+      tagEl.textContent = EVENT_LABELS[normalizedType];
 
-      const textEl = document.createElement('span');
-      textEl.textContent = eventContentToString(content);
+      const timeEl = document.createElement('span');
+      timeEl.textContent = nowLabel(meta.timestamp);
 
-      bodyEl.appendChild(tagEl);
-      bodyEl.appendChild(textEl);
+      const bubbleEl = document.createElement('div');
+      bubbleEl.className = 'chat-bubble';
+      bubbleEl.textContent = eventContentToString(content);
+
+      metaEl.appendChild(tagEl);
+      metaEl.appendChild(timeEl);
+      row.appendChild(metaEl);
+      row.appendChild(bubbleEl);
 
       const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
-      if (traceId && (normalizedType === 'final' || normalizedType === 'error' || normalizedType === 'debug')) {
+      if (traceId && normalizedType === 'final') {
         const traceBtn = document.createElement('button');
         traceBtn.className = 'trace-btn';
         traceBtn.type = 'button';
         traceBtn.textContent = '🔍 Ver execucao';
         traceBtn.addEventListener('click', () => replayTrace(traceId));
-        bodyEl.appendChild(traceBtn);
+        row.appendChild(traceBtn);
       }
 
-      row.appendChild(timeEl);
-      row.appendChild(bodyEl);
       timeline.appendChild(row);
       timeline.scrollTop = timeline.scrollHeight;
 
@@ -1152,7 +1218,7 @@
       typing.textContent = '[SYSTEM] Interrompendo execução...';
       statusLabel.innerText = 'Interrompendo';
       updateChatActionButtons();
-      stopBtn.disabled = true;
+      actionBtn.disabled = true;
 
       try {
         await fetch('/api/chat/stop', {
@@ -1172,6 +1238,7 @@
     function handleInputKeyboard(event) {
       if (event.key === 'Enter') {
         event.preventDefault();
+        if (pendingRequest) return;
         sendMessage();
         return;
       }
@@ -1192,8 +1259,13 @@
       }
     }
 
-    sendBtn.addEventListener('click', () => sendMessage());
-    stopBtn.addEventListener('click', stopCurrentExecution);
+    actionBtn.addEventListener('click', () => {
+      if (pendingRequest) {
+        stopCurrentExecution();
+        return;
+      }
+      sendMessage();
+    });
     chatInput.addEventListener('keydown', handleInputKeyboard);
     newChatBtn.addEventListener('click', startNewConversation);
     themeToggleBtn.addEventListener('click', toggleTheme);
