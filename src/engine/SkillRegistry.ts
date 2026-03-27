@@ -120,18 +120,19 @@ export class SkillRegistry {
         });
 
         /**
-         * write_skill_file: grava um arquivo dentro de skills/public/<skillName>/.
-         * Nome da skill e nome do arquivo são sanitizados contra path traversal.
+         * write_skill_file: grava um arquivo dentro de skills/temp/<skillName>/ (default).
+         * Pode escrever em public apenas quando target_dir="public" for solicitado explicitamente.
          */
         this.register({
             name: "write_skill_file",
-            description: "Salva um arquivo (SKILL.md, skill.json ou README.md) em skills/public/<skillName>/. Usado pelo skill-installer para registrar uma skill baixada.",
+            description: "Salva um arquivo da skill em staging seguro (skills/temp/<skillName>/). Use target_dir='public' apenas em casos especiais.",
             parameters: {
                 type: "object",
                 properties: {
                     skill_name: { type: "string", description: "Nome da skill — apenas letras, números e hífens" },
                     filename:   { type: "string", description: "Nome do arquivo: SKILL.md | skill.json | README.md" },
-                    content:    { type: "string", description: "Conteúdo completo do arquivo" }
+                    content:    { type: "string", description: "Conteúdo completo do arquivo" },
+                    target_dir: { type: "string", description: "temp (default) ou public" }
                 },
                 required: ["skill_name", "filename", "content"]
             }
@@ -145,11 +146,48 @@ export class SkillRegistry {
                 if (!ALLOWED_FILES.includes(args.filename)) {
                     return `Erro: arquivo não permitido. Use: ${ALLOWED_FILES.join(', ')}`;
                 }
-                const dir = path.join(process.cwd(), 'skills', 'public', safeName);
+                const targetDir = String(args.target_dir || 'temp').toLowerCase() === 'public' ? 'public' : 'temp';
+                const dir = path.join(process.cwd(), 'skills', targetDir, safeName);
                 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                 const dest = path.join(dir, args.filename);
                 fs.writeFileSync(dest, String(args.content), 'utf8');
-                return `OK: ${args.filename} salvo em skills/public/${safeName}/`;
+                return `OK: ${args.filename} salvo em skills/${targetDir}/${safeName}/`;
+            }
+        });
+
+        this.register({
+            name: "promote_skill_temp",
+            description: "Promove uma skill auditada de skills/temp/<skillName>/ para skills/public/<skillName>/.",
+            parameters: {
+                type: "object",
+                properties: {
+                    skill_name: { type: "string", description: "Nome da skill para promover de temp para public" }
+                },
+                required: ["skill_name"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const safeName = String(args.skill_name).replace(/[^a-zA-Z0-9\-_]/g, '');
+                if (!safeName || safeName !== String(args.skill_name)) {
+                    return `Erro: nome de skill inválido.`;
+                }
+
+                const root = process.cwd();
+                const tempDir = path.join(root, 'skills', 'temp', safeName);
+                const publicDir = path.join(root, 'skills', 'public', safeName);
+
+                if (!fs.existsSync(tempDir)) {
+                    return `Erro: skill "${safeName}" não encontrada em skills/temp/`;
+                }
+
+                if (fs.existsSync(publicDir)) {
+                    fs.rmSync(publicDir, { recursive: true, force: true });
+                }
+
+                const publicParent = path.join(root, 'skills', 'public');
+                if (!fs.existsSync(publicParent)) fs.mkdirSync(publicParent, { recursive: true });
+                fs.renameSync(tempDir, publicDir);
+                return `Skill "${safeName}" promovida para skills/public/`;
             }
         });
 
@@ -212,16 +250,17 @@ export class SkillRegistry {
         });
 
         /**
-         * run_skill_auditor: executa auditoria estática programática em uma skill pública.
+         * run_skill_auditor: executa auditoria estática programática em uma skill (temp/public).
          * Substitui a necessidade de invocar o skill-auditor via bash/grep.
          */
         this.register({
             name: "run_skill_auditor",
-            description: "Executa auditoria de segurança estática em uma skill pública recém-baixada. Analisa padrões de risco e grava resultado em data/skill-audit-log.json. Use APÓS salvar a skill com write_skill_file.",
+            description: "Executa auditoria de segurança estática em uma skill de staging/public. Analisa padrões de risco e grava resultado em data/skill-audit-log.json.",
             parameters: {
                 type: "object",
                 properties: {
-                    skill_name: { type: "string", description: "Nome da skill em skills/public/ para auditar" }
+                    skill_name: { type: "string", description: "Nome da skill para auditar" },
+                    source_dir: { type: "string", description: "temp (default) ou public" }
                 },
                 required: ["skill_name"]
             }
@@ -231,15 +270,16 @@ export class SkillRegistry {
                 if (!safeName || safeName !== String(args.skill_name)) {
                     return `Erro: nome de skill inválido.`;
                 }
-                const skillDir = path.join(process.cwd(), 'skills', 'public', safeName);
+                const sourceDir = String(args.source_dir || 'temp').toLowerCase() === 'public' ? 'public' : 'temp';
+                const skillDir = path.join(process.cwd(), 'skills', sourceDir, safeName);
                 if (!fs.existsSync(skillDir)) {
-                    return `Erro: skill "${safeName}" não encontrada em skills/public/`;
+                    return `Erro: skill "${safeName}" não encontrada em skills/${sourceDir}/`;
                 }
 
                 // Coleta todos os arquivos de texto da skill
                 const files = fs.readdirSync(skillDir).filter(f => /\.(md|json|txt|sh|py|js|ts|yaml|yml)$/i.test(f));
                 if (files.length === 0) {
-                    return `Erro: nenhum arquivo analisável encontrado em skills/public/${safeName}/`;
+                    return `Erro: nenhum arquivo analisável encontrado em skills/${sourceDir}/${safeName}/`;
                 }
 
                 let fullContent = '';
@@ -286,12 +326,19 @@ export class SkillRegistry {
 
                 // Determinar decisão
                 let decision: string;
+                let status: string;
                 if (hasCritical || score >= 60) {
                     decision = 'blocked';
-                } else if (score >= 21) {
+                    status = 'blocked';
+                } else if (score >= 35) {
                     decision = 'manual_review';
+                    status = 'review';
+                } else if (score >= 21) {
+                    decision = 'approved_with_restrictions';
+                    status = 'warning';
                 } else {
                     decision = 'approved';
+                    status = 'safe';
                 }
 
                 const level = score >= 60 ? '🔴 ALTO' : score >= 21 ? '🟡 MÉDIO' : '🟢 BAIXO';
@@ -303,6 +350,8 @@ export class SkillRegistry {
                 const entry = {
                     skill: safeName,
                     status: decision,
+                    lifecycle_status: status,
+                    source_dir: sourceDir,
                     score,
                     date: new Date().toISOString(),
                     agent: 'skill-auditor-programmatic'
@@ -317,6 +366,7 @@ export class SkillRegistry {
                     ``,
                     findings.length > 0 ? `Achados:\n${findings.join('\n')}` : 'Nenhum padrão de risco detectado.',
                     ``,
+                    `Resultado de ciclo de vida: ${status.toUpperCase()}`,
                     `Decisão: ${decision.toUpperCase()}`,
                     `Entrada gravada em data/skill-audit-log.json`
                 ].join('\n');

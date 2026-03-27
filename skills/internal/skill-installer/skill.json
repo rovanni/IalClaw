@@ -12,8 +12,6 @@
       "/skill-install <nome-exato>"
     ],
     "freeText": [
-      "skill",
-      "skills",
       "instalar skill",
       "baixar skill",
       "skills disponíveis",
@@ -41,18 +39,22 @@
   "requiredTools": [
     "fetch_url",
     "write_skill_file",
+    "promote_skill_temp",
     "delete_skill_public",
     "read_audit_log",
     "run_skill_auditor",
     "reload_skills",
+    "finalize_public_skill_install",
+    "uninstall_public_skill",
     "web_search"
   ],
   "pipeline": [
     "search",
     "present",
-    "confirm",
     "download",
     "audit",
+    "promote",
+    "index",
     "report"
   ],
   "security": {

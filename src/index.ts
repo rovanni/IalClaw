@@ -4,6 +4,7 @@ process.env.DOTENV_CONFIG_QUIET = 'true';
 import { Bot } from 'grammy';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { DatabaseManager } from './db/DatabaseManager';
 import { CognitiveMemory } from './memory/CognitiveMemory';
@@ -159,6 +160,136 @@ registry.register({
         auditLog.reload();
         const skills = skillLoader.load();
         return `Skills recarregadas com sucesso. ${skills.length} skill(s) ativa(s): ${skills.map(s => s.name).join(', ')}`;
+    }
+});
+
+registry.register({
+    name: "finalize_public_skill_install",
+    description: "Finaliza instalacao de skill publica auditada: valida auditoria em temp, promove para public, recarrega runtime e indexa no grafo cognitivo.",
+    parameters: {
+        type: "object",
+        properties: {
+            skill_name: { type: "string", description: "Nome da skill publica em skills/temp/<skill_name>" },
+            source: { type: "string", description: "Origem da skill (skills.sh, GitHub, etc)" },
+            description: { type: "string", description: "Descricao resumida para indexacao cognitiva" },
+            allow_warning: { type: "boolean", description: "Quando true, permite finalizar instalacao com auditoria em status warning" }
+        },
+        required: ["skill_name"]
+    }
+}, {
+    execute: async (args: any) => {
+        const safeName = String(args.skill_name || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+        if (!safeName) {
+            return 'Erro: nome de skill invalido.';
+        }
+
+        const tempDir = path.join(projectRoot, 'skills', 'temp', safeName);
+        const publicDir = path.join(projectRoot, 'skills', 'public', safeName);
+        if (!fs.existsSync(tempDir)) {
+            return `Erro: skill "${safeName}" nao encontrada em skills/temp/.`;
+        }
+
+        const logPath = path.join(projectRoot, 'data', 'skill-audit-log.json');
+        if (!fs.existsSync(logPath)) {
+            return `Erro: auditoria ausente para "${safeName}". Execute run_skill_auditor antes de finalizar.`;
+        }
+
+        const lines = fs.readFileSync(logPath, 'utf8').split('\n').map(l => l.trim()).filter(Boolean);
+        let lastEntry: any = null;
+        for (const line of lines) {
+            try {
+                const entry = JSON.parse(line);
+                if (entry.skill === safeName) {
+                    lastEntry = entry;
+                }
+            } catch {
+                // ignore malformed lines
+            }
+        }
+
+        if (!lastEntry) {
+            return `Erro: nenhum resultado de auditoria encontrado para "${safeName}".`;
+        }
+
+        const lifecycleStatus = String(lastEntry.lifecycle_status || '').toLowerCase();
+        if (lifecycleStatus === 'blocked' || lifecycleStatus === 'review') {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+            return `Instalacao abortada para "${safeName}": status de auditoria ${lifecycleStatus}. Staging removido.`;
+        }
+        if (lifecycleStatus === 'warning' && args.allow_warning !== true) {
+            return `Auditoria de "${safeName}" retornou WARNING. Para prosseguir conscientemente, execute finalize_public_skill_install com allow_warning=true.`;
+        }
+
+        if (fs.existsSync(publicDir)) {
+            fs.rmSync(publicDir, { recursive: true, force: true });
+        }
+        fs.renameSync(tempDir, publicDir);
+
+        auditLog.reload();
+        const loaded = skillLoader.load();
+
+        const skillJsonPath = path.join(publicDir, 'skill.json');
+        let capabilities: string[] = [];
+        let tools: string[] = [];
+        if (fs.existsSync(skillJsonPath)) {
+            try {
+                const meta = JSON.parse(fs.readFileSync(skillJsonPath, 'utf8'));
+                capabilities = Array.isArray(meta.capabilities) ? meta.capabilities : [];
+                tools = Array.isArray(meta.requiredTools) ? meta.requiredTools : [];
+            } catch {
+                // ignore metadata parse failure
+            }
+        }
+
+        await memory.upsertSkillGraph({
+            skill_name: safeName,
+            description: String(args.description || ''),
+            capabilities,
+            tools,
+            source: String(args.source || lastEntry.source_dir || 'public-marketplace')
+        });
+
+        const active = loaded.some(s => s.name.toLowerCase() === safeName);
+        return active
+            ? `Skill ${safeName} instalada com sucesso em skills/public/${safeName} e indexada na memoria cognitiva.`
+            : `Skill ${safeName} promovida para skills/public/${safeName}, mas ainda nao esta ativa (verifique auditoria/log).`;
+    }
+});
+
+registry.register({
+    name: "uninstall_public_skill",
+    description: "Remove completamente uma skill publica: runtime, grafo cognitivo e filesystem, depois recarrega as skills.",
+    parameters: {
+        type: "object",
+        properties: {
+            skill_name: { type: "string", description: "Nome da skill publica a remover" }
+        },
+        required: ["skill_name"]
+    }
+}, {
+    execute: async (args: any) => {
+        const safeName = String(args.skill_name || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+        if (!safeName) {
+            return 'Erro: nome de skill invalido.';
+        }
+
+        const publicDir = path.join(projectRoot, 'skills', 'public', safeName);
+        const tempDir = path.join(projectRoot, 'skills', 'temp', safeName);
+
+        if (fs.existsSync(publicDir)) {
+            fs.rmSync(publicDir, { recursive: true, force: true });
+        }
+        if (fs.existsSync(tempDir)) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+
+        memory.removeSkillGraph(safeName);
+        const removedOrphans = memory.cleanupOrphanSkillNodes();
+
+        auditLog.reload();
+        skillLoader.load();
+
+        return `Skill ${safeName} removida completamente do sistema. Orfaos limpos: ${removedOrphans}.`;
     }
 });
 

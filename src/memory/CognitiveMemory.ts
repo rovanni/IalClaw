@@ -549,6 +549,141 @@ export class CognitiveMemory {
         );
     }
 
+    public async upsertSkillGraph(input: {
+        skill_name: string;
+        description?: string;
+        capabilities?: string[];
+        tools?: string[];
+        source?: string;
+    }): Promise<void> {
+        const safeName = String(input.skill_name || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+        if (!safeName) return;
+
+        const skillId = `skill:${safeName}`;
+        const now = new Date().toISOString();
+        const description = String(input.description || `Skill publica instalada: ${safeName}`).trim();
+        const content = `Skill: ${safeName} | origem: ${input.source || 'unknown'} | descricao: ${description}`;
+        const embedding = await this.provider.embed(content.slice(0, 6000));
+
+        this.db.prepare(`
+            INSERT OR REPLACE INTO nodes
+            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            skillId,
+            'memory',
+            'skill',
+            safeName,
+            content,
+            content.slice(0, 280),
+            JSON.stringify(embedding),
+            'skill',
+            JSON.stringify(['skill', safeName, 'public']),
+            0.8,
+            0.65,
+            1.0,
+            1,
+            now,
+            now
+        );
+
+        this.db.prepare(`DELETE FROM edges WHERE source = ?`).run(skillId);
+
+        const upsertConcept = this.db.prepare(`
+            INSERT OR IGNORE INTO nodes
+            (id, type, subtype, name, content, content_preview, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `);
+
+        const createEdge = this.db.prepare(`
+            INSERT INTO edges
+            (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+        `);
+
+        const caps = Array.from(new Set((input.capabilities || []).map(c => String(c || '').trim()).filter(Boolean)));
+        for (const capability of caps) {
+            const nodeId = `capability:${this.hash(capability.toLowerCase())}`;
+            upsertConcept.run(
+                nodeId,
+                'concept',
+                'skill_capability',
+                capability,
+                `Capability ${capability}`,
+                `Capability ${capability}`,
+                'skill_capability',
+                JSON.stringify(['skill_capability']),
+                0.5,
+                0.35,
+                1.0,
+                now,
+                now
+            );
+            createEdge.run(skillId, nodeId, 'provides', 0.8, 0.75, safeName, now);
+        }
+
+        const tools = Array.from(new Set((input.tools || []).map(t => String(t || '').trim()).filter(Boolean)));
+        for (const tool of tools) {
+            const nodeId = `tool:${this.hash(tool.toLowerCase())}`;
+            upsertConcept.run(
+                nodeId,
+                'concept',
+                'skill_tool',
+                tool,
+                `Tool ${tool}`,
+                `Tool ${tool}`,
+                'skill_tool',
+                JSON.stringify(['skill_tool']),
+                0.5,
+                0.35,
+                1.0,
+                now,
+                now
+            );
+            createEdge.run(skillId, nodeId, 'uses', 0.8, 0.75, safeName, now);
+        }
+
+        if (input.source) {
+            const source = String(input.source).trim();
+            const nodeId = `source:${this.hash(source.toLowerCase())}`;
+            upsertConcept.run(
+                nodeId,
+                'concept',
+                'skill_source',
+                source,
+                `Source ${source}`,
+                `Source ${source}`,
+                'skill_source',
+                JSON.stringify(['skill_source']),
+                0.45,
+                0.3,
+                1.0,
+                now,
+                now
+            );
+            createEdge.run(skillId, nodeId, 'installed_from', 0.7, 0.7, safeName, now);
+        }
+    }
+
+    public removeSkillGraph(skillName: string): void {
+        const safeName = String(skillName || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+        if (!safeName) return;
+        const skillId = `skill:${safeName}`;
+
+        this.db.prepare(`DELETE FROM edges WHERE source = ? OR target = ?`).run(skillId, skillId);
+        this.db.prepare(`DELETE FROM nodes WHERE id = ?`).run(skillId);
+    }
+
+    public cleanupOrphanSkillNodes(): number {
+        const result = this.db.prepare(`
+            DELETE FROM nodes
+            WHERE subtype IN ('skill_capability', 'skill_tool', 'skill_source')
+              AND id NOT IN (SELECT source FROM edges)
+              AND id NOT IN (SELECT target FROM edges)
+        `).run();
+        return Number(result.changes || 0);
+    }
+
     public getProjectNodes(limit: number = 10): NodeResult[] {
         return this.db.prepare(`
             SELECT id, type, subtype, name, score, importance, freshness, content, content_preview

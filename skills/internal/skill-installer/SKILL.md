@@ -52,6 +52,28 @@ Acione esta skill quando o usuário:
 
 ---
 
+## Fluxo Deterministico Para Instalacao Direta
+
+Se o usuario pedir explicitamente para instalar uma skill especifica (ex.: "instala a skill pptx"), este fluxo e obrigatorio:
+
+1. Nao listar opcoes.
+2. Nao pedir confirmacao adicional.
+3. Resolver o nome e seguir direto para download.
+4. Criar `skills/temp/<nome>/` e salvar pelo menos `SKILL.md` com `write_skill_file`.
+5. Executar `run_skill_auditor(skill_name="<nome>", source_dir="temp")`.
+6. Se aprovado, executar `finalize_public_skill_install(skill_name="<nome>")`.
+7. Responder objetivamente: `Skill <nome> instalada com sucesso em skills/public/<nome>`.
+
+Regra critica: pedido explicito de instalacao sempre tem prioridade sobre fluxo exploratorio.
+
+## Separacao Entre Skills Internas e Publicas
+
+- `skills/internal/` e reservado para skills nativas do IalClaw (confiaveis e mantidas no repositorio).
+- `skills/public/` e reservado para skills externas/publicas (origem marketplace/GitHub).
+- Esta skill (`skill-installer`) instala apenas skills externas/publicas.
+- Portanto, toda instalacao automatica deve baixar para staging em `skills/temp/<nome>/` e promover para `skills/public/<nome>/` somente apos auditoria.
+- Nunca gravar arquivos em `skills/internal/` durante instalacao automatica.
+
 ## Passo 1 — Buscar skills no marketplace
 
 Tente buscar a API oficial do marketplace:
@@ -114,6 +136,10 @@ Critérios de ordenação prioritária:
 2. Rank alto sozinho = segundo
 3. Mais instalações = desempate
 
+Excecao obrigatoria para execucao direta:
+- Se a entrada do usuario ja trouxer uma skill explicita para instalar (ex.: "instala a skill pptx"), nao apresente lista.
+- Nesse caso, pule para o Passo 4 imediatamente.
+
 ---
 
 ## Passo 3 — Resolver seleção e iniciar execução
@@ -158,11 +184,11 @@ Se a API principal falhar, tente o endpoint alternativo:
 GET https://raw.githubusercontent.com/skills-sh/<nome>/main/SKILL.md
 ```
 
-Para cada arquivo recebido, salve em `skills/public/`:
+Para cada arquivo recebido, salve em `skills/temp/`:
 
 ```tool
-write_skill_file(skill_name="<nome>", filename="SKILL.md",   content="<conteúdo>")
-write_skill_file(skill_name="<nome>", filename="skill.json", content="<conteúdo>")
+write_skill_file(skill_name="<nome>", filename="SKILL.md",   content="<conteúdo>", target_dir="temp")
+write_skill_file(skill_name="<nome>", filename="skill.json", content="<conteúdo>", target_dir="temp")
 ```
 
 Se não houver `skill.json`, crie um mínimo automaticamente:
@@ -181,7 +207,7 @@ Se não houver `skill.json`, crie um mínimo automaticamente:
 Avise o usuário:
 
 ```
-⬇️ Skill "<nome>" baixada para skills/public/<nome>/
+⬇️ Skill "<nome>" baixada para skills/temp/<nome>/
 🔍 Iniciando auditoria de segurança...
 ```
 
@@ -192,7 +218,7 @@ Avise o usuário:
 Execute a auditoria de segurança programática usando a tool `run_skill_auditor`:
 
 ```tool
-run_skill_auditor(skill_name="<nome>")
+run_skill_auditor(skill_name="<nome>", source_dir="temp")
 ```
 
 A tool executa análise estática, calcula score de risco e grava a decisão em `data/skill-audit-log.json`.
@@ -219,10 +245,16 @@ O campo `decision` terá um dos seguintes valores:
 
 ### ✅ Se `approved` ou `approved_with_restrictions`:
 
-Ative a skill imediatamente com hot-reload:
+Finalize a instalacao com promote + indexacao cognitiva:
 
 ```tool
-reload_skills()
+finalize_public_skill_install(skill_name="<nome>", source="skills.sh")
+```
+
+Se a auditoria retornar `warning`, peca confirmacao explicita do usuario antes da promocao e finalize com:
+
+```tool
+finalize_public_skill_install(skill_name="<nome>", source="skills.sh", allow_warning=true)
 ```
 
 Depois informe:
@@ -245,12 +277,12 @@ Se houver restrições, liste-as claramente para o usuário.
 ```
 ⚠️ A skill "<nome>" requer revisão manual antes de ser ativada.
 
-A skill foi mantida em skills/public/<nome>/ mas NÃO será carregada
+A skill foi mantida em skills/temp/<nome>/ e NÃO será promovida
 automaticamente pelo runtime até que um operador a aprove.
 
 Para revisar manualmente:
-  1. Leia skills/public/<nome>/SKILL.md com atenção.
-  2. Execute /skill-auditor --path skills/public/<nome> para reavaliação.
+  1. Leia skills/temp/<nome>/SKILL.md com atenção.
+  2. Execute run_skill_auditor(skill_name="<nome>", source_dir="temp") para reavaliação.
   3. Se concluir que é segura, edite data/skill-audit-log.json e mude
      a última entrada para "decision": "approved".
 ```
@@ -264,7 +296,7 @@ Para revisar manualmente:
 
 Motivo: <motivo do skill-auditor>
 
-Os arquivos foram removidos de skills/public/ por segurança.
+Os arquivos foram removidos de skills/temp/ por segurança.
 Consulte o relatório completo de auditoria para detalhes.
 ```
 
@@ -302,9 +334,24 @@ Se ao longo de qualquer passo o download falhar completamente:
 1. Informe o usuário com a mensagem de erro específica.
 2. Sugira buscar manualmente em https://skills.sh/skills/<nome>
 3. Explique como instalar manualmente:
-   - Criar `skills/public/<nome>/SKILL.md` com o conteúdo da skill
+   - Criar `skills/temp/<nome>/SKILL.md` com o conteúdo da skill
    - Executar `/skill-auditor <nome>` para auditar
    - Se aprovada, reiniciar o IalClaw
+
+---
+
+## Fluxo de desinstalacao completa
+
+Quando o usuario pedir para remover/desinstalar uma skill publica (ex.: "remover skill pptx"), execute diretamente:
+
+```tool
+uninstall_public_skill(skill_name="<nome>")
+```
+
+Resposta final esperada:
+`Skill <nome> removida completamente do sistema`
+
+Nunca mantenha residuos em `skills/public/<nome>/`, `skills/temp/<nome>/` ou no grafo cognitivo.
 
 ---
 

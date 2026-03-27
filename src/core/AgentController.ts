@@ -605,6 +605,11 @@ export class AgentController {
         const session = SessionManager.getCurrentSession();
         if (!session) return;
 
+        // skill-installer executa instalacao publica diretamente (sem loop de confirmacao pendente)
+        if (activeSkillName === 'skill-installer') {
+            return;
+        }
+
         const pendingSkill = this.extractPendingInstallSkillName(userInput, assistantAnswer, activeSkillName);
         if (!pendingSkill) return;
 
