@@ -1,15 +1,25 @@
-import { resolvePath } from "../utils/pathResolver";
+import { resolvePath } from "../../utils/pathResolver";
 
-export async function safeToolExecution(tool, input) {
+type ToolExecutionResult = { success: boolean; data?: unknown; error?: string };
+type ToolExecutor = (input: Record<string, unknown>) => Promise<ToolExecutionResult>;
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export async function safeToolExecution(
+  tool: ToolExecutor,
+  input: Record<string, unknown>
+): Promise<ToolExecutionResult> {
   try {
     const resolvedInput = { ...input };
-    if (input.path) {
+    if (typeof input.path === "string") {
       resolvedInput.path = resolvePath(input.path);
     }
-    if (input.filePath) {
+    if (typeof input.filePath === "string") {
       resolvedInput.filePath = resolvePath(input.filePath);
     }
-    if (input.filename) {
+    if (typeof input.filename === "string") {
       resolvedInput.filename = resolvePath(input.filename);
     }
     return await tool(resolvedInput);
@@ -19,9 +29,13 @@ export async function safeToolExecution(tool, input) {
   }
 }
 
-export async function fallbackExecution(tool, input, err) {
+export async function fallbackExecution(
+  tool: ToolExecutor,
+  input: Record<string, unknown>,
+  err: unknown
+): Promise<ToolExecutionResult> {
   // Exemplo de fallback: converter md para pptx usando pandoc
-  if (input.task === "convert_md_to_pptx" && input.path) {
+  if (input.task === "convert_md_to_pptx" && typeof input.path === "string") {
     const { execSync } = await import("child_process");
     try {
       const output = resolvePath("/workspace/exports/output.pptx");
@@ -29,8 +43,8 @@ export async function fallbackExecution(tool, input, err) {
       return { success: true, data: { output } };
     } catch (pandocErr) {
       console.error("[FALLBACK ERROR]", pandocErr);
-      return { success: false, error: pandocErr.message };
+      return { success: false, error: getErrorMessage(pandocErr) };
     }
   }
-  return { success: false, error: err.message };
+  return { success: false, error: getErrorMessage(err) };
 }
