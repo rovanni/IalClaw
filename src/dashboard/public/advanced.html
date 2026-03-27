@@ -1110,39 +1110,28 @@
 
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('theme-toggle-btn').innerText = theme === 'light'
-        ? `Ã°Å¸Å’â„¢ ${tf('dashboard.theme.dark', undefined, 'Dark')}`
-        : `Ã¢Ëœâ‚¬Ã¯Â¸Â ${tf('dashboard.theme.light', undefined, 'Light')}`;
+      const themeBtn = document.getElementById('theme-toggle-btn');
+      if (theme === 'light') {
+        themeBtn.innerText = '🌙 Dark';
+        themeBtn.title = tf('dashboard.theme.dark', undefined, 'Tema escuro');
+      } else {
+        themeBtn.innerText = '☀️ Light';
+        themeBtn.title = tf('dashboard.theme.light', undefined, 'Tema claro');
+      }
       if (network) network.setOptions(getGraphOptions());
     }
 
-    
-    function applyStaticTranslations() {
-      chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
-      newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
-      const loading = conversationList.querySelector('.conversation-empty');
-      if (loading) {
-        loading.textContent = tf('dashboard.conversation.loading', undefined, loading.textContent);
-      }
-      document.getElementById('sidebar-title').textContent = tf('dashboard.sidebar.title', undefined, 'Conversas');
-      document.getElementById('sidebar-subtitle').textContent = tf('dashboard.sidebar.subtitle', undefined, 'Continue uma sessão anterior ou comece uma nova conversa.');
-      document.getElementById('panel-header-title').textContent = tf('dashboard.panel.header', undefined, 'Interação com o Agente');
-      document.getElementById('chat-panel-title').textContent = tf('dashboard.chat.title', undefined, 'Conversa');
-      document.getElementById('chat-panel-subtitle').textContent = tf('dashboard.chat.subtitle', undefined, 'Somente mensagens do usuário e respostas finais ficam aqui.');
-      document.getElementById('log-panel-title').textContent = tf('dashboard.log.title', undefined, 'Logs de Execução');
-      document.getElementById('log-panel-subtitle').textContent = tf('dashboard.log.subtitle', undefined, 'Progresso, observações e ferramentas em execução.');
-      document.getElementById('memory-btn-label').textContent = tf('dashboard.memory.button', undefined, 'Memória');
-      document.getElementById('memory-drawer-title').textContent = tf('dashboard.memory.title', undefined, 'Memória Cognitiva');
-      document.getElementById('memory-drawer-subtitle').textContent = tf('dashboard.memory.subtitle', undefined, 'Visualização sob demanda para não competir com o chat.');
-      document.getElementById('memory-empty').textContent = tf('dashboard.memory.empty', undefined, 'Nenhuma memória ativa');
-      consoleStatus.textContent = 'sse: connecting...';
+    function toggleTheme() {
+      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+      localStorage.setItem('ialclaw_theme', currentTheme);
+      applyTheme(currentTheme);
     }
 
     function setTtsState(enabled) {
       ttsEnabled = enabled;
       localStorage.setItem('ialclaw_tts', enabled ? '1' : '0');
       ttsToggleBtn.classList.toggle('active', enabled);
-      ttsToggleBtn.textContent = enabled ? 'Ã°Å¸â€Å ' : 'Ã°Å¸â€Ë†';
+      ttsToggleBtn.textContent = enabled ? '🔊' : '🔈';
     }
 
     function speak(text) {
@@ -1750,6 +1739,7 @@ applyStaticTranslations();
       loadGraph();
       connectSSE();
       handleSpeechInput();
+      document.getElementById('theme-toggle-btn').addEventListener('click', toggleTheme);
     }
 
     document.addEventListener('keydown', (event) => {

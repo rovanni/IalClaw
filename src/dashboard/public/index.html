@@ -1200,22 +1200,22 @@
     });
 
     chatInput.addEventListener('keydown', handleInputKeyboard);
-    newChatBtn.addEventListener('click', startNewConversation);
-    themeToggleBtn.addEventListener('click', toggleTheme);
-    menuToggleBtn.addEventListener('click', () => openDrawer('menu'));
-    logsToggleBtn.addEventListener('click', () => openDrawer('logs'));
-    drawerBackdrop.addEventListener('click', closeDrawers);
+    if (newChatBtn) newChatBtn.addEventListener('click', startNewConversation);
+    if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
+    if (menuToggleBtn) menuToggleBtn.addEventListener('click', () => openDrawer('menu'));
+    if (logsToggleBtn) logsToggleBtn.addEventListener('click', () => openDrawer('logs'));
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawers);
 
     document.querySelectorAll('[data-close-drawer]').forEach((button) => {
       button.addEventListener('click', closeDrawers);
     });
 
-    executionModeSelect.addEventListener('change', (event) => {
+    if (executionModeSelect) executionModeSelect.addEventListener('change', (event) => {
       const previousMode = modeBadge.dataset.mode || 'balanced';
       updateExecutionMode(event.target.value, previousMode);
     });
 
-    languageSelect?.addEventListener('change', (event) => {
+    if (languageSelect) languageSelect.addEventListener('change', (event) => {
       const selected = event.target.value;
       dashboardI18n?.setLanguage?.(selected);
       applyStaticTranslations();
