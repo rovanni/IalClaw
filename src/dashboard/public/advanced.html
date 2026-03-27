@@ -788,7 +788,7 @@
         <option value="balanced" selected>Equilibrado</option>
         <option value="aggressive">Livre</option>
       </select>
-      <button class="zoom-btn" id="memory-toggle-btn" type="button">Ã°Å¸Â§Â  MemÃƒÂ³ria</button>
+      <button class="zoom-btn" id="memory-toggle-btn" type="button">🧠 <span id="memory-btn-label">Memória</span></button>
       <a href="/" class="zoom-btn">Modo simples</a>
       <a href="/help" class="zoom-btn">Ajuda</a>
       <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
@@ -807,44 +807,44 @@
     <aside class="panel" id="conversation-sidebar">
       <div class="sidebar-header">
         <div class="sidebar-title">
-          <span>Conversas</span>
+          <span id="sidebar-title">Conversas</span>
           <span id="conversation-count">0</span>
         </div>
-        <div class="sidebar-subtitle">Continue uma sessÃƒÂ£o anterior ou comece uma nova conversa.</div>
+        <div class="sidebar-subtitle" id="sidebar-subtitle">Continue uma sessão anterior ou comece uma nova conversa.</div>
         <button class="sidebar-btn btn-primary" id="new-chat-btn">+ Nova conversa</button>
       </div>
       <div id="conversation-list">
-        <div class="conversation-empty">Carregando histÃƒÂ³rico...</div>
+        <div class="conversation-empty" id="conversation-empty">Carregando histórico...</div>
       </div>
     </aside>
 
     <div id="main-col">
       <div class="panel" id="timeline-panel">
         <div class="panel-header">
-          <span>InteraÃƒÂ§ÃƒÂ£o com o Agente</span>
+          <span id="panel-header-title">Interação com o Agente</span>
           <span id="console-status">sse: conectando...</span>
         </div>
         <div class="interaction-layout">
           <section class="chat-panel">
             <div class="chat-panel-header">
-              <div class="chat-panel-title">Conversa</div>
-              <div class="chat-panel-subtitle">Somente mensagens do usuÃƒÂ¡rio e respostas finais ficam aqui.</div>
+              <div class="chat-panel-title" id="chat-panel-title">Conversa</div>
+              <div class="chat-panel-subtitle" id="chat-panel-subtitle">Somente mensagens do usuário e respostas finais ficam aqui.</div>
             </div>
             <div id="chat-container"></div>
             <div id="typing-indicator">[SYSTEM] processando...</div>
           </section>
           <aside class="log-panel">
             <div class="log-panel-header">
-              <div class="log-panel-title">Logs de ExecuÃƒÂ§ÃƒÂ£o</div>
-              <div class="log-panel-subtitle">Progresso, observaÃƒÂ§ÃƒÂµes e ferramentas em execuÃƒÂ§ÃƒÂ£o.</div>
+              <div class="log-panel-title" id="log-panel-title">Logs de Execução</div>
+              <div class="log-panel-subtitle" id="log-panel-subtitle">Progresso, observações e ferramentas em execução.</div>
             </div>
             <div id="log-container"></div>
           </aside>
         </div>
         <div class="input-area">
           <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
-          <button id="speech-btn" class="console-btn" title="Entrada por voz">Ã°Å¸Å½Â¤</button>
-          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">Ã°Å¸â€Ë†</button>
+          <button id="speech-btn" class="console-btn" title="Entrada por voz">🎤</button>
+          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">🔊</button>
           <button id="action-btn" class="console-btn" title="Enviar mensagem">Enviar</button>
         </div>
       </div>
@@ -855,16 +855,16 @@
   <aside id="memory-drawer" class="memory-drawer" aria-hidden="true">
     <div class="memory-drawer-header">
       <div>
-        <div class="memory-drawer-title">Memoria Cognitiva</div>
-        <div class="memory-drawer-subtitle">Visualizacao sob demanda para nao competir com o chat.</div>
+        <div class="memory-drawer-title" id="memory-drawer-title">Memória Cognitiva</div>
+        <div class="memory-drawer-subtitle" id="memory-drawer-subtitle">Visualização sob demanda para não competir com o chat.</div>
       </div>
       <div class="memory-drawer-actions">
         <button class="zoom-btn btn-primary" id="replay-btn" type="button">Replay por Trace</button>
-        <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memoria">Fechar</button>
+        <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memória">Fechar</button>
       </div>
     </div>
     <div class="memory-drawer-body">
-      <div id="memory-empty" class="memory-empty">Nenhuma memÃ³ria ativa</div>
+      <div id="memory-empty" class="memory-empty">Nenhuma memória ativa</div>
       <div id="mynetwork-container">
         <div id="mynetwork"></div>
       </div>
@@ -1124,6 +1124,17 @@
       if (loading) {
         loading.textContent = tf('dashboard.conversation.loading', undefined, loading.textContent);
       }
+      document.getElementById('sidebar-title').textContent = tf('dashboard.sidebar.title', undefined, 'Conversas');
+      document.getElementById('sidebar-subtitle').textContent = tf('dashboard.sidebar.subtitle', undefined, 'Continue uma sessão anterior ou comece uma nova conversa.');
+      document.getElementById('panel-header-title').textContent = tf('dashboard.panel.header', undefined, 'Interação com o Agente');
+      document.getElementById('chat-panel-title').textContent = tf('dashboard.chat.title', undefined, 'Conversa');
+      document.getElementById('chat-panel-subtitle').textContent = tf('dashboard.chat.subtitle', undefined, 'Somente mensagens do usuário e respostas finais ficam aqui.');
+      document.getElementById('log-panel-title').textContent = tf('dashboard.log.title', undefined, 'Logs de Execução');
+      document.getElementById('log-panel-subtitle').textContent = tf('dashboard.log.subtitle', undefined, 'Progresso, observações e ferramentas em execução.');
+      document.getElementById('memory-btn-label').textContent = tf('dashboard.memory.button', undefined, 'Memória');
+      document.getElementById('memory-drawer-title').textContent = tf('dashboard.memory.title', undefined, 'Memória Cognitiva');
+      document.getElementById('memory-drawer-subtitle').textContent = tf('dashboard.memory.subtitle', undefined, 'Visualização sob demanda para não competir com o chat.');
+      document.getElementById('memory-empty').textContent = tf('dashboard.memory.empty', undefined, 'Nenhuma memória ativa');
       consoleStatus.textContent = 'sse: connecting...';
     }
 
