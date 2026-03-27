@@ -20,7 +20,7 @@ print_divider() {
 print_banner() {
     echo ""
     print_divider
-    printf "%b\n" "${CYAN}  IALCLAW${RESET} ${DIM}Updater${RESET}"
+    printf "%b\n" "${CYAN}  🐙 IALCLAW${RESET} ${DIM}Updater${RESET}"
     printf "%b\n" "${DIM}  -----------------------------------------------${RESET}"
     printf "%b\n" "  estilo:  ${GREEN}upgrade assistido${RESET}"
     printf "%b\n" "  pasta:   ${GREEN}$(pwd)${RESET}"
@@ -102,7 +102,7 @@ printf "%b\n" "${GREEN}Seu IalClaw foi atualizado para a ultima versao oficial c
 printf "%b\n" "${DIM}Seu banco de dados e suas configuracoes permanecem intactos.${RESET}"
 echo ""
 print_divider
-printf "%b\n" "${CYAN}  Para iniciar o IalClaw${RESET}"
+printf "%b\n" "${CYAN}  🐙 Para iniciar o IalClaw${RESET}"
 print_divider
 echo ""
 printf "%b\n" "  ${BOLD}Foreground${RESET}  node bin/ialclaw.js start"

@@ -15,7 +15,7 @@ set "STEP=%ESC%[96m"
 
 echo.
 echo %DIM%========================================================%RESET%
-echo %CYAN%  IALCLAW%RESET% %DIM%Updater%RESET%
+echo %CYAN%  🐙 IALCLAW%RESET% %DIM%Updater%RESET%
 echo %DIM%  -----------------------------------------------%RESET%
 echo   estilo:  %GREEN%upgrade assistido%RESET%
 echo   pasta:   %GREEN%%cd%%RESET%
@@ -105,7 +105,7 @@ echo %GREEN%Seu IalClaw foi atualizado para a ultima versao oficial com sucesso.
 echo %DIM%Seu banco de dados e suas configuracoes permanecem intactos.%RESET%
 echo.
 echo %DIM%========================================================%RESET%
-echo %CYAN%  Para iniciar o IalClaw%RESET%
+echo %CYAN%  🐙 Para iniciar o IalClaw%RESET%
 echo %DIM%========================================================%RESET%
 echo.
 echo   %BOLD%Foreground%RESET%  node bin/ialclaw.js start
