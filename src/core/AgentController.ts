@@ -287,9 +287,12 @@ export class AgentController {
                 newMessage.role,
                 newMessage.content,
                 newMessage.tool_name,
-                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
+                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined,
+                newMessage.role === 'tool' ? newMessage.content : undefined
             );
         }
+
+        await this.indexCodeArtifactsFromMessages(result.newMessages, session?.current_project_id);
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
@@ -381,6 +384,7 @@ export class AgentController {
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
 
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
+        await this.indexCodeArtifactsFromMessages(result.newMessages, SessionManager.getCurrentSession()?.current_project_id);
         await this.memory.learn({
             query: originalQuery,
             nodes_used: memoryNodes,
@@ -470,6 +474,101 @@ Voce ainda pode:
     private isPuppeteerInstallAuthorization(normalizedQuery: string): boolean {
         return /\b(pode instalar|pode tentar instalar|autorizo instalar|autorizo tentar instalar|instale o puppeteer|instalar o puppeteer)\b/.test(normalizedQuery)
             && normalizedQuery.includes('puppeteer');
+    }
+
+    private async indexCodeArtifactsFromMessages(messages: MessagePayload[], fallbackProjectId?: string): Promise<void> {
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg.role !== 'assistant' || !msg.tool_name || !msg.tool_args) {
+                continue;
+            }
+
+            if (msg.tool_name !== 'workspace_save_artifact' && msg.tool_name !== 'workspace_apply_diff') {
+                continue;
+            }
+
+            const args = this.parseToolArgs(msg.tool_args);
+            if (!args) {
+                continue;
+            }
+
+            const projectId = String(args.project_id || fallbackProjectId || '').trim();
+            const relativePath = String(args.filename || args.filePath || '').trim();
+            if (!projectId || !relativePath) {
+                continue;
+            }
+
+            let rawContent = '';
+
+            if (msg.tool_name === 'workspace_save_artifact') {
+                rawContent = String(args.content || '');
+            }
+
+            if (msg.tool_name === 'workspace_apply_diff') {
+                const toolResultMessage = messages[i + 1];
+                if (!toolResultMessage || toolResultMessage.role !== 'tool' || !this.isSuccessfulToolResult(toolResultMessage.content)) {
+                    continue;
+                }
+
+                rawContent = workspaceService.readArtifact(projectId, relativePath) || '';
+            }
+
+            if (!rawContent.trim()) {
+                continue;
+            }
+
+            try {
+                await this.memory.indexCodeNode({
+                    project_id: projectId,
+                    relative_path: relativePath,
+                    raw_content: rawContent
+                });
+            } catch (error: any) {
+                this.logger.debug('code_indexing_skipped', 'Falha ao indexar arquivo de codigo para memoria.', {
+                    project_id: projectId,
+                    relative_path: relativePath,
+                    reason: String(error?.message || error)
+                });
+            }
+        }
+    }
+
+    private parseToolArgs(toolArgs: any): any | null {
+        if (!toolArgs) {
+            return null;
+        }
+
+        if (typeof toolArgs === 'object') {
+            return toolArgs;
+        }
+
+        if (typeof toolArgs !== 'string') {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(toolArgs);
+            return typeof parsed === 'object' && parsed !== null ? parsed : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private isSuccessfulToolResult(content: string): boolean {
+        if (typeof content !== 'string' || !content.trim()) {
+            return false;
+        }
+
+        try {
+            const parsed = JSON.parse(content);
+            if (typeof parsed?.success === 'boolean') {
+                return parsed.success;
+            }
+        } catch {
+            // fallback para resultados textuais
+        }
+
+        return /"success"\s*:\s*true|\bsucesso\b|\bOK:\b/i.test(content);
     }
 
 

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import path from 'path';
 import { LLMProvider } from '../engine/ProviderFactory';
 
 export type NodeResult = {
@@ -22,6 +23,7 @@ export class CognitiveMemory {
     private db: Database.Database;
     private provider: LLMProvider;
     private recentlyUsedNodes = new Set<string>();
+    private recentlyUsedCodeNeighbors = new Set<string>();
 
     constructor(db: Database.Database, provider: LLMProvider) {
         this.db = db;
@@ -64,6 +66,105 @@ export class CognitiveMemory {
             LIMIT ?
         `).all(`%${text}%`, limit) as NodeResult[];
     }
+
+        public async indexCodeNode(input: {
+                project_id: string;
+                relative_path: string;
+                raw_content: string;
+        }): Promise<void> {
+                const projectId = String(input.project_id || '').trim();
+                const relativePath = this.normalizeRelativePath(input.relative_path);
+                const rawContent = String(input.raw_content || '');
+
+                if (!projectId || !relativePath || !rawContent || !this.isCodePath(relativePath)) {
+                        return;
+                }
+
+                const now = new Date().toISOString();
+                const codeNodeId = this.buildCodeNodeId(projectId, relativePath);
+                const preview = rawContent.slice(0, 280);
+                const subtype = path.posix.extname(relativePath).replace('.', '') || 'text';
+                const tags = JSON.stringify(['code', projectId, relativePath]);
+                const embeddingSource = rawContent.slice(0, 6000);
+                const embedding = await this.provider.embed(embeddingSource);
+
+                this.db.prepare(`
+            INSERT OR REPLACE INTO nodes
+            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+                        codeNodeId,
+                        'code',
+                        subtype,
+                        relativePath,
+                        rawContent,
+                        preview,
+                        JSON.stringify(embedding),
+                        'code',
+                        tags,
+                        0.75,
+                        0.6,
+                        1.0,
+                        1,
+                        now,
+                        now
+                );
+
+                const projectNodeId = this.ensureProjectNode(projectId, now);
+
+                this.db.prepare(`
+            DELETE FROM edges
+            WHERE source = ? AND relation = 'part_of'
+        `).run(codeNodeId);
+
+                this.db.prepare(`
+            INSERT INTO edges
+            (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
+            VALUES (?, ?, 'part_of', ?, ?, 0, ?, ?)
+        `).run(codeNodeId, projectNodeId, 0.95, 0.9, projectId, now);
+
+                const importedPaths = this.extractRelativeImports(relativePath, rawContent);
+
+                this.db.prepare(`
+            DELETE FROM edges
+            WHERE source = ? AND relation = 'imports'
+        `).run(codeNodeId);
+
+                const insertImportEdge = this.db.prepare(`
+            INSERT INTO edges
+            (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
+            VALUES (?, ?, 'imports', ?, ?, 0, ?, ?)
+        `);
+
+                const insertPlaceholder = this.db.prepare(`
+            INSERT OR IGNORE INTO nodes
+            (id, type, subtype, name, content, content_preview, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, 'code', ?, ?, ?, ?, 'code', ?, ?, ?, ?, 1, ?, ?)
+        `);
+
+                for (const targetPath of importedPaths) {
+                        const targetNodeId = this.buildCodeNodeId(projectId, targetPath);
+                        const targetSubtype = path.posix.extname(targetPath).replace('.', '') || 'text';
+                        const placeholderContent = `Placeholder para ${targetPath}`;
+                        const placeholderTags = JSON.stringify(['code', projectId, targetPath, 'placeholder']);
+
+                        insertPlaceholder.run(
+                                targetNodeId,
+                                targetSubtype,
+                                targetPath,
+                                placeholderContent,
+                                placeholderContent,
+                                placeholderTags,
+                                0.4,
+                                0.2,
+                                1.0,
+                                now,
+                                now
+                        );
+
+                        insertImportEdge.run(codeNodeId, targetNodeId, 0.7, 0.7, relativePath, now);
+                }
+        }
 
     public async hybridSearch(query: string, queryEmbedding: number[], limit: number = 5): Promise<NodeResult[]> {
         const normalized = this.normalize(query);
@@ -200,8 +301,14 @@ export class CognitiveMemory {
 
         let score = (similarity * 0.4) + (composite * 0.5) + (depthFactor * 0.1);
 
-        // 4. Repetition Penalty
-        if (this.recentlyUsedNodes.has(node.id)) {
+        // 4. Context Bonus/Penalty
+        if (node.type === 'code') {
+            if (this.recentlyUsedNodes.has(node.id)) {
+                score += 0.15;
+            } else if (this.recentlyUsedCodeNeighbors.has(node.id)) {
+                score += 0.08;
+            }
+        } else if (this.recentlyUsedNodes.has(node.id)) {
             score *= 0.8;
         }
 
@@ -270,11 +377,15 @@ export class CognitiveMemory {
         });
         tx();
 
+        this.refreshRecentlyUsedCodeNeighbors();
+
         // Evict oldest entries to prevent unbounded growth
         if (this.recentlyUsedNodes.size > 200) {
             const first = this.recentlyUsedNodes.values().next().value;
             if (first) this.recentlyUsedNodes.delete(first);
         }
+
+        this.refreshRecentlyUsedCodeNeighbors();
     }
 
     private buildConversationTitle(content: string): string {
@@ -438,5 +549,119 @@ export class CognitiveMemory {
         }
         if (normA === 0 || normB === 0) return 0;
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    private normalizeRelativePath(relativePath: string): string {
+        return String(relativePath || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
+    }
+
+    private isCodePath(relativePath: string): boolean {
+        const ext = path.posix.extname(relativePath).toLowerCase();
+        return [
+            '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+            '.py', '.go', '.rs', '.java', '.cs', '.cpp',
+            '.c', '.h', '.hpp', '.kt', '.kts', '.swift', '.php', '.rb'
+        ].includes(ext);
+    }
+
+    private buildCodeNodeId(projectId: string, relativePath: string): string {
+        const normalizedPath = this.normalizeRelativePath(relativePath);
+        return `code:${projectId}:${normalizedPath}`;
+    }
+
+    private ensureProjectNode(projectId: string, now: string): string {
+        const projectNodeId = `project:${projectId}`;
+        const content = `Projeto ${projectId}`;
+
+        this.db.prepare(`
+      INSERT OR IGNORE INTO nodes
+      (id, type, subtype, name, content, content_preview, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+      VALUES (?, 'concept', 'project', ?, ?, ?, 'project', ?, ?, ?, ?, 1, ?, ?)
+    `).run(
+            projectNodeId,
+            projectId,
+            content,
+            content,
+            JSON.stringify(['project', projectId]),
+            0.7,
+            0.5,
+            1.0,
+            now,
+            now
+        );
+
+        return projectNodeId;
+    }
+
+    private extractRelativeImports(sourcePath: string, rawContent: string): string[] {
+        const patterns = [
+            /(?:import|export)\s+[\s\S]*?from\s*['\"]([^'\"]+)['\"]/g,
+            /import\s*['\"]([^'\"]+)['\"]/g,
+            /require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)/g,
+            /import\s*\(\s*['\"]([^'\"]+)['\"]\s*\)/g
+        ];
+
+        const resolved = new Set<string>();
+        for (const pattern of patterns) {
+            let match: RegExpExecArray | null;
+            while ((match = pattern.exec(rawContent)) !== null) {
+                const specifier = match[1];
+                if (!specifier || !specifier.startsWith('.')) {
+                    continue;
+                }
+
+                const target = this.resolveImportPath(sourcePath, specifier);
+                if (!target || target === sourcePath) {
+                    continue;
+                }
+
+                resolved.add(target);
+            }
+        }
+
+        return Array.from(resolved);
+    }
+
+    private resolveImportPath(sourcePath: string, specifier: string): string {
+        const normalizedSource = this.normalizeRelativePath(sourcePath);
+        const sourceDir = path.posix.dirname(normalizedSource);
+        let target = path.posix.normalize(path.posix.join(sourceDir, specifier));
+
+        if (!path.posix.extname(target)) {
+            const sourceExt = path.posix.extname(normalizedSource) || '.ts';
+            if (target.endsWith('/')) {
+                target = `${target}index${sourceExt}`;
+            } else {
+                target = `${target}${sourceExt}`;
+            }
+        }
+
+        return this.normalizeRelativePath(target);
+    }
+
+    private refreshRecentlyUsedCodeNeighbors(): void {
+        this.recentlyUsedCodeNeighbors.clear();
+        const ids = Array.from(this.recentlyUsedNodes);
+        if (ids.length === 0) {
+            return;
+        }
+
+        const placeholders = ids.map(() => '?').join(',');
+
+        const neighbors = this.db.prepare(`
+      SELECT DISTINCT target AS id
+      FROM edges
+      WHERE relation = 'imports' AND source IN (${placeholders})
+      UNION
+      SELECT DISTINCT source AS id
+      FROM edges
+      WHERE relation = 'imports' AND target IN (${placeholders})
+    `).all(...ids, ...ids) as Array<{ id: string }>;
+
+        for (const row of neighbors) {
+            if (!this.recentlyUsedNodes.has(row.id)) {
+                this.recentlyUsedCodeNeighbors.add(row.id);
+            }
+        }
     }
 }

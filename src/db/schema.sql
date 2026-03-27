@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   doc_id TEXT,
 
   -- identidade semântica
-  type TEXT,              -- memory | identity | concept | fact
+  type TEXT,              -- memory | identity | concept | fact | code
   subtype TEXT,           -- soul | user | agent | heartbeat | etc
 
   name TEXT,

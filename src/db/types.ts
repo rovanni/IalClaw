@@ -2,7 +2,8 @@ export const NodeType = {
     IDENTITY: "identity",
     MEMORY: "memory",
     CONCEPT: "concept",
-    FACT: "fact"
+    FACT: "fact",
+    CODE: "code"
 } as const;
 
 export type NodeTypeValue = typeof NodeType[keyof typeof NodeType];
