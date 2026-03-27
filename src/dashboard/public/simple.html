@@ -273,50 +273,97 @@
       min-height: 0;
       overflow-y: auto;
       padding: var(--space-md);
+      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      background: linear-gradient(180deg, rgba(128, 128, 128, 0.06) 0%, transparent 70px);
+    }
+
+    .event-line {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .chat-bubble {
-      padding: 12px 18px;
-      border-radius: 16px;
-      max-width: 85%;
-      line-height: 1.55;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 5px 0;
+      border-bottom: 1px dashed rgba(128, 128, 128, 0.15);
       word-break: break-word;
-      white-space: pre-wrap;
-      font-size: var(--font-md);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
-    .bubble-user {
-      background: var(--chat-user-bg);
-      color: var(--chat-user-text);
-      align-self: flex-end;
-      border-bottom-right-radius: 4px;
-    }
-
-    .bubble-bot {
-      background: var(--chat-bot-bg);
-      color: var(--chat-bot-text);
-      align-self: flex-start;
-      border-bottom-left-radius: 4px;
-      border: 1px solid var(--border-color);
-    }
-
-    .bubble-meta {
-      display: block;
-      margin-bottom: 6px;
+    .event-time {
+      color: var(--text-muted);
+      min-width: 70px;
+      opacity: 0.9;
       font-size: var(--font-xs);
-      font-weight: 600;
-      opacity: 0.8;
+      padding-top: 2px;
+      user-select: none;
+    }
+
+    .event-body {
+      flex: 1;
+      min-width: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .event-tag {
+      font-weight: 700;
+      margin-right: 8px;
+      letter-spacing: 0.01em;
+    }
+
+    .event-user .event-tag {
+      color: var(--chat-user-text);
+    }
+
+    .event-thought .event-tag {
+      color: #681da8;
+    }
+
+    .event-action .event-tag {
+      color: #b06000;
+    }
+
+    .event-obs .event-tag {
+      color: #0d652d;
+    }
+
+    .event-final .event-tag {
+      color: var(--accent);
+    }
+
+    .event-error .event-tag {
+      color: #c5221f;
+    }
+
+    .event-debug .event-tag {
+      color: var(--text-muted);
+    }
+
+    .event-rag .event-tag {
+      color: #c5221f;
+    }
+
+    .event-progress .event-tag {
+      color: var(--accent-hover);
+    }
+
+    .trace-btn {
+      margin-left: 10px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: var(--font-xs);
+      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      cursor: pointer;
     }
 
     #typing-indicator {
       display: none;
       padding: 0 var(--space-md) var(--space-sm);
       color: var(--text-muted);
-      font-style: italic;
+      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      font-size: var(--font-xs);
       flex-shrink: 0;
     }
 
@@ -377,6 +424,30 @@
       font-weight: 600;
       font-size: var(--font-md);
       cursor: pointer;
+    }
+
+    #speech-btn,
+    #tts-toggle,
+    #stop-btn {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 0 14px;
+      height: 48px;
+      font-weight: 600;
+      font-size: var(--font-md);
+      cursor: pointer;
+    }
+
+    #speech-btn.recording {
+      background: #c5221f;
+      color: #fff;
+      border-color: #c5221f;
+    }
+
+    #tts-toggle.active {
+      background: var(--bg-input);
     }
 
     #send-btn:disabled {
@@ -453,7 +524,10 @@
         <button data-prompt="Me ajude a organizar uma página inicial bonita">Criar página inicial</button>
       </div>
       <div class="input-area">
-        <input type="text" id="chat-input" placeholder="Digite sua mensagem aqui" autocomplete="off">
+        <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
+        <button id="speech-btn" type="button" title="Entrada por voz">🎤</button>
+        <button id="tts-toggle" type="button" title="Ler respostas finais">🔈</button>
+        <button id="stop-btn" type="button" title="Interromper execução" disabled>Parar</button>
         <button id="send-btn" type="button">Enviar</button>
       </div>
     </section>
@@ -467,10 +541,21 @@
     }
 
     let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
+    let eventSource = null;
+    let pendingRequest = false;
+    let ttsEnabled = localStorage.getItem('ialclaw_tts_simple') === '1';
+    let recognition = null;
+    let isRecording = false;
+    let activeChatRequestController = null;
+    let commandHistory = [];
+    let historyCursor = -1;
 
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
-    const chatMsgs = document.getElementById('chat-messages');
+    const speechBtn = document.getElementById('speech-btn');
+    const ttsToggleBtn = document.getElementById('tts-toggle');
+    const stopBtn = document.getElementById('stop-btn');
+    const timeline = document.getElementById('chat-messages');
     const typing = document.getElementById('typing-indicator');
     const statusLabel = document.getElementById('status-label');
     const conversationList = document.getElementById('conversation-list');
@@ -481,9 +566,231 @@
     const modeBadge = document.getElementById('mode-badge');
     const modeBehavior = document.getElementById('mode-behavior');
 
+    const EVENT_LABELS = {
+      user: 'USER',
+      thought: 'THOUGHT',
+      action: 'ACTION',
+      obs: 'OBS',
+      final: 'FINAL',
+      error: 'ERROR',
+      debug: 'DEBUG',
+      rag: 'RAG',
+      progress: 'PROGRESS'
+    };
+
+    function nowLabel(ts) {
+      const dt = ts ? new Date(ts) : new Date();
+      return dt.toLocaleTimeString('pt-BR', { hour12: false });
+    }
+
+    function eventContentToString(content) {
+      if (typeof content === 'string') return content;
+      try {
+        return JSON.stringify(content, null, 2);
+      } catch (_err) {
+        return String(content);
+      }
+    }
+
+    function appendEvent(type, content, meta = {}) {
+      const normalizedType = EVENT_LABELS[type] ? type : 'obs';
+      const row = document.createElement('div');
+      row.className = `event-line event-${normalizedType}`;
+
+      const timeEl = document.createElement('div');
+      timeEl.className = 'event-time';
+      timeEl.textContent = nowLabel(meta.timestamp);
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'event-body';
+
+      const tagEl = document.createElement('span');
+      tagEl.className = 'event-tag';
+      tagEl.textContent = `[${EVENT_LABELS[normalizedType]}]`;
+
+      const textEl = document.createElement('span');
+      textEl.textContent = eventContentToString(content);
+
+      bodyEl.appendChild(tagEl);
+      bodyEl.appendChild(textEl);
+
+      const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
+      if (traceId && (normalizedType === 'final' || normalizedType === 'error' || normalizedType === 'debug')) {
+        const traceBtn = document.createElement('button');
+        traceBtn.className = 'trace-btn';
+        traceBtn.type = 'button';
+        traceBtn.textContent = '🔍 Ver execucao';
+        traceBtn.addEventListener('click', () => replayTrace(traceId));
+        bodyEl.appendChild(traceBtn);
+      }
+
+      row.appendChild(timeEl);
+      row.appendChild(bodyEl);
+      timeline.appendChild(row);
+      timeline.scrollTop = timeline.scrollHeight;
+
+      const maxRows = 1200;
+      if (timeline.children.length > maxRows) {
+        timeline.removeChild(timeline.firstChild);
+      }
+    }
+
+    function shouldConsumeEvent(payload) {
+      if (!payload || typeof payload !== 'object') return true;
+      const payloadSession = payload.sessionId || payload.session_id || payload.conversation_id || payload.conversationId;
+      if (!payloadSession) return true;
+      return String(payloadSession) === String(sessionId);
+    }
+
+    function parseSsePayload(event) {
+      try {
+        return JSON.parse(event.data);
+      } catch (_err) {
+        return { raw: String(event.data || '') };
+      }
+    }
+
+    function setTtsState(enabled) {
+      ttsEnabled = enabled;
+      localStorage.setItem('ialclaw_tts_simple', enabled ? '1' : '0');
+      ttsToggleBtn.classList.toggle('active', enabled);
+      ttsToggleBtn.textContent = enabled ? '🔊' : '🔈';
+    }
+
+    function speak(text) {
+      if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(String(text));
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function handleSpeechInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        appendEvent('error', 'Web Speech API nao suportada neste navegador.');
+        speechBtn.disabled = true;
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        speechBtn.classList.add('recording');
+        speechBtn.textContent = '🔴';
+        appendEvent('obs', 'Captura de voz iniciada.');
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) return;
+        chatInput.value = transcript;
+        chatInput.focus();
+        appendEvent('obs', `Voz capturada: ${transcript}`);
+      };
+
+      recognition.onerror = (event) => {
+        appendEvent('error', `Falha no reconhecimento de voz: ${event.error || 'desconhecido'}`);
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        speechBtn.classList.remove('recording');
+        speechBtn.textContent = '🎤';
+      };
+
+      speechBtn.addEventListener('click', () => {
+        if (!recognition) return;
+        if (isRecording) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      });
+    }
+
+    function connectSSE() {
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      eventSource = new EventSource('/debug/stream');
+
+      const onEvent = (mapper) => (event) => {
+        const data = parseSsePayload(event);
+        if (!shouldConsumeEvent(data)) return;
+        const mapped = mapper(data);
+        if (!mapped) return;
+        appendEvent(mapped.type, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
+      };
+
+      eventSource.addEventListener('thought', onEvent((data) => ({
+        type: 'thought',
+        content: data.content || 'evento thought sem conteudo'
+      })));
+
+      eventSource.addEventListener('tool', onEvent((data) => {
+        const status = String(data.status || '').toLowerCase();
+        if (status.includes('error') || status.includes('fail')) {
+          return { type: 'obs', content: `Tool ${data.name || 'unknown'} falhou: ${status}` };
+        }
+        return { type: 'action', content: `Tool ${data.name || 'unknown'}: ${data.status || 'executada'} (${data.latency || 0}ms)` };
+      }));
+
+      eventSource.addEventListener('rag', onEvent((data) => ({
+        type: 'rag',
+        content: `Nos recuperados: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`
+      })));
+
+      eventSource.addEventListener('gateway', onEvent((data) => ({
+        type: 'debug',
+        content: `Gateway: ${data.summary || data.route || data.decision || 'evento recebido'}`
+      })));
+
+      eventSource.addEventListener('execution_summary', onEvent((data) => ({
+        type: 'final',
+        content: data.answer || data.response || data.summary || 'Resumo de execucao recebido'
+      })));
+
+      eventSource.addEventListener('web_progress', onEvent((data) => {
+        const message = String(data.message || 'Processando...');
+        typing.style.display = 'block';
+        typing.textContent = `[SYSTEM] ${message}`;
+        statusLabel.innerText = message;
+
+        const stage = String(data.stage || '');
+        if (stage === 'completed' || stage === 'failed' || stage === 'stopped') {
+          pendingRequest = false;
+          setTimeout(() => {
+            if (!pendingRequest) {
+              typing.style.display = 'none';
+              typing.textContent = 'IalClaw está pensando...';
+              statusLabel.innerText = stage === 'failed' ? 'Erro' : (stage === 'stopped' ? 'Interrompido' : 'Pronto');
+            }
+          }, 700);
+        }
+
+        return {
+          type: 'progress',
+          content: message
+        };
+      }));
+
+      eventSource.onerror = () => {
+        if (pendingRequest) {
+          statusLabel.innerText = 'Reconectando status...';
+        }
+      };
+    }
+
     function applyExecutionConfig(config) {
       if (!config) return;
-
       executionModeSelect.value = config.executionMode;
       modeBadge.innerText = config.label;
       modeBadge.dataset.mode = config.executionMode;
@@ -499,7 +806,7 @@
           applyExecutionConfig(data.config);
         }
       } catch (_error) {
-        // Mantem a configuracao padrao se a API nao responder.
+        // mantém padrão
       }
     }
 
@@ -519,9 +826,10 @@
         }
 
         applyExecutionConfig(data.config);
+        appendEvent('obs', `Modo de execucao alterado para ${data.config.label}.`);
       } catch (err) {
         executionModeSelect.value = previousMode;
-        alert('Nao foi possivel atualizar o modo de execucao: ' + (err.message || err));
+        appendEvent('error', `Nao foi possivel atualizar o modo de execucao: ${err.message || err}`);
       } finally {
         executionModeSelect.disabled = false;
       }
@@ -538,25 +846,10 @@
       applyTheme(currentTheme);
     }
 
-    function appendMessage(role, text, meta = '') {
-      const el = document.createElement('div');
-      el.className = `chat-bubble ${role === 'user' ? 'bubble-user' : 'bubble-bot'}`;
-
-      if (meta) {
-        const metaEl = document.createElement('span');
-        metaEl.className = 'bubble-meta';
-        metaEl.innerText = meta;
-        el.appendChild(metaEl);
-      }
-
-      el.appendChild(document.createTextNode(text));
-      chatMsgs.appendChild(el);
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    }
-
     function resetConversationView() {
-      chatMsgs.innerHTML = '';
-      appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
+      timeline.innerHTML = '';
+      appendEvent('obs', `Sessao ativa: ${sessionId}`);
+      appendEvent('obs', 'Console cognitivo pronto para comandos.');
     }
 
     function createSessionId() {
@@ -571,6 +864,15 @@
       }).catch(() => null);
     }
 
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     async function loadConversationList() {
       try {
         const res = await fetch('/api/conversations');
@@ -583,7 +885,7 @@
         conversationCount.innerText = String(conversations.length);
         renderConversationList(conversations);
       } catch {
-        conversationList.innerHTML = '<div class="conversation-empty">Nao foi possivel carregar o histórico.</div>';
+        conversationList.innerHTML = '<div class="conversation-empty">Nao foi possivel carregar o historico.</div>';
       }
     }
 
@@ -622,18 +924,21 @@
         const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
         const messages = await res.json();
 
-        chatMsgs.innerHTML = '';
+        timeline.innerHTML = '';
+        appendEvent('obs', `Sessao ativa: ${targetSessionId}`);
 
         if (!Array.isArray(messages) || messages.length === 0) {
-          appendMessage('bot', 'Aguardando comandos...', '[AGENT: system_core] [CONF: 1.0]');
+          appendEvent('obs', 'Historico vazio. Digite um comando cognitivo.');
           return;
         }
 
         messages.forEach(message => {
           if (message.role === 'user') {
-            appendMessage('user', message.content, 'Você');
+            appendEvent('user', message.content, { timestamp: message.created_at });
           } else if (message.role === 'assistant') {
-            appendMessage('bot', message.content, 'IalClaw');
+            appendEvent('final', message.content, { timestamp: message.created_at });
+          } else if (message.role === 'tool') {
+            appendEvent('action', message.content, { timestamp: message.created_at });
           }
         });
       } catch {
@@ -662,13 +967,49 @@
       });
     }
 
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    async function replayTrace(traceId) {
+      if (!traceId) return;
+      appendEvent('obs', `Replay do trace ${traceId} iniciado...`);
+
+      try {
+        const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
+        if (!res.ok) throw new Error(`Falha HTTP ${res.status}`);
+
+        const events = await res.json();
+        if (!Array.isArray(events) || events.length === 0) {
+          appendEvent('obs', 'Nenhum evento encontrado para este trace.');
+          return;
+        }
+
+        for (const event of events) {
+          let payload = {};
+          try {
+            payload = JSON.parse(event.payload || '{}');
+          } catch (_err) {
+            payload = { raw: event.payload };
+          }
+
+          if (event.type === 'thought') {
+            appendEvent('thought', payload.content || 'thought', { timestamp: event.created_at, traceId });
+          } else if (event.type === 'tool') {
+            appendEvent('action', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at, traceId });
+          } else if (event.type === 'rag') {
+            appendEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at, traceId });
+          } else if (event.type === 'gateway') {
+            appendEvent('debug', payload.summary || JSON.stringify(payload), { timestamp: event.created_at, traceId });
+          } else if (event.type === 'execution_summary') {
+            appendEvent('final', payload.answer || payload.summary || 'Resumo final de execucao', { timestamp: event.created_at, traceId });
+          } else {
+            appendEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at, traceId });
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+
+        appendEvent('obs', `Replay do trace ${traceId} finalizado.`);
+      } catch (err) {
+        appendEvent('error', `Erro ao reproduzir trace: ${err.message || err}`);
+      }
     }
 
     async function sendMessage(prefill) {
@@ -681,16 +1022,25 @@
 
       chatInput.disabled = true;
       sendBtn.disabled = true;
+      speechBtn.disabled = true;
+      stopBtn.disabled = false;
+      pendingRequest = true;
       statusLabel.innerText = 'Enviando';
       typing.style.display = 'block';
+      typing.textContent = '[SYSTEM] Preparando execução...';
 
-      appendMessage('user', text, 'Você');
+      appendEvent('user', text);
+      commandHistory.push(text);
+      if (commandHistory.length > 100) commandHistory.shift();
+      historyCursor = commandHistory.length;
 
       try {
+        activeChatRequestController = new AbortController();
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, sessionId })
+          body: JSON.stringify({ message: text, sessionId }),
+          signal: activeChatRequestController.signal
         });
 
         const data = await res.json().catch(() => ({}));
@@ -698,27 +1048,86 @@
           throw new Error(data.error || `Falha HTTP ${res.status}`);
         }
 
-        appendMessage('bot', data.answer || 'Sem resposta do agente.', 'IalClaw');
+        const responseText = data.response || data.answer || 'Sem resposta do agente.';
+        appendEvent('final', responseText, { traceId: data.trace_id || '' });
+        speak(responseText);
+
+        if (data.mode) {
+          appendEvent('obs', `Modo efetivo: ${data.mode} | confianca: ${data.confidence ?? 'n/a'}`);
+        }
+
         statusLabel.innerText = 'Pronto';
-        loadConversationList();
+        await loadConversationList();
       } catch (err) {
-        appendMessage('bot', `Erro ao enviar mensagem: ${err.message || err}`, 'IalClaw');
-        statusLabel.innerText = 'Erro';
+        if (err.name === 'AbortError') {
+          appendEvent('obs', 'Execução interrompida pelo usuário.');
+          statusLabel.innerText = 'Interrompido';
+        } else {
+          appendEvent('error', `Erro ao enviar mensagem: ${err.message || err}`);
+          statusLabel.innerText = 'Erro';
+        }
       } finally {
+        pendingRequest = false;
         typing.style.display = 'none';
+        typing.textContent = 'IalClaw está pensando...';
         chatInput.disabled = false;
         sendBtn.disabled = false;
+        speechBtn.disabled = false;
+        stopBtn.disabled = true;
+        activeChatRequestController = null;
         chatInput.focus();
       }
     }
 
-    chatInput.addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        sendMessage();
+    async function stopCurrentExecution() {
+      if (!pendingRequest) return;
+
+      typing.style.display = 'block';
+      typing.textContent = '[SYSTEM] Interrompendo execução...';
+      statusLabel.innerText = 'Interrompendo';
+      stopBtn.disabled = true;
+
+      try {
+        await fetch('/api/chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+      } catch (_err) {
+        // best effort
       }
-    });
+
+      if (activeChatRequestController) {
+        activeChatRequestController.abort();
+      }
+    }
+
+    function handleInputKeyboard(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        sendMessage();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.max(0, historyCursor - 1);
+        chatInput.value = commandHistory[historyCursor] || '';
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.min(commandHistory.length, historyCursor + 1);
+        chatInput.value = historyCursor >= commandHistory.length ? '' : commandHistory[historyCursor] || '';
+      }
+    }
 
     sendBtn.addEventListener('click', () => sendMessage());
+    stopBtn.addEventListener('click', stopCurrentExecution);
+    chatInput.addEventListener('keydown', handleInputKeyboard);
     newChatBtn.addEventListener('click', startNewConversation);
     themeToggleBtn.addEventListener('click', toggleTheme);
     executionModeSelect.addEventListener('change', event => {
@@ -726,14 +1135,29 @@
       updateExecutionMode(event.target.value, previousMode);
     });
 
+    ttsToggleBtn.addEventListener('click', () => {
+      setTtsState(!ttsEnabled);
+      appendEvent('obs', `Leitura por voz ${ttsEnabled ? 'ativada' : 'desativada'}.`);
+    });
+
     document.querySelectorAll('[data-prompt]').forEach(button => {
       button.addEventListener('click', () => sendMessage(button.dataset.prompt));
     });
 
     applyTheme(currentTheme);
+    setTtsState(ttsEnabled);
+    connectSSE();
+    handleSpeechInput();
     loadExecutionConfig();
+    resetConversationView();
     loadConversationMessages(sessionId);
     loadConversationList();
+
+    window.addEventListener('beforeunload', () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    });
   </script>
 </body>
 

@@ -1,5 +1,5 @@
 import { Context } from 'grammy';
-import { AgentLoop } from '../engine/AgentLoop';
+import { AgentLoop, AgentProgressEvent } from '../engine/AgentLoop';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
 import { ContextBuilder } from '../memory/ContextBuilder';
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
@@ -13,6 +13,7 @@ import { LoadedSkill } from '../skills/types';
 import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
 import { decisionGate } from './agent/decisionGate';
+import { emitDebug } from '../shared/DebugBus';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -60,8 +61,10 @@ export class AgentController {
             }
 
             return SessionManager.runWithSession(conversationId, async () => {
+                const progress = this.createTelegramProgressTracker(ctx);
                 try {
-                    const answer = await this.runConversation(conversationId, payload.text);
+                    const answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
+                    await progress.complete();
                     await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
                     logger.info('message_flow_completed', 'Resposta enviada ao Telegram com sucesso.', {
                         duration_ms: Date.now() - startedAt,
@@ -69,6 +72,7 @@ export class AgentController {
                         requires_audio_reply: payload.requires_audio_reply
                     });
                 } catch (error: any) {
+                    await progress.fail(error);
                     logger.error('message_flow_failed', error, 'Falha ao processar mensagem do Telegram.', {
                         duration_ms: Date.now() - startedAt,
                         source_type: payload.source_type
@@ -80,6 +84,14 @@ export class AgentController {
     }
 
     public async handleWebMessage(sessionId: string, userQuery: string): Promise<string> {
+        return this.handleWebMessageWithOptions(sessionId, userQuery);
+    }
+
+    public async handleWebMessageWithOptions(
+        sessionId: string,
+        userQuery: string,
+        options?: { shouldStop?: () => boolean }
+    ): Promise<string> {
         return runWithTrace(async () => {
             const startedAt = Date.now();
             const logger = this.logger.child({ conversation_id: sessionId, channel: 'web' });
@@ -87,15 +99,29 @@ export class AgentController {
                 query_length: userQuery.length
             });
 
+            const emitWebProgress = async (event: AgentProgressEvent) => {
+                emitDebug('web_progress', {
+                    session_id: sessionId,
+                    stage: event.stage,
+                    iteration: event.iteration,
+                    tool_name: event.tool_name,
+                    duration_ms: event.duration_ms,
+                    message: this.formatProgressMessage(event)
+                });
+            };
+
+            await emitWebProgress({ stage: 'loop_started' });
+
             return SessionManager.runWithSession(sessionId, async () => {
                 try {
-                    const answer = await this.runConversation(sessionId, userQuery);
+                    const answer = await this.runConversation(sessionId, userQuery, emitWebProgress, options?.shouldStop);
                     logger.info('web_flow_completed', 'Mensagem web processada com sucesso.', {
                         duration_ms: Date.now() - startedAt,
                         response_length: answer.length
                     });
                     return answer;
                 } catch (error: any) {
+                    await emitWebProgress({ stage: 'failed' });
                     logger.error('web_flow_failed', error, 'Falha ao processar mensagem web.', {
                         duration_ms: Date.now() - startedAt
                     });
@@ -194,7 +220,12 @@ export class AgentController {
         }
     }
 
-    private async runConversation(sessionId: string, userQuery: string): Promise<string> {
+    private async runConversation(
+        sessionId: string,
+        userQuery: string,
+        onProgress?: (event: AgentProgressEvent) => Promise<void> | void,
+        shouldStop?: () => boolean
+    ): Promise<string> {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
@@ -227,7 +258,7 @@ export class AgentController {
                 logger.info('skill_resolved', 'Mensagem roteada para uma skill dedicada.', {
                     skill_name: resolved.skill.name
                 });
-                return this.runWithSkill(sessionId, userQuery, resolved.query, resolved.skill);
+                return this.runWithSkill(sessionId, userQuery, resolved.query, resolved.skill, onProgress, shouldStop);
             }
         }
 
@@ -324,6 +355,12 @@ export class AgentController {
             limits: {
                 max_steps: 3,
                 max_tool_calls: 2
+            },
+            progress: {
+                onEvent: onProgress
+            },
+            control: {
+                shouldStop
             }
         };
 
@@ -335,9 +372,12 @@ export class AgentController {
                 newMessage.role,
                 newMessage.content,
                 newMessage.tool_name,
-                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
+                newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined,
+                newMessage.role === 'tool' ? newMessage.content : undefined
             );
         }
+
+        await this.indexCodeArtifactsFromMessages(result.newMessages, session?.current_project_id);
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
@@ -384,7 +424,9 @@ export class AgentController {
         sessionId: string,
         originalQuery: string,
         cleanQuery: string,
-        skill: LoadedSkill
+        skill: LoadedSkill,
+        onProgress?: (event: AgentProgressEvent) => Promise<void> | void,
+        shouldStop?: () => boolean
     ): Promise<string> {
         const logger = this.logger.child({ conversation_id: sessionId, skill_name: skill.name });
 
@@ -420,6 +462,12 @@ export class AgentController {
             limits: {
                 max_steps: 10,
                 max_tool_calls: 12
+            },
+            progress: {
+                onEvent: onProgress
+            },
+            control: {
+                shouldStop
             }
         };
 
@@ -429,6 +477,7 @@ export class AgentController {
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
 
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
+        await this.indexCodeArtifactsFromMessages(result.newMessages, SessionManager.getCurrentSession()?.current_project_id);
         await this.memory.learn({
             query: originalQuery,
             nodes_used: memoryNodes,
@@ -518,6 +567,223 @@ Voce ainda pode:
     private isPuppeteerInstallAuthorization(normalizedQuery: string): boolean {
         return /\b(pode instalar|pode tentar instalar|autorizo instalar|autorizo tentar instalar|instale o puppeteer|instalar o puppeteer)\b/.test(normalizedQuery)
             && normalizedQuery.includes('puppeteer');
+    }
+
+    private formatProgressMessage(event: AgentProgressEvent): string {
+        switch (event.stage) {
+            case 'loop_started':
+                return 'Iniciando analise do pedido...';
+            case 'iteration_started':
+                return `Processando etapa ${event.iteration || 1}...`;
+            case 'llm_started':
+                return 'Pensando na proxima acao...';
+            case 'llm_completed':
+                return 'Analise concluida. Validando proximo passo...';
+            case 'tool_started':
+                return `Executando ferramenta: ${event.tool_name || 'tool'}`;
+            case 'tool_completed':
+                return `Ferramenta concluida: ${event.tool_name || 'tool'}`;
+            case 'tool_failed':
+                return `Falha na ferramenta: ${event.tool_name || 'tool'}. Tentando recuperar...`;
+            case 'finalizing':
+                return 'Finalizando resposta...';
+            case 'completed':
+                return 'Concluido. Enviando resposta...';
+            case 'stopped':
+                return 'Execucao interrompida pelo usuario.';
+            case 'failed':
+                return 'Erro no processamento da requisicao.';
+            default:
+                return 'Processando...';
+        }
+    }
+
+    private createTelegramProgressTracker(ctx: Context): {
+        onEvent: (event: AgentProgressEvent) => Promise<void>;
+        complete: () => Promise<void>;
+        fail: (error: any) => Promise<void>;
+    } {
+        const chatId = ctx.chat?.id;
+        let statusMessageId: number | null = null;
+        let lastStatusText = '';
+        let lastUpdateAt = 0;
+        const MIN_UPDATE_INTERVAL_MS = 1200;
+
+        const heartbeat = setInterval(() => {
+            ctx.replyWithChatAction('typing').catch(() => undefined);
+        }, 4500);
+
+        const updateStatus = async (text: string, force: boolean = false) => {
+            if (!chatId) {
+                return;
+            }
+
+            const now = Date.now();
+            if (!force && (text === lastStatusText || now - lastUpdateAt < MIN_UPDATE_INTERVAL_MS)) {
+                return;
+            }
+
+            const content = `⏳ ${text}`;
+            try {
+                if (!statusMessageId) {
+                    const sent: any = await ctx.reply(content);
+                    statusMessageId = sent?.message_id || null;
+                } else {
+                    await ctx.api.editMessageText(chatId, statusMessageId, content);
+                }
+                lastStatusText = text;
+                lastUpdateAt = now;
+            } catch {
+                // Se não for possível editar, não interrompe o fluxo principal
+            }
+        };
+
+        const onEvent = async (event: AgentProgressEvent) => {
+            await ctx.replyWithChatAction('typing').catch(() => undefined);
+
+            switch (event.stage) {
+                case 'loop_started':
+                    await updateStatus('Iniciando análise do pedido...');
+                    break;
+                case 'iteration_started':
+                    await updateStatus(`Processando etapa ${event.iteration || 1}...`);
+                    break;
+                case 'llm_started':
+                    await updateStatus('Pensando na próxima ação...');
+                    break;
+                case 'tool_started':
+                    await updateStatus(`Executando ferramenta: ${event.tool_name || 'tool'}`);
+                    break;
+                case 'tool_completed':
+                    await updateStatus(`Ferramenta concluída: ${event.tool_name || 'tool'}`);
+                    break;
+                case 'tool_failed':
+                    await updateStatus(`Ferramenta falhou: ${event.tool_name || 'tool'}. Tentando recuperar...`);
+                    break;
+                case 'finalizing':
+                    await updateStatus('Finalizando resposta...');
+                    break;
+                case 'completed':
+                    await updateStatus('Concluído. Enviando resposta...', true);
+                    break;
+                case 'failed':
+                    await updateStatus('Falha no processamento.', true);
+                    break;
+                case 'stopped':
+                    await updateStatus('Execucao interrompida pelo usuario.', true);
+                    break;
+                default:
+                    break;
+            }
+        };
+
+        const complete = async () => {
+            clearInterval(heartbeat);
+            await updateStatus('Concluído. Enviando resposta...', true);
+        };
+
+        const fail = async (error: any) => {
+            clearInterval(heartbeat);
+            await updateStatus(`Erro no processamento: ${String(error?.message || error)}`, true);
+        };
+
+        return { onEvent, complete, fail };
+    }
+
+    private async indexCodeArtifactsFromMessages(messages: MessagePayload[], fallbackProjectId?: string): Promise<void> {
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg.role !== 'assistant' || !msg.tool_name || !msg.tool_args) {
+                continue;
+            }
+
+            if (msg.tool_name !== 'workspace_save_artifact' && msg.tool_name !== 'workspace_apply_diff') {
+                continue;
+            }
+
+            const args = this.parseToolArgs(msg.tool_args);
+            if (!args) {
+                continue;
+            }
+
+            const projectId = String(args.project_id || fallbackProjectId || '').trim();
+            const relativePath = String(args.filename || args.filePath || '').trim();
+            if (!projectId || !relativePath) {
+                continue;
+            }
+
+            let rawContent = '';
+
+            if (msg.tool_name === 'workspace_save_artifact') {
+                rawContent = String(args.content || '');
+            }
+
+            if (msg.tool_name === 'workspace_apply_diff') {
+                const toolResultMessage = messages[i + 1];
+                if (!toolResultMessage || toolResultMessage.role !== 'tool' || !this.isSuccessfulToolResult(toolResultMessage.content)) {
+                    continue;
+                }
+
+                rawContent = workspaceService.readArtifact(projectId, relativePath) || '';
+            }
+
+            if (!rawContent.trim()) {
+                continue;
+            }
+
+            try {
+                await this.memory.indexCodeNode({
+                    project_id: projectId,
+                    relative_path: relativePath,
+                    raw_content: rawContent
+                });
+                this.memory.setActiveCodeFiles(projectId, [relativePath]);
+            } catch (error: any) {
+                this.logger.debug('code_indexing_skipped', 'Falha ao indexar arquivo de codigo para memoria.', {
+                    project_id: projectId,
+                    relative_path: relativePath,
+                    reason: String(error?.message || error)
+                });
+            }
+        }
+    }
+
+    private parseToolArgs(toolArgs: any): any | null {
+        if (!toolArgs) {
+            return null;
+        }
+
+        if (typeof toolArgs === 'object') {
+            return toolArgs;
+        }
+
+        if (typeof toolArgs !== 'string') {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(toolArgs);
+            return typeof parsed === 'object' && parsed !== null ? parsed : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private isSuccessfulToolResult(content: string): boolean {
+        if (typeof content !== 'string' || !content.trim()) {
+            return false;
+        }
+
+        try {
+            const parsed = JSON.parse(content);
+            if (typeof parsed?.success === 'boolean') {
+                return parsed.success;
+            }
+        } catch {
+            // fallback para resultados textuais
+        }
+
+        return /"success"\s*:\s*true|\bsucesso\b|\bOK:\b/i.test(content);
     }
 
 
