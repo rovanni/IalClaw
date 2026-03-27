@@ -116,6 +116,21 @@ Write-Host (t "install.deps")
 cmd.exe /c "npm ci"
 
 # -------------------------
+# LANGUAGE
+# -------------------------
+
+Write-Host (t "env.select_lang")
+Write-Host "pt-BR - Portugues" -ForegroundColor Gray
+Write-Host "en-US - English" -ForegroundColor Gray
+$selectedLang = Read-Host (t "prompt.lang")
+if ($selectedLang.Trim() -eq "en-US" -or $selectedLang.Trim() -eq "en") {
+    $Global:IalClawLang = "en-US"
+    Import-IalClawI18n
+}
+Write-Host "$(t 'env.lang_selected'): $Global:IalClawLang" -ForegroundColor Green
+Write-Host ""
+
+# -------------------------
 # ENV
 # -------------------------
 
@@ -127,6 +142,12 @@ if (-not (Test-Path .env)) {
     else {
         Set-Content -Path .env -Value "OLLAMA_BASE_URL=http://localhost:11434`nOLLAMA_MODEL=llama3.2`nTELEGRAM_BOT_TOKEN="
     }
+}
+
+$envContent = Get-Content .env -Raw
+if ($envContent -notmatch "APP_LANG=") {
+    $envContent = "APP_LANG=$Global:IalClawLang`n" + $envContent
+    Set-Content -Path .env -Value $envContent
 }
 
 # -------------------------

@@ -98,6 +98,9 @@ function Use-IalClawI18nFallback {
             "info.future_update" = "Para atualizar:"
             "info.done" = "Instalacao concluida!"
             "prompt.ollama" = "Instalar Ollama? (s/n): "
+            "prompt.lang" = "Selecione o idioma (pt-BR/en-US): "
+            "env.select_lang" = "Selecionando idioma..."
+            "env.lang_selected" = "Idioma definido para"
         }
     }
     else {
@@ -165,6 +168,9 @@ function Use-IalClawI18nFallback {
             "info.future_update" = "To update:"
             "info.done" = "Done!"
             "prompt.ollama" = "Install Ollama? (y/n): "
+            "prompt.lang" = "Select language (pt-BR/en-US): "
+            "env.select_lang" = "Selecting language..."
+            "env.lang_selected" = "Language set to"
         }
     }
 }

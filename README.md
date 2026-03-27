@@ -153,8 +153,10 @@ Internal features:
 
 The system now has unified language behavior across CLI, backend, and web dashboard:
 
-- Resolution priority: `--lang` (CLI) → `APP_LANG` → `config.json` → `en-US`
-- Persistent language command: `ialclaw lang <pt-BR|en-US>`
+- Resolution priority: `--lang` (CLI) → `APP_LANG` (`.env`) → `config.json` → `en-US`
+- During installation, you can select `pt-BR` or `en-US` - it's saved to `.env`
+- To change later: edit `.env` and set `APP_LANG=pt-BR` or `APP_LANG=en-US`
+- Persistent language command: `ialclaw lang <pt-BR|en-US>` (saves to `config.json`)
 - CLI output fully translated with `t(...)`
 - Backend startup language resolved from the same source of truth
 - Dashboard (`/advanced` and `/simple`) integrated with frontend i18n and runtime language loading
@@ -206,6 +208,7 @@ skills/
 ## 📋 Environment & Observability
 
 Main environment variables:
+- `APP_LANG=pt-BR|en-US` - System language (also set during installation)
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
 - `LOG_CONSOLE_FORMAT=pretty|json`
@@ -449,8 +452,10 @@ Recursos internos:
 
 O sistema agora possui comportamento unificado de idioma entre CLI, backend e dashboard web:
 
-- Prioridade de resolução: `--lang` (CLI) → `APP_LANG` → `config.json` → `en-US`
-- Comando de idioma persistente: `ialclaw lang <pt-BR|en-US>`
+- Prioridade de resolução: `--lang` (CLI) → `APP_LANG` (`.env`) → `config.json` → `en-US`
+- Durante a instalação, você pode selecionar `pt-BR` ou `en-US` - salvo no `.env`
+- Para alterar depois: edite o `.env` e defina `APP_LANG=pt-BR` ou `APP_LANG=en-US`
+- Comando de idioma persistente: `ialclaw lang <pt-BR|en-US>` (salva no `config.json`)
 - Saída da CLI totalmente traduzida com `t(...)`
 - Idioma de inicialização do backend resolvido pela mesma fonte de verdade
 - Dashboard (`/advanced` e `/simple`) integrado com i18n no frontend e carregamento dinâmico de idioma
@@ -502,6 +507,7 @@ skills/
 ## 📋 Ambiente & Observabilidade
 
 Principais variáveis de ambiente:
+- `APP_LANG=pt-BR|en-US` - Idioma do sistema (também definido durante a instalação)
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_DIR=logs`
 - `LOG_CONSOLE_FORMAT=pretty|json`
