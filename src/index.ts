@@ -27,8 +27,10 @@ import { ProviderEmbeddingService } from './memory/EmbeddingService';
 import { MemoryService } from './memory/MemoryService';
 import { MemoryLifecycleManager } from './memory/MemoryLifecycleManager';
 import { MemoryType } from './memory/MemoryTypes';
+import { setLanguage, t } from './i18n';
 
 dotenv.config({ debug: false });
+setLanguage((process.env.APP_LANG as any) || 'pt-BR');
 
 function getDisplayVersion(): string {
     const pkg = require('../package.json');
@@ -129,7 +131,7 @@ registry.register({
     execute: async () => {
         const skills = skillLoader.getAll();
         if (skills.length === 0) {
-            return "Nenhuma skill instalada no momento. Observacao: tools nativas do sistema sao listadas pela tool list_available_tools.";
+            return t('index.skills.none');
         }
         const lines = skills.map(s => {
             const origin = s.origin === 'internal' ? 'interna' : 'pública';
@@ -148,7 +150,7 @@ registry.register({
     execute: async () => {
         const defs = registry.getDefinitions();
         if (!defs.length) {
-            return "Nenhuma tool disponivel no registry.";
+            return t('index.tools.none');
         }
         const lines = defs
             .map(d => `• ${d.name} — ${d.description || 'sem descricao'}`)
@@ -189,10 +191,15 @@ registry.register({
         );
 
         if (!result.stored) {
-            return `Memoria nao armazenada: ${result.reason}.`;
+            return t('index.memory.not_stored', { reason: result.reason });
         }
 
-        return `Memoria ${result.action} com sucesso. id=${result.memoryId}, tipo=${result.type}, score=${result.score.toFixed(2)}.`;
+        return t('index.memory.stored', {
+            action: result.action,
+            id: result.memoryId,
+            type: result.type,
+            score: result.score.toFixed(2)
+        });
     }
 });
 
@@ -212,13 +219,13 @@ registry.register({
         const limit = Number(args?.limit || 5);
         const memories = await memoryLifecycle.queryMemory(String(args?.query || ''), { limit });
         if (!memories.length) {
-            return 'Nenhuma memoria relevante encontrada.';
+            return t('index.memory.none');
         }
 
         const lines = memories.map((memoryItem, index) =>
             `${index + 1}. [${memoryItem.type}] score=${memoryItem.finalScore.toFixed(3)} :: ${memoryItem.content.slice(0, 220)}`
         );
-        return `Memorias encontradas (${memories.length}):\n${lines.join('\n')}`;
+        return t('index.memory.found', { count: memories.length, lines: lines.join('\n') });
     }
 });
 
@@ -230,7 +237,10 @@ registry.register({
     execute: async () => {
         auditLog.reload();
         const skills = skillLoader.load();
-        return `Skills recarregadas com sucesso. ${skills.length} skill(s) ativa(s): ${skills.map(s => s.name).join(', ')}`;
+        return t('index.reload.success', {
+            count: skills.length,
+            names: skills.map(s => s.name).join(', ')
+        });
     }
 });
 
@@ -251,18 +261,18 @@ registry.register({
     execute: async (args: any) => {
         const safeName = String(args.skill_name || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
         if (!safeName) {
-            return 'Erro: nome de skill invalido.';
+            return t('index.skill.invalid_name');
         }
 
         const tempDir = path.join(projectRoot, 'skills', 'temp', safeName);
         const publicDir = path.join(projectRoot, 'skills', 'public', safeName);
         if (!fs.existsSync(tempDir)) {
-            return `Erro: skill "${safeName}" nao encontrada em skills/temp/.`;
+            return t('index.skill.temp_not_found', { name: safeName });
         }
 
         const logPath = path.join(projectRoot, 'data', 'skill-audit-log.json');
         if (!fs.existsSync(logPath)) {
-            return `Erro: auditoria ausente para "${safeName}". Execute run_skill_auditor antes de finalizar.`;
+            return t('index.skill.audit_missing', { name: safeName });
         }
 
         const lines = fs.readFileSync(logPath, 'utf8').split('\n').map(l => l.trim()).filter(Boolean);
@@ -279,7 +289,7 @@ registry.register({
         }
 
         if (!lastEntry) {
-            return `Erro: nenhum resultado de auditoria encontrado para "${safeName}".`;
+            return t('index.skill.audit_not_found', { name: safeName });
         }
 
         const lifecycleStatus = String(lastEntry.lifecycle_status || '').toLowerCase();
@@ -341,7 +351,7 @@ registry.register({
     execute: async (args: any) => {
         const safeName = String(args.skill_name || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
         if (!safeName) {
-            return 'Erro: nome de skill invalido.';
+            return t('index.skill.invalid_name');
         }
 
         const publicDir = path.join(projectRoot, 'skills', 'public', safeName);

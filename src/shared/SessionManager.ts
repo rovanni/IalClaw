@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { Lang } from '../i18n/types';
 
 export interface ConversationMessage {
     role: 'user' | 'assistant';
@@ -17,6 +18,7 @@ const STM_MAX_MESSAGES = 10; // 5 exchanges
 
 export interface SessionContext {
     conversation_id: string;
+    language?: Lang;
     current_goal?: string;
     current_project_id?: string;
     continue_project_only?: boolean;
@@ -43,6 +45,7 @@ export class SessionManager {
         if (!sessionStore.has(conversationId)) {
             sessionStore.set(conversationId, {
                 conversation_id: conversationId,
+                language: 'pt-BR',
                 last_artifacts: [],
                 conversation_history: [],
                 pending_actions: []

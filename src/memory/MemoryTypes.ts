@@ -9,6 +9,7 @@ export type MemoryType =
 
 export interface AgentMemoryContext {
     sessionId: string;
+    language?: 'pt-BR' | 'en-US';
     role?: 'user' | 'assistant' | 'system';
     projectId?: string;
     source?: 'explicit' | 'implicit';

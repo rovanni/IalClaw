@@ -16,6 +16,8 @@ import { decisionGate } from './agent/decisionGate';
 import { emitDebug } from '../shared/DebugBus';
 import { MemoryLifecycleManager } from '../memory/MemoryLifecycleManager';
 import { AgentMemoryContext } from '../memory/MemoryTypes';
+import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
+import { Lang } from '../i18n/types';
 import {
     clearPendingAction,
     getPendingAction,
@@ -177,20 +179,23 @@ export class AgentController {
             await emitWebProgress({ stage: 'loop_started' });
 
             return SessionManager.runWithSession(sessionId, async () => {
-                try {
-                    const answer = await this.runConversation(sessionId, userQuery, emitWebProgress, options?.shouldStop);
-                    logger.info('web_flow_completed', 'Mensagem web processada com sucesso.', {
-                        duration_ms: Date.now() - startedAt,
-                        response_length: answer.length
-                    });
-                    return answer;
-                } catch (error: any) {
-                    await emitWebProgress({ stage: 'failed' });
-                    logger.error('web_flow_failed', error, 'Falha ao processar mensagem web.', {
-                        duration_ms: Date.now() - startedAt
-                    });
-                    throw error;
-                }
+                const lang = this.resolveSessionLanguage(userQuery, SessionManager.getCurrentSession());
+                return withLanguage(lang, async () => {
+                    try {
+                        const answer = await this.runConversation(sessionId, userQuery, emitWebProgress, options?.shouldStop);
+                        logger.info('web_flow_completed', 'Mensagem web processada com sucesso.', {
+                            duration_ms: Date.now() - startedAt,
+                            response_length: answer.length
+                        });
+                        return answer;
+                    } catch (error: any) {
+                        await emitWebProgress({ stage: 'failed' });
+                        logger.error('web_flow_failed', error, 'Falha ao processar mensagem web.', {
+                            duration_ms: Date.now() - startedAt
+                        });
+                        throw error;
+                    }
+                });
             });
         }, 'web_controller');
     }
@@ -207,20 +212,20 @@ export class AgentController {
                 session.conversation_history = [];
                 session.current_project_id = undefined;
                 session.continue_project_only = undefined;
-                return '🔄 Nova conversa iniciada. Como posso te ajudar?';
+                return t('agent.command.new');
 
             case '/help':
-                return 'Comandos disponíveis:\n/new - reiniciar conversa\n/help - ver comandos\n/status - ver estado da sessão';
+                return t('agent.command.help');
 
             case '/status': {
                 const s = SessionManager.getSession(sessionId);
                 const project = s.current_project_id || 'nenhum';
                 const msgs = s.conversation_history.length;
-                return `📊 Sessão: ${sessionId}\nProjeto ativo: ${project}\nMensagens na sessão: ${msgs}`;
+                return t('agent.command.status', { sessionId, project, messages: msgs });
             }
 
             default:
-                return '⚠️ Comando não reconhecido. Use /help para ver os comandos disponíveis.';
+                return t('agent.command.unknown');
         }
     }
 
@@ -294,6 +299,7 @@ export class AgentController {
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
         let effectiveUserQuery = userQuery;
+        this.resolveSessionLanguage(userQuery, session);
 
         // ── Roteamento de comandos (antes do LLM) ──────────────────────────
         const commandResponse = this.handleCommand(userQuery, sessionId);
@@ -313,7 +319,7 @@ export class AgentController {
             if (pending) {
                 if (isDecline(userQuery)) {
                     clearPendingAction(session, pending.id);
-                    const declined = 'Perfeito, cancelei a acao pendente.';
+                    const declined = t('agent.pending.cancelled');
                     this.memory.saveMessage(sessionId, 'user', userQuery);
                     this.memory.saveMessage(sessionId, 'assistant', declined);
                     return declined;
@@ -338,6 +344,7 @@ export class AgentController {
         this.memory.saveMessage(sessionId, 'user', userQuery);
         await this.captureLifecycleMemory(userQuery, {
             sessionId,
+            language: session?.language,
             role: 'user',
             projectId: session?.current_project_id,
             recentMessages: session?.conversation_history.map((item) => item.content).slice(-5)
@@ -501,6 +508,7 @@ export class AgentController {
 
         await this.captureLifecycleMemory(result.answer, {
             sessionId,
+            language: session?.language,
             role: 'assistant',
             projectId: session?.current_project_id,
             recentMessages: [effectiveUserQuery]
@@ -601,6 +609,7 @@ export class AgentController {
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
         await this.captureLifecycleMemory(result.answer, {
             sessionId,
+            language: SessionManager.getCurrentSession()?.language,
             role: 'assistant',
             projectId: SessionManager.getCurrentSession()?.current_project_id
         });
@@ -731,13 +740,13 @@ export class AgentController {
             session._tool_input_attempts = 0;
             session._input_history = [];
 
-            const connectMsg = `Projeto existente conectado a esta sessao: ${projectIdFromPath}. Vou continuar editando os arquivos desse projeto sem criar um novo.`;
+            const connectMsg = t('agent.project.connected', { projectId: projectIdFromPath });
 
             // Se o input é APENAS um path (sem pedido real), retorna confirmação.
             // Se tem conteúdo além do path, registra a conexão e deixa o pipeline processar o pedido.
             const withoutPaths = userQuery.replace(/(?:[A-Za-z]:\\|\/)[^\s"'`]+/g, '').trim();
             if (withoutPaths.length < 5) {
-                return `${connectMsg}\n\nO que voce deseja fazer com esse projeto?`;
+                return `${connectMsg}\n\n${t('agent.project.ask_action')}`;
             }
 
             this.memory.saveMessage(session.conversation_id, 'assistant', connectMsg);
@@ -746,7 +755,7 @@ export class AgentController {
 
         if (this.isPuppeteerInstallAuthorization(normalized)) {
             if (!session) {
-                return 'Nao encontrei uma sessao ativa para registrar a autorizacao de instalacao.';
+                return t('agent.session.not_found');
             }
 
             session.capability_policy_overrides = {
@@ -756,14 +765,10 @@ export class AgentController {
 
             const installed = await skillManager.ensure('browser_execution', 'auto-install');
             if (installed) {
-                return 'Instalacao do suporte a browser concluida com sucesso. Agora posso validar projetos HTML automaticamente nesta sessao.';
+                return t('agent.install.browser.success');
             }
 
-            return `Recebi sua autorizacao e tentei instalar o suporte a browser automaticamente, mas a instalacao nao concluiu com sucesso neste ambiente.
-
-Voce ainda pode:
-1. instalar manualmente o puppeteer
-2. continuar em modo degradado sem validacao em browser`;
+            return t('agent.install.browser.failed');
         }
 
         // ── Decision Gate: intent + contexto → decisão ─────────────────────
@@ -794,32 +799,42 @@ Voce ainda pode:
             && normalizedQuery.includes('puppeteer');
     }
 
+    private resolveSessionLanguage(input: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Lang {
+        const detected = detectLanguage(input);
+        const lang = detected || session?.language || 'pt-BR';
+        if (session) {
+            session.language = lang;
+        }
+        setLanguage(lang);
+        return lang;
+    }
+
     private formatProgressMessage(event: AgentProgressEvent): string {
         switch (event.stage) {
             case 'loop_started':
-                return 'Iniciando analise do pedido...';
+                return t('agent.progress.starting');
             case 'iteration_started':
-                return `Processando etapa ${event.iteration || 1}...`;
+                return t('agent.progress.iteration', { iteration: event.iteration || 1 });
             case 'llm_started':
-                return 'Pensando na proxima acao...';
+                return t('agent.progress.thinking');
             case 'llm_completed':
-                return 'Analise concluida. Validando proximo passo...';
+                return t('agent.progress.analysis_completed');
             case 'tool_started':
-                return `Executando ferramenta: ${event.tool_name || 'tool'}`;
+                return t('agent.progress.tool_started', { tool: event.tool_name || 'tool' });
             case 'tool_completed':
-                return `Ferramenta concluida: ${event.tool_name || 'tool'}`;
+                return t('agent.progress.tool_completed', { tool: event.tool_name || 'tool' });
             case 'tool_failed':
-                return `Falha na ferramenta: ${event.tool_name || 'tool'}. Tentando recuperar...`;
+                return t('agent.progress.tool_failed', { tool: event.tool_name || 'tool' });
             case 'finalizing':
-                return 'Finalizando resposta...';
+                return t('agent.progress.finalizing');
             case 'completed':
-                return 'Concluido. Enviando resposta...';
+                return t('agent.progress.completed');
             case 'stopped':
-                return 'Execucao interrompida pelo usuario.';
+                return t('agent.progress.stopped');
             case 'failed':
-                return 'Erro no processamento da requisicao.';
+                return t('agent.progress.failed');
             default:
-                return 'Processando...';
+                return t('agent.progress.processing');
         }
     }
 
@@ -854,34 +869,34 @@ Voce ainda pode:
 
             switch (event.stage) {
                 case 'loop_started':
-                    await emitStatus('Iniciando análise do pedido...');
+                    await emitStatus(t('agent.progress.starting'));
                     break;
                 case 'iteration_started':
-                    await emitStatus(`Processando etapa ${event.iteration || 1}...`);
+                    await emitStatus(t('agent.progress.iteration', { iteration: event.iteration || 1 }));
                     break;
                 case 'llm_started':
-                    await emitStatus('Pensando na próxima ação...');
+                    await emitStatus(t('agent.progress.thinking'));
                     break;
                 case 'tool_started':
-                    await emitStatus(`Executando ferramenta: ${event.tool_name || 'tool'}`);
+                    await emitStatus(t('agent.progress.tool_started', { tool: event.tool_name || 'tool' }));
                     break;
                 case 'tool_completed':
-                    await emitStatus(`Ferramenta concluída: ${event.tool_name || 'tool'}`);
+                    await emitStatus(t('agent.progress.tool_completed', { tool: event.tool_name || 'tool' }));
                     break;
                 case 'tool_failed':
-                    await emitStatus(`Ferramenta falhou: ${event.tool_name || 'tool'}. Tentando recuperar...`);
+                    await emitStatus(t('agent.progress.tool_failed', { tool: event.tool_name || 'tool' }));
                     break;
                 case 'finalizing':
-                    await emitStatus('Finalizando resposta...');
+                    await emitStatus(t('agent.progress.finalizing'));
                     break;
                 case 'completed':
-                    await emitStatus('Concluído. Enviando resposta...', true);
+                    await emitStatus(t('agent.progress.completed'), true);
                     break;
                 case 'failed':
-                    await emitStatus('Falha no processamento.', true);
+                    await emitStatus(t('agent.progress.failed'), true);
                     break;
                 case 'stopped':
-                    await emitStatus('Execucao interrompida pelo usuario.', true);
+                    await emitStatus(t('agent.progress.stopped'), true);
                     break;
                 default:
                     break;
@@ -890,12 +905,12 @@ Voce ainda pode:
 
         const complete = async () => {
             clearInterval(heartbeat);
-            await emitStatus('Concluído. Enviando resposta...', true);
+            await emitStatus(t('agent.progress.completed'), true);
         };
 
         const fail = async (error: any) => {
             clearInterval(heartbeat);
-            await emitStatus(`Erro no processamento: ${String(error?.message || error)}`, true);
+            await emitStatus(t('agent.error.pipeline', { message: String(error?.message || error) }), true);
         };
 
         return { onEvent, complete, fail };
