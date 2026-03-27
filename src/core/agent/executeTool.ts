@@ -3,6 +3,7 @@ import { getContext } from '../../shared/TraceContext';
 import { emitDebug } from '../../shared/DebugBus';
 import { SessionManager } from '../../shared/SessionManager';
 import { validateToolInput } from '../../utils/validateToolInput';
+import { checkWorkspaceCreateGuard } from './workspaceGuard';
 
 function extractIssuesFromMessage(msg: string) {
     return [{ path: '', message: msg, expected: null, received: null }];
@@ -51,6 +52,14 @@ export async function executeToolCall(toolName: string, input: any) {
     const start = Date.now();
     emitDebug('tool_call', { trace_id: ctx.trace_id, tool: toolName, input: validatedInput });
     emitDebug('agent:tool:start', { trace_id: ctx.trace_id, tool: toolName, input: validatedInput });
+
+    if (toolName === 'workspace_create_project') {
+        const guard = checkWorkspaceCreateGuard(validatedInput);
+        if (guard.handled) {
+            emitDebug('agent:tool:end', { trace_id: ctx.trace_id, tool: toolName, duration_ms: Date.now() - start, result: guard.result });
+            return guard.result;
+        }
+    }
 
     let result;
     try {

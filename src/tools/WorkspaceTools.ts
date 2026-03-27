@@ -178,5 +178,93 @@ export const workspaceApplyDiffTool: ToolDefinition = {
     }
 };
 
+export const workspaceListProjectsTool: ToolDefinition = {
+    name: 'workspace_list_projects',
+    description: 'Lista todos os projetos existentes no workspace com seus metadados. Use ANTES de criar um projeto novo para evitar duplicatas.',
+    input_schema: {
+        type: 'object',
+        properties: {}
+    },
+    execute: async (_input: any, context?: any) => {
+        const trace_id = context?.trace_id || getContext().trace_id;
+        emitDebug('tool', { name: 'workspace_list_projects:start', trace_id });
+
+        try {
+            const projects = workspaceService.listProjects();
+            emitDebug('tool', { name: 'workspace_list_projects:success', trace_id, count: projects.length });
+            return { success: true, data: { projects } };
+        } catch (err: any) {
+            emitDebug('tool', { name: 'workspace_list_projects:error', trace_id, error: err.message });
+            return { success: false, error: err.message };
+        }
+    }
+};
+
+export const workspaceListFilesTool: ToolDefinition = {
+    name: 'workspace_list_files',
+    description: 'Lista todos os arquivos dentro do output de um projeto existente.',
+    input_schema: {
+        type: 'object',
+        properties: {
+            project_id: { type: 'string', description: 'ID do projeto' }
+        },
+        required: ['project_id']
+    },
+    execute: async (input: any, context?: any) => {
+        const trace_id = context?.trace_id || getContext().trace_id;
+
+        if (!input.project_id) return { success: false, error: 'project_id e obrigatorio' };
+
+        emitDebug('tool', { name: 'workspace_list_files:start', trace_id, project_id: input.project_id });
+
+        try {
+            if (!workspaceService.projectExists(input.project_id)) {
+                return { success: false, error: `Projeto ${input.project_id} nao encontrado.` };
+            }
+
+            const files = workspaceService.listProjectFiles(input.project_id);
+            emitDebug('tool', { name: 'workspace_list_files:success', trace_id, count: files.length });
+            return { success: true, data: { files } };
+        } catch (err: any) {
+            emitDebug('tool', { name: 'workspace_list_files:error', trace_id, error: err.message });
+            return { success: false, error: err.message };
+        }
+    }
+};
+
+export const workspaceReadArtifactTool: ToolDefinition = {
+    name: 'workspace_read_artifact',
+    description: 'Le o conteudo de um arquivo especifico dentro de um projeto existente. Use para inspecionar codigo antes de modificar.',
+    input_schema: {
+        type: 'object',
+        properties: {
+            project_id: { type: 'string', description: 'ID do projeto' },
+            filename: { type: 'string', description: 'Caminho relativo do arquivo dentro do output (ex: src/index.js)' }
+        },
+        required: ['project_id', 'filename']
+    },
+    execute: async (input: any, context?: any) => {
+        const trace_id = context?.trace_id || getContext().trace_id;
+
+        if (!input.project_id) return { success: false, error: 'project_id e obrigatorio' };
+        if (!input.filename) return { success: false, error: 'filename e obrigatorio' };
+
+        emitDebug('tool', { name: 'workspace_read_artifact:start', trace_id, project_id: input.project_id, filename: input.filename });
+
+        try {
+            const content = workspaceService.readArtifact(input.project_id, input.filename);
+            if (content === null) {
+                return { success: false, error: `Arquivo ${input.filename} nao encontrado no projeto ${input.project_id}.` };
+            }
+
+            emitDebug('tool', { name: 'workspace_read_artifact:success', trace_id });
+            return { success: true, data: { content } };
+        } catch (err: any) {
+            emitDebug('tool', { name: 'workspace_read_artifact:error', trace_id, error: err.message });
+            return { success: false, error: err.message };
+        }
+    }
+};
+
 export { workspaceValidateProjectTool };
 export { workspaceRunProjectTool };

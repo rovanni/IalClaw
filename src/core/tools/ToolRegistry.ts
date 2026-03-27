@@ -1,5 +1,5 @@
 import { ToolDefinition } from './types';
-import { workspaceApplyDiffTool, workspaceCreateProjectTool, workspaceRunProjectTool, workspaceSaveArtifactTool, workspaceValidateProjectTool } from '../../tools/WorkspaceTools';
+import { workspaceApplyDiffTool, workspaceCreateProjectTool, workspaceListFilesTool, workspaceListProjectsTool, workspaceReadArtifactTool, workspaceRunProjectTool, workspaceSaveArtifactTool, workspaceValidateProjectTool } from '../../tools/WorkspaceTools';
 
 class ToolRegistry {
     private tools = new Map<string, ToolDefinition>();
@@ -19,6 +19,9 @@ class ToolRegistry {
 
 export const toolRegistry = new ToolRegistry();
 
+toolRegistry.register(workspaceListProjectsTool);
+toolRegistry.register(workspaceListFilesTool);
+toolRegistry.register(workspaceReadArtifactTool);
 toolRegistry.register(workspaceCreateProjectTool);
 toolRegistry.register(workspaceSaveArtifactTool);
 toolRegistry.register(workspaceApplyDiffTool);
