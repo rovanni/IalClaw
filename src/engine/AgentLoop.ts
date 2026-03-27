@@ -389,7 +389,17 @@ toolCallsCount++;
                         this.recordPathTried(response.tool_call.args.path);
                     }
                     
+                    this.lastStepResult = result;
                     this.advanceToNextStep();
+
+                    const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
+                    const lastSuccessful = !result.toLowerCase().includes('erro') && !result.toLowerCase().includes('error') && !result.toLowerCase().includes('failed');
+                    const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
+                    
+                    if (stopDecision.shouldStop) {
+                        this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${this.getGlobalConfidence(this.stepValidations).toFixed(2)}`);
+                        break;
+                    }
 
                     if (await stopIfRequested()) {
                         return { answer: t('loop.stopped_by_user'), newMessages };
@@ -837,6 +847,45 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
             this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
         }
+    }
+
+    private getGlobalConfidence(validations: number[]): number {
+        if (validations.length === 0) {
+            return 0;
+        }
+
+        const total = validations.reduce((sum, v) => sum + v, 0);
+        return total / validations.length;
+    }
+
+    private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): { shouldStop: boolean; reason: string } {
+        if (stepCount < 2) {
+            return { shouldStop: false, reason: 'insufficient_steps' };
+        }
+
+        const globalConfidence = this.getGlobalConfidence(this.stepValidations);
+
+        if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful) {
+            return { 
+                shouldStop: true, 
+                reason: `global_confidence=${globalConfidence.toFixed(2)}_threshold=${this.GLOBAL_CONFIDENCE_THRESHOLD}` 
+            };
+        }
+
+        if (stepCount >= this.MAX_STEPS_BEFORE_OVEREXECUTION_CHECK) {
+            const recentValidations = this.stepValidations.slice(-3);
+            if (recentValidations.length >= 2) {
+                const avgRecent = recentValidations.reduce((a, b) => a + b, 0) / recentValidations.length;
+                if (avgRecent < 0.4) {
+                    return { 
+                        shouldStop: true, 
+                        reason: `over_execution_detected_avg_recent=${avgRecent.toFixed(2)}` 
+                    };
+                }
+            }
+        }
+
+        return { shouldStop: false, reason: 'execution_continues' };
     }
 
     private shouldUseFallbackStrategy(): boolean {
