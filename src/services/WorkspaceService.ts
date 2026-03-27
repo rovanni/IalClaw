@@ -200,6 +200,40 @@ export class WorkspaceService {
 
         return fs.readFileSync(outputPath, 'utf8');
     }
+
+    public listProjects(): Array<{ id: string; metadata: ProjectMetadata; files_count: number }> {
+        const projectsPath = path.join(this.basePath, 'projects');
+        if (!fs.existsSync(projectsPath)) return [];
+
+        const results: Array<{ id: string; metadata: ProjectMetadata; files_count: number }> = [];
+
+        for (const entry of fs.readdirSync(projectsPath, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const meta = this.readProjectMetadata(entry.name);
+            if (!meta) continue;
+
+            const outputPath = path.join(projectsPath, entry.name, 'output');
+            let files_count = 0;
+            if (fs.existsSync(outputPath)) {
+                const countFiles = (dir: string): number => {
+                    let count = 0;
+                    for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+                        if (item.isFile()) {
+                            count++;
+                        } else if (item.isDirectory()) {
+                            count += countFiles(path.join(dir, item.name));
+                        }
+                    }
+                    return count;
+                };
+                files_count = countFiles(outputPath);
+            }
+
+            results.push({ id: entry.name, metadata: meta, files_count });
+        }
+
+        return results;
+    }
 }
 
 export const workspaceService = new WorkspaceService();

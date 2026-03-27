@@ -172,6 +172,28 @@ export class AgentController {
         return match ? match[1].trim() : null;
     }
 
+    private async indexProjectsInMemory(): Promise<void> {
+        try {
+            const projects = workspaceService.listProjects();
+            const existingNodes = this.memory.getProjectNodes(100);
+            const indexedIds = new Set(existingNodes.map(n => n.id.replace(/^project:/, '')));
+
+            for (const { id, metadata, files_count } of projects) {
+                if (!indexedIds.has(id)) {
+                    await this.memory.saveProjectNode({
+                        id,
+                        name: metadata.name,
+                        description: metadata.prompt,
+                        files_count
+                    });
+                    this.logger.info('project_indexed', 'Projeto indexado na memória cognitiva.', { project_id: id, name: metadata.name });
+                }
+            }
+        } catch (err: any) {
+            this.logger.warn('project_index_failed', 'Falha ao indexar projetos na memória.', { error: err.message });
+        }
+    }
+
     private async runConversation(sessionId: string, userQuery: string): Promise<string> {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
@@ -229,6 +251,10 @@ export class AgentController {
         // Memória: embedding → retrieval → identidade → contexto
         const provider = this.loop.getProvider();
         const queryEmbedding = await provider.embed(userQuery);
+
+        // ── Indexar projetos do workspace na memória cognitiva ─────────────
+        await this.indexProjectsInMemory();
+
         const memoryNodes = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
         let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
@@ -237,6 +263,28 @@ export class AgentController {
         const userName = this.getUserName();
         if (userName) {
             contextStr += `\nO nome do usuario é ${userName}. Use isso para personalizar a resposta.`;
+        }
+
+        // ── Injetar projetos conhecidos no contexto ────────────────────────
+        const projectNodes = this.memory.getProjectNodes(5);
+        if (projectNodes.length) {
+            const projectLines = projectNodes.map(n => {
+                const projectId = n.id.replace(/^project:/, '');
+                return `- ${n.name} (id: ${projectId})`;
+            }).join('\n');
+            contextStr += `\n\nProjetos conhecidos:\n${projectLines}`;
+        }
+
+        // ── Auto-resolver projeto ativo a partir da memória ────────────────
+        if (!session?.current_project_id) {
+            const projectFromMemory = memoryNodes.find(n => n.subtype === 'project');
+            if (projectFromMemory && session) {
+                const resolvedId = projectFromMemory.id.replace(/^project:/, '');
+                if (workspaceService.projectExists(resolvedId)) {
+                    session.current_project_id = resolvedId;
+                    logger.info('project_auto_resolved', 'Projeto ativo resolvido via memória cognitiva.', { project_id: resolvedId });
+                }
+            }
         }
 
         // ── Injetar consciência de skills no contexto ───────────────────────

@@ -354,6 +354,51 @@ export class CognitiveMemory {
         transaction();
     }
 
+    public async saveProjectNode(project: {
+        id: string;
+        name: string;
+        description?: string;
+        files_count?: number;
+    }): Promise<void> {
+        const content = `Projeto: ${project.name}${project.description ? ` — ${project.description}` : ''}`;
+        const nodeId = `project:${project.id}`;
+        const embedding = await this.provider.embed(content);
+        const now = new Date().toISOString();
+        const tags = JSON.stringify(['project', project.id]);
+
+        this.db.prepare(`
+            INSERT OR REPLACE INTO nodes
+            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            nodeId,
+            'memory',
+            'project',
+            project.name,
+            content,
+            content.slice(0, 280),
+            JSON.stringify(embedding),
+            'project',
+            tags,
+            0.8,
+            0.7,
+            1.0,
+            1,
+            now,
+            now
+        );
+    }
+
+    public getProjectNodes(limit: number = 10): NodeResult[] {
+        return this.db.prepare(`
+            SELECT id, type, subtype, name, score, importance, freshness, content, content_preview
+            FROM nodes
+            WHERE subtype = 'project'
+            ORDER BY importance DESC, score DESC
+            LIMIT ?
+        `).all(limit) as NodeResult[];
+    }
+
     public async saveExecutionFix(input: {
         content: string;
         project_id?: string;
