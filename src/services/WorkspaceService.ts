@@ -200,6 +200,38 @@ export class WorkspaceService {
 
         return fs.readFileSync(outputPath, 'utf8');
     }
+
+    public listArtifacts(projectId: string, subdir?: string): string[] {
+        const projectPath = path.join(this.basePath, 'projects', projectId);
+        if (!fs.existsSync(projectPath)) {
+            throw new Error(`Projeto ${projectId} nao encontrado.`);
+        }
+
+        const outputRoot = path.join(projectPath, 'output');
+        const targetDir = subdir
+            ? path.join(outputRoot, sanitizePath(subdir))
+            : outputRoot;
+
+        if (!fs.existsSync(targetDir)) {
+            return [];
+        }
+
+        const results: string[] = [];
+        const walk = (dir: string, prefix: string) => {
+            for (const entry of fs.readdirSync(dir)) {
+                const full = path.join(dir, entry);
+                const relative = prefix ? `${prefix}/${entry}` : entry;
+                if (fs.statSync(full).isDirectory()) {
+                    walk(full, relative);
+                } else {
+                    results.push(relative);
+                }
+            }
+        };
+
+        walk(targetDir, subdir || '');
+        return results;
+    }
 }
 
 export const workspaceService = new WorkspaceService();
