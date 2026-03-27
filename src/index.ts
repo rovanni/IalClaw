@@ -4,6 +4,7 @@ process.env.DOTENV_CONFIG_QUIET = 'true';
 import { Bot } from 'grammy';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { DatabaseManager } from './db/DatabaseManager';
 import { CognitiveMemory } from './memory/CognitiveMemory';
 import { ContextBuilder } from './memory/ContextBuilder';
@@ -24,6 +25,29 @@ import { debugBus } from './shared/DebugBus';
 
 dotenv.config({ debug: false });
 
+function getDisplayVersion(): string {
+    const pkg = require('../package.json');
+    const baseVersion = pkg.version || '0.0.0';
+
+    try {
+        const root = path.join(__dirname, '..');
+        const gitHash = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+            .toString()
+            .trim();
+        const isDirty = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+            .toString()
+            .trim().length > 0;
+
+        if (!gitHash) {
+            return baseVersion;
+        }
+
+        return `${baseVersion}+${gitHash}${isDirty ? '-dirty' : ''}`;
+    } catch {
+        return baseVersion;
+    }
+}
+
 // ── Banner de inicialização ──────────────────────────────────────────────────
 {
     const RESET = '\x1b[0m';
@@ -31,8 +55,7 @@ dotenv.config({ debug: false });
     const GREEN = '\x1b[32m';
     const DIM = '\x1b[2m';
 
-    const pkg = require('../package.json');
-    const version = pkg.version || '0.0.0';
+    const version = getDisplayVersion();
     const logLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
     const mode = logLevel === 'debug' ? 'dev:debug' : 'dev';
     const channel = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_bot_token_here'

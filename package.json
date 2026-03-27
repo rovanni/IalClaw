@@ -13,7 +13,10 @@
     "test": "ts-node src/tests/run.ts",
     "setup": "ts-node src/scripts/setup.ts",
     "bootstrap:identities": "ts-node src/scripts/bootstrap-identities.ts",
-    "postinstall": "node scripts/patch-punycode.js"
+    "postinstall": "node scripts/patch-punycode.js",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
   },
   "keywords": [],
   "author": "",

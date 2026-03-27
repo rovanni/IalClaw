@@ -13,7 +13,7 @@
  *   ialclaw logs                 → exibe últimas linhas do log
  *   ialclaw logs --follow        → acompanha log em tempo real
  */
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -46,6 +46,18 @@ const hasFlag = (name) => flags.includes(name);
 // ── Versão ───────────────────────────────────────────────────────────────────
 let version = '0.0.0';
 try { version = require(path.join(root, 'package.json')).version || version; } catch {}
+try {
+    const gitHash = execSync('git rev-parse --short HEAD', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim();
+    const isDirty = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim().length > 0;
+
+    if (gitHash) {
+        version = `${version}+${gitHash}${isDirty ? '-dirty' : ''}`;
+    }
+} catch {}
 
 // ── PID helpers ──────────────────────────────────────────────────────────────
 function ensureStateDir() {
