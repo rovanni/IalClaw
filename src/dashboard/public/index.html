@@ -421,23 +421,23 @@
 <body>
   <header id="status-bar">
     <div class="header-side">
-      <button id="menu-toggle-btn" class="icon-btn" type="button" aria-label="Open menu">Menu</button>
+      <button id="menu-toggle-btn" class="icon-btn" type="button" aria-label="Open menu" data-i18n="dashboard.nav.menu">Menu</button>
       <div class="header-stack">
-        <div class="brand">IalClaw</div>
-        <div class="brand-caption">Modo simples focado totalmente na conversa</div>
+        <div class="brand" data-i18n="dashboard.brand">IalClaw</div>
+        <div class="brand-caption" data-i18n="dashboard.caption.simple">Modo simples focado totalmente na conversa</div>
       </div>
     </div>
     <nav class="view-switch" aria-label="Modo da interface">
-      <a href="/" class="current">Simples</a>
-      <a href="/advanced">Avancado</a>
+      <a href="/" class="current" data-i18n="dashboard.nav.simple">Simples</a>
+      <a href="/advanced" data-i18n="dashboard.nav.advanced">Avancado</a>
     </nav>
     <div class="header-side" style="justify-content:flex-end;">
       <select id="language-select" class="mode-select" style="width: 120px;">
         <option value="pt-BR">PT-BR</option>
         <option value="en-US">EN-US</option>
       </select>
-      <button id="logs-toggle-btn" class="ghost-btn subtle" type="button">Logs</button>
-      <span id="status-label" class="sr-only">Pronto</span>
+      <button id="logs-toggle-btn" class="ghost-btn subtle" type="button" data-i18n="dashboard.nav.logs">Logs</button>
+      <span id="status-label" class="sr-only" data-i18n="dashboard.status.ready">Pronto</span>
     </div>
   </header>
 
@@ -446,40 +446,40 @@
   <aside id="menu-drawer" class="drawer drawer-left" aria-hidden="true">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title">Menu</div>
-        <div class="drawer-subtitle">Conversas e ajustes ficam aqui para manter o chat limpo.</div>
+        <div class="drawer-title" data-i18n="dashboard.nav.menu">Menu</div>
+        <div class="drawer-subtitle" data-i18n="dashboard.menu.subtitle">Conversas e ajustes ficam aqui para manter o chat limpo.</div>
       </div>
       <button class="icon-btn" type="button" data-close-drawer aria-label="Close menu">X</button>
     </div>
     <div class="drawer-body">
       <section class="drawer-section">
-        <div class="section-label">Execucao</div>
+        <div class="section-label" data-i18n="dashboard.menu.execution">Execucao</div>
         <select id="execution-mode" class="mode-select" aria-label="Modo de execucao">
-          <option value="strict">Seguro</option>
-          <option value="balanced" selected>Equilibrado</option>
-          <option value="aggressive">Livre</option>
+          <option value="strict" data-i18n="dashboard.mode.strict">Seguro</option>
+          <option value="balanced" selected data-i18n="dashboard.mode.balanced">Equilibrado</option>
+          <option value="aggressive" data-i18n="dashboard.mode.aggressive">Livre</option>
         </select>
         <div class="mode-status">
-          <span>Modo atual</span>
+          <span data-i18n="dashboard.mode.current">Modo atual</span>
           <span id="mode-badge" class="mode-badge">Equilibrado</span>
         </div>
-        <div id="mode-behavior" class="mode-behavior">Fallback ativo, validacao leve.</div>
+        <div id="mode-behavior" class="mode-behavior" data-i18n="dashboard.mode.behavior">Fallback ativo, validacao leve.</div>
       </section>
 
       <section class="drawer-section">
-        <div class="section-label">Acoes</div>
+        <div class="section-label" data-i18n="dashboard.menu.actions">Acoes</div>
         <div class="sidebar-actions">
-          <button class="btn-primary" id="new-chat-btn" type="button">+ Nova conversa</button>
-          <button id="theme-toggle-btn" class="ghost-btn" type="button">Tema</button>
-          <a href="/help" class="ghost-link">Ajuda</a>
+          <button class="btn-primary" id="new-chat-btn" type="button" data-i18n="dashboard.button.new_chat">+ Nova conversa</button>
+          <button id="theme-toggle-btn" class="ghost-btn" type="button" data-i18n="dashboard.theme.toggle">Tema</button>
+          <a href="/help" class="ghost-link" data-i18n="dashboard.button.help">Ajuda</a>
         </div>
-        <div class="sidebar-note">O modo simples mostra so o essencial na tela. O restante fica guardado neste menu.</div>
+        <div class="sidebar-note" data-i18n="dashboard.menu.caption">O modo simples mostra so o essencial na tela. O restante fica guardado neste menu.</div>
       </section>
 
       <section class="drawer-section">
-        <div class="section-label">Conversas</div>
+        <div class="section-label" data-i18n="dashboard.menu.conversations">Conversas</div>
         <div class="conversation-meta">
-          <span>Historico salvo</span>
+          <span data-i18n="dashboard.conversation.saved">Historico salvo</span>
           <span id="conversation-count">0</span>
         </div>
         <div id="conversation-list">
@@ -492,8 +492,8 @@
   <aside id="logs-drawer" class="drawer drawer-right" aria-hidden="true">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title">Logs</div>
-        <div class="drawer-subtitle">Debug e progresso interno aparecem so quando voce abrir este painel.</div>
+        <div class="drawer-title" data-i18n="dashboard.nav.logs">Logs</div>
+        <div class="drawer-subtitle" data-i18n="dashboard.logs.subtitle">Debug e progresso interno aparecem so quando voce abrir este painel.</div>
       </div>
       <button class="icon-btn" type="button" data-close-drawer aria-label="Close logs">X</button>
     </div>
@@ -506,19 +506,19 @@
     <section id="chat-panel">
       <div id="chat-scroll">
         <div id="empty-state">
-          <div class="empty-kicker">Modo simples ativo</div>
-          <h1 class="empty-title">Converse sem distracoes.</h1>
-          <p class="empty-copy">O chat fica no centro. Conversas, configuracoes e logs aparecem apenas quando voce abrir manualmente.</p>
+          <div class="empty-kicker" data-i18n="dashboard.empty.kicker">Modo simples ativo</div>
+          <h1 class="empty-title" data-i18n="dashboard.empty.title">Converse sem distracoes.</h1>
+          <p class="empty-copy" data-i18n="dashboard.empty.copy">O chat fica no centro. Conversas, configuracoes e logs aparecem apenas quando voce abrir manualmente.</p>
         </div>
         <div id="chat-container"></div>
       </div>
 
-      <div id="typing-indicator">IalClaw esta pensando...</div>
+      <div id="typing-indicator" data-i18n="dashboard.typing.thinking">IalClaw esta pensando...</div>
 
       <div class="input-area">
-        <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off">
-        <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz">🎤</button>
-        <button id="action-btn" type="button">Enviar</button>
+        <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off" data-i18n-placeholder="dashboard.input.placeholder">
+        <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz" data-i18n-title="dashboard.voice.title">🎤</button>
+        <button id="action-btn" type="button" data-i18n="dashboard.action.send">Enviar</button>
       </div>
     </section>
   </main>
@@ -962,7 +962,7 @@
     function applyStaticTranslations() {
       chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
       newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
-      logsToggleBtn.textContent = 'Logs';
+      logsToggleBtn.textContent = tf('dashboard.nav.logs', undefined, 'Logs');
       if (languageSelect) {
         languageSelect.value = dashboardI18n?.getLanguage?.() || 'en-US';
         const [pt, en] = languageSelect.options;
@@ -973,6 +973,21 @@
       if (loading) {
         loading.textContent = tf('dashboard.conversation.loading', undefined, loading.textContent);
       }
+    }
+
+    function applyHtmlTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const key = el.getAttribute('data-i18n');
+        el.textContent = tf(key, undefined, el.textContent);
+      });
+      document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+        const key = el.getAttribute('data-i18n-title');
+        el.title = tf(key, undefined, el.title);
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = tf(key, undefined, el.placeholder);
+      });
     }
 
     function resetConversationView() {
@@ -1298,6 +1313,7 @@
     async function bootstrapSimpleDashboard() {
       await dashboardI18n?.init?.();
       applyStaticTranslations();
+      applyHtmlTranslations();
       applyTheme(currentTheme);
       setTtsState(ttsEnabled);
       updateChatActionButtons();
