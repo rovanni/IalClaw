@@ -683,8 +683,10 @@ async function run() {
         telegram_user_id: 8071707790,
         update_id: 429398611
     });
-    assert.match(consoleLine, /\[START\] MESSAGE_RECEIVED/);
-    assert.match(consoleLine, /trace=67e03695/);
+    const stripAnsi = (value: string) => value.replace(/\x1B\[[0-9;]*m/g, '');
+    const normalizedConsoleLine = stripAnsi(consoleLine);
+    assert.match(normalizedConsoleLine, /\[START\] MESSAGE_RECEIVED/);
+    assert.match(normalizedConsoleLine, /trace=67e03695/);
 
     const summaryLine = formatConsoleLogLine({
         timestamp: '2026-03-25T21:36:53.718Z',
@@ -702,9 +704,10 @@ async function run() {
         duration_ms: 2026,
         response_length: 512
     });
-    assert.match(summaryLine, /\[RESULT\] SUCCESS/);
-    assert.match(summaryLine, /mode=SAFE_MODE/);
-    assert.match(summaryLine, /duration_ms=2026/);
+    const normalizedSummaryLine = stripAnsi(summaryLine);
+    assert.match(normalizedSummaryLine, /\[RESULT\] SUCCESS/);
+    assert.match(normalizedSummaryLine, /mode=SAFE_MODE/);
+    assert.match(normalizedSummaryLine, /duration_ms=2026/);
 
     console.log('All tests passed.');
 }
