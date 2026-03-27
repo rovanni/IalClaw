@@ -1,74 +1,65 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/i18n.sh"
+
 echo "=========================================="
 echo "    Instalando IalClaw Cognitive Agent    "
 echo "=========================================="
 
 REPO_URL=${1:-"https://github.com/rovanni/IalClaw.git"}
 
-# -------------------------
-# CHECKS
-# -------------------------
-
 if ! command -v git &> /dev/null; then
-    echo "[ERRO] Git não encontrado."
+    echo "[ERRO] $(t 'err.git_not_found')"
     exit 1
 fi
 
 if ! command -v node &> /dev/null; then
-    echo "[ERRO] Node.js não encontrado."
+    echo "[ERRO] $(t 'err.node_not_found')"
     exit 1
 fi
 
 NODE_VERSION=$(node -v | sed 's/v//g' | cut -d. -f1)
 
 if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "[ERRO] Node.js >= 18 é necessário."
+    echo "[ERRO] $(t 'err.node_version')"
     exit 1
 fi
 
-# -------------------------
-# OLLAMA CHECK (IMPORTANTE)
-# -------------------------
-
 if ! command -v ollama &> /dev/null; then
-    echo "[INFO] Ollama não encontrado localmente."
+    echo "[INFO] $(t 'err.ollama_missing')"
     
-    # Prompt user (handling curl | bash pipe)
     if command -v tty >/dev/null 2>&1 && [ -c "$(tty 2>/dev/null)" ]; then
-        read -p "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: " install_ollama < "$(tty)"
+        read -p "$(t 'prompt.ollama')" install_ollama < "$(tty)"
     elif [ -c /dev/tty ]; then
-        read -p "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: " install_ollama < /dev/tty
+        read -p "$(t 'prompt.ollama')" install_ollama < /dev/tty
     else
-        install_ollama="n" # Fallback em non-interactive
+        install_ollama="n"
     fi
     install_ollama=${install_ollama:-s}
 
     if [[ "$install_ollama" =~ ^[sS]$ ]]; then
-        echo "Baixando e instalando Ollama (Linux/macOS)..."
+        echo "$(t 'info.install_ollama')"
         curl -fsSL https://ollama.com/install.sh | sh
     else
-        echo "Instalação do Ollama ignorada. Você pode instalar depois em: https://ollama.com"
+        echo "$(t 'info.skip_ollama')"
     fi
 else
-    echo "Ollama encontrado ✔"
+    echo "$(t 'info.ollama_found') ✔"
     ollama list || true
 fi
 
-# -------------------------
-# CLONE (Bypassed if directory exists)
-# -------------------------
 if [ ! -d "ialclaw" ]; then
-    echo "Clonando repositório..."
+    echo "$(t 'info.clone')"
     git clone "$REPO_URL" ialclaw
 else
-    echo "Diretório local encontrado. Tentando sincronizar com o repositório remoto..."
+    echo "$(t 'info.sync_attempt')"
     if [ -d "ialclaw/.git" ]; then
         GIT_STATUS=$(git -C ialclaw status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
         if [ -n "$GIT_STATUS" ]; then
-            echo "[ERRO] O repositório local possui alterações não commitadas e não pode ser atualizado automaticamente."
-            echo "[ERRO] Resolva isso antes de continuar. Fluxo recomendado:"
+            echo "[ERRO] $(t 'err.local_changes')"
+            echo "[ERRO] $(t 'err.resolve_git')"
             echo "        cd ~/ialclaw"
             echo "        git status"
             echo "        git stash push -u -m 'ialclaw-install'"
@@ -77,36 +68,28 @@ else
         fi
 
         if git -C ialclaw pull --ff-only; then
-            echo "Repositório local atualizado com sucesso."
+            echo "$(t 'info.sync_done')"
         else
-            echo "[ERRO] Não foi possível atualizar o repositório local automaticamente."
-            echo "[ERRO] Resolva o estado do Git manualmente ou use ./update.sh após limpar a árvore local."
+            echo "[ERRO] $(t 'err.update_auto')"
+            echo "[ERRO] $(t 'err.git_manual')"
             exit 1
         fi
     else
-        echo "[ERRO] ./ialclaw existe, mas não parece ser um repositório Git."
-        echo "[ERRO] Renomeie ou remova a pasta atual para permitir um clone limpo."
+        echo "[ERRO] $(t 'err.not_git')"
+        echo "[ERRO] $(t 'err.rename_folder')"
         exit 1
     fi
 fi
 
-cd ialclaw || { echo "[ERRO] Não foi possível acessar a pasta ialclaw."; exit 1; }
+cd ialclaw || { echo "[ERRO] $(t 'err.cant_access')"; exit 1; }
 
 chmod +x update.sh 2>/dev/null || true
 
-# -------------------------
-# INSTALL
-# -------------------------
-
-echo "Instalando dependências..."
+echo "$(t 'info.install_deps')"
 npm ci
 
-# -------------------------
-# ENV
-# -------------------------
-
 if [ ! -f .env ]; then
-    echo "Criando .env..."
+    echo "$(t 'info.create_env')"
     if [ -f .env.example ]; then
         cp .env.example .env
     else
@@ -116,36 +99,28 @@ if [ ! -f .env ]; then
     fi
 fi
 
-# -------------------------
-# BUILD TEST
-# -------------------------
-
-echo "Validando TypeScript..."
+echo "$(t 'info.validate_ts')"
 npx tsc --noEmit
 
 if [ -f "src/scripts/bootstrap-identities.ts" ]; then
-    echo "Semeando identidades iniciais do gateway..."
+    echo "$(t 'info.seed_identities')"
     npx ts-node src/scripts/bootstrap-identities.ts
 else
-    echo "[AVISO] Bootstrap de identidades não encontrado nesta cópia local. Etapa ignorada."
-    echo "[AVISO] Atualize o repositório local para obter o script src/scripts/bootstrap-identities.ts."
+    echo "[AVISO] $(t 'warn.bootstrap_missing')"
+    echo "[AVISO] $(t 'warn.update_repo')"
 fi
 
-# -------------------------
-# DONE
-# -------------------------
-
 echo "=========================================="
-echo " Instalação concluída com sucesso!"
+echo " $(t 'info.done')"
 echo ""
-echo " >> PRÓXIMO PASSO:"
-echo " 1. Acesse a pasta do agente:"
+echo " >> $(t 'info.next_step')"
+echo " 1. $(t 'info.access_folder')"
 echo "    cd ialclaw"
-echo " 2. Configure o .env (defina seu provedor como Ollama, OpenAI, etc)"
-echo " 3. Valide o Router Cérebro com:"
+echo " 2. $(t 'info.configure_env')"
+echo " 3. $(t 'info.validate_router')"
 echo "    npx ts-node src/scripts/test-routing.ts"
-echo " 4. Execute:"
+echo " 4. $(t 'info.run_dev')"
 echo "    npm run dev"
-echo " 5. Para futuras atualizações no Linux/macOS, prefira:"
+echo " 5. $(t 'info.future_update')"
 echo "    bash update.sh"
 echo "=========================================="

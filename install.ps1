@@ -4,23 +4,25 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "    Instalando IalClaw Cognitive Agent    " -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
+. "$PSScriptRoot\i18n.ps1"
+
+Write-Host (t "app.header_line") -ForegroundColor Cyan
+Write-Host "    $(t 'app.title')" -ForegroundColor Cyan
+Write-Host (t "app.header_line") -ForegroundColor Cyan
 
 # -------------------------
 # CHECKS
 # -------------------------
 
-Write-Host "Verificando dependencias..."
+Write-Host (t "check.deps")
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Error "[ERRO] Git nao encontrado."
+    Write-Error (t "error.git_missing")
     exit 1
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Error "[ERRO] Node.js nao encontrado."
+    Write-Error (t "error.node_missing")
     exit 1
 }
 
@@ -28,7 +30,7 @@ $NodeVersionOutput = (node -v)
 $NodeMajorVersion = [int]($NodeVersionOutput -replace 'v', '' -split '\.')[0]
 
 if ($NodeMajorVersion -lt 18) {
-    Write-Error "[ERRO] Node.js v18 ou superior e necessario. Versao atual: $NodeVersionOutput"
+    Write-Error "$(t 'error.node_version')$NodeVersionOutput"
     exit 1
 }
 
@@ -37,18 +39,18 @@ if ($NodeMajorVersion -lt 18) {
 # -------------------------
 
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    Write-Host "[INFO] Ollama nao encontrado localmente." -ForegroundColor Cyan
-    $installOllama = Read-Host "Deseja instalar o Ollama agora para rodar modelos locais? [S/n]"
-    if ($installOllama -eq "" -or $installOllama -match "^[sS]") {
-        Write-Host "Baixando e instalando Ollama (Windows)..." -ForegroundColor Green
+    Write-Host (t "ollama.check") -ForegroundColor Cyan
+    $installOllama = Read-Host (t "ollama.prompt_install")
+    if ($installOllama -eq "" -or $installOllama -match "^[sSyY]") {
+        Write-Host (t "ollama.downloading") -ForegroundColor Green
         irm https://ollama.com/install.ps1 | iex
     }
     else {
-        Write-Host "Instalacao do Ollama ignorada. Voce pode configurar outro provedor (.env) ou instalar depois." -ForegroundColor Cyan
+        Write-Host (t "ollama.ignored") -ForegroundColor Cyan
     }
 }
 else {
-    Write-Host "Ollama encontrado ✔" -ForegroundColor Green
+    Write-Host "$(t 'ollama.found')" -ForegroundColor Green
     # Try to list, ignore error if service is stopped
     try { ollama list } catch {}
 }
@@ -58,11 +60,11 @@ else {
 # -------------------------
 
 if (-not (Test-Path "ialclaw")) {
-    Write-Host "Clonando repositorio..."
+    Write-Host (t "clone.start")
     git clone $RepoUrl ialclaw
 }
 else {
-    Write-Host "Diretorio 'ialclaw' encontrado. Tentando sincronizar com o repositorio remoto..." -ForegroundColor Yellow
+    Write-Host (t "sync.found_folder") -ForegroundColor Yellow
     if (Test-Path "ialclaw/.git") {
         $workingTreeDirty = $false
         $statusOutput = cmd.exe /c "git -C ialclaw status --porcelain"
@@ -72,8 +74,8 @@ else {
         }
 
         if ($workingTreeDirty) {
-            Write-Host "[ERRO] O repositorio local possui alteracoes nao commitadas e nao pode ser atualizado automaticamente." -ForegroundColor Red
-            Write-Host "[ERRO] Resolva isso antes de continuar. Fluxo recomendado:" -ForegroundColor Red
+            Write-Host (t "sync.local_changes") -ForegroundColor Red
+            Write-Host (t "sync.resolve_steps") -ForegroundColor Red
             Write-Host "       cd ~/ialclaw" -ForegroundColor Gray
             Write-Host "       git status" -ForegroundColor Gray
             Write-Host "       git stash push -u -m 'ialclaw-install'" -ForegroundColor Gray
@@ -85,11 +87,11 @@ else {
         try {
             cmd.exe /c "git pull --ff-only"
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "Repositorio local atualizado com sucesso." -ForegroundColor Green
+                Write-Host (t "sync.updated") -ForegroundColor Green
             }
             else {
-                Write-Host "[ERRO] Nao foi possivel atualizar o repositorio local automaticamente." -ForegroundColor Red
-                Write-Host "[ERRO] Resolva o estado do Git manualmente ou use update.bat apos limpar a arvore local." -ForegroundColor Red
+                Write-Host (t "sync.update_failed") -ForegroundColor Red
+                Write-Host (t "sync.manual_resolve") -ForegroundColor Red
                 exit 1
             }
         }
@@ -98,8 +100,8 @@ else {
         }
     }
     else {
-        Write-Host "[ERRO] .\ialclaw existe, mas nao parece ser um repositorio Git." -ForegroundColor Red
-        Write-Host "[ERRO] Renomeie ou remova a pasta atual para permitir um clone limpo." -ForegroundColor Red
+        Write-Host (t "sync.not_git") -ForegroundColor Red
+        Write-Host (t "sync.rename_folder") -ForegroundColor Red
         exit 1
     }
 }
@@ -110,7 +112,7 @@ Set-Location ialclaw
 # INSTALL
 # -------------------------
 
-Write-Host "Instalando dependencias via npm..."
+Write-Host (t "install.deps")
 cmd.exe /c "npm ci"
 
 # -------------------------
@@ -118,7 +120,7 @@ cmd.exe /c "npm ci"
 # -------------------------
 
 if (-not (Test-Path .env)) {
-    Write-Host "Criando o arquivo .env..."
+    Write-Host (t "env.creating")
     if (Test-Path .env.example) {
         Copy-Item .env.example .env
     }
@@ -131,31 +133,31 @@ if (-not (Test-Path .env)) {
 # BUILD TEST
 # -------------------------
 
-Write-Host "Validando TypeScript codebase..."
+Write-Host (t "build.validating")
 cmd.exe /c "npx tsc --noEmit"
 
 if (Test-Path "src/scripts/bootstrap-identities.ts") {
-    Write-Host "Semeando identidades iniciais do gateway..."
+    Write-Host (t "bootstrap.seeding")
     cmd.exe /c "npx ts-node src/scripts/bootstrap-identities.ts"
 }
 else {
-    Write-Host "[AVISO] Bootstrap de identidades nao encontrado nesta copia local. Etapa ignorada." -ForegroundColor Yellow
-    Write-Host "[AVISO] Atualize o repositorio local para obter o script src/scripts/bootstrap-identities.ts." -ForegroundColor Yellow
+    Write-Host (t "bootstrap.not_found") -ForegroundColor Yellow
+    Write-Host (t "bootstrap.update_hint") -ForegroundColor Yellow
 }
 
 # -------------------------
 # DONE
 # -------------------------
 
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host " Instalacao concluida com sucesso!        " -ForegroundColor Green
+Write-Host (t "app.header_line") -ForegroundColor Cyan
+Write-Host " $(t 'done.success')" -ForegroundColor Green
 Write-Host ""
-Write-Host " >> PROXIMO PASSO:" -ForegroundColor Yellow
-Write-Host " 1. Acesse a pasta do agente:"
+Write-Host (t "done.next_step") -ForegroundColor Yellow
+Write-Host " $(t 'done.step1')"
 Write-Host "    cd ialclaw" -ForegroundColor Gray
-Write-Host " 2. Configure o arquivo .env (Ollama, OpenAI, Anthropic, etc)"
-Write-Host " 3. Valide o Router Cerebro de teste rodando:"
+Write-Host " $(t 'done.step2')"
+Write-Host " $(t 'done.step3')"
 Write-Host "    npx ts-node src/scripts/test-routing.ts" -ForegroundColor Gray
-Write-Host " 4. Se tudo passar, execute:"
+Write-Host " $(t 'done.step4')"
 Write-Host "    npm run dev" -ForegroundColor Green
-Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host (t "app.header_line") -ForegroundColor Cyan

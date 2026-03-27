@@ -312,6 +312,8 @@
     #action-btn:hover { background: var(--accent-hover); }
     #action-btn:disabled { background: var(--text-soft); color: rgba(255, 255, 255, 0.76); cursor: not-allowed; }
     #action-btn.is-stop { background: #c2410c; }
+    #tts-toggle { background: transparent; }
+    #tts-toggle.active { background: var(--bg-muted); }
     #speech-btn.recording { background: #ef4444; color: #fff; animation: pulse 1s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
@@ -518,6 +520,7 @@
       <div class="input-area">
         <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off" data-i18n-placeholder="dashboard.input.placeholder">
         <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz" data-i18n-title="dashboard.voice.title">🎤</button>
+        <button id="tts-toggle" class="icon-btn" type="button" title="Ler respostas finais" data-i18n-title="dashboard.voice.tts_title">🔈</button>
         <button id="action-btn" type="button" data-i18n="dashboard.action.send">Enviar</button>
       </div>
     </section>
@@ -583,6 +586,7 @@
     const menuDrawer = document.getElementById('menu-drawer');
     const logsDrawer = document.getElementById('logs-drawer');
     const speechBtn = document.getElementById('speech-btn');
+    const ttsToggleBtn = document.getElementById('tts-toggle');
 
     let recognition = null;
     let isRecording = false;
@@ -801,6 +805,10 @@
     function setTtsState(enabled) {
       ttsEnabled = enabled;
       localStorage.setItem('ialclaw_tts_simple', enabled ? '1' : '0');
+      if (ttsToggleBtn) {
+        ttsToggleBtn.classList.toggle('active', enabled);
+        ttsToggleBtn.textContent = enabled ? '🔊' : '🔈';
+      }
     }
 
     function speak(text) {
@@ -1278,6 +1286,12 @@
       }
       sendMessage();
     });
+
+    if (ttsToggleBtn) {
+      ttsToggleBtn.addEventListener('click', () => {
+        setTtsState(!ttsEnabled);
+      });
+    }
 
     chatInput.addEventListener('keydown', handleInputKeyboard);
     if (newChatBtn) newChatBtn.addEventListener('click', startNewConversation);
