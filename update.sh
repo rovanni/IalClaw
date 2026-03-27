@@ -11,7 +11,7 @@ CYAN='\033[36m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
 RED='\033[31m'
-BLUE='\033[34m'
+STEP='\033[96m'
 
 print_divider() {
     printf "%b\n" "${DIM}========================================================${RESET}"
@@ -29,7 +29,7 @@ print_banner() {
 }
 
 print_step() {
-    printf "%b\n" "${BLUE}[$1/5]${RESET} ${BOLD}$2${RESET}"
+    printf "%b\n" "${STEP}[$1/5]${RESET} ${BOLD}$2${RESET}"
 }
 
 print_success() {

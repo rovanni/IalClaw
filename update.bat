@@ -11,7 +11,7 @@ set "CYAN=%ESC%[36m"
 set "GREEN=%ESC%[32m"
 set "YELLOW=%ESC%[33m"
 set "RED=%ESC%[31m"
-set "BLUE=%ESC%[34m"
+set "STEP=%ESC%[96m"
 
 echo.
 echo %DIM%========================================================%RESET%
@@ -22,7 +22,7 @@ echo   pasta:   %GREEN%%cd%%RESET%
 echo %DIM%========================================================%RESET%
 echo.
 
-echo %BLUE%[1/5]%RESET% %BOLD%Realizando backup de seguranca (db.sqlite e .env)...%RESET%
+echo %STEP%[1/5]%RESET% %BOLD%Realizando backup de seguranca (db.sqlite e .env)...%RESET%
 if not exist "backups" mkdir backups
 if exist "db.sqlite" copy /y "db.sqlite" "backups\db_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.sqlite" >nul
 if exist ".env" copy /y ".env" "backups\.env_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%" >nul
@@ -49,7 +49,7 @@ if %GIT_DIRTY%==1 (
 )
 echo.
 
-echo %BLUE%[2/5]%RESET% %BOLD%Baixando a versao mais recente do repositorio...%RESET%
+echo %STEP%[2/5]%RESET% %BOLD%Baixando a versao mais recente do repositorio...%RESET%
 call git fetch origin
 if errorlevel 1 (
     echo %RED%[ERRO]%RESET% Falha ao conectar com o GitHub ^(git fetch^). Verifique sua internet.
@@ -79,7 +79,7 @@ if %STASHED%==1 (
 )
 echo.
 
-echo %BLUE%[3/5]%RESET% %BOLD%Instalando dependencias travadas do projeto ^(npm ci^)...%RESET%
+echo %STEP%[3/5]%RESET% %BOLD%Instalando dependencias travadas do projeto ^(npm ci^)...%RESET%
 call npm ci
 if errorlevel 1 (
     echo %RED%[ERRO]%RESET% Falha na instalacao de pacotes ^(npm ci^).
@@ -89,7 +89,7 @@ if errorlevel 1 (
 echo       %GREEN%OK%RESET% Dependencias atualizadas.
 echo.
 
-echo %BLUE%[4/5]%RESET% %BOLD%Compilando o IalClaw v3.0 ^(TypeScript^)...%RESET%
+echo %STEP%[4/5]%RESET% %BOLD%Compilando o IalClaw v3.0 ^(TypeScript^)...%RESET%
 call npx tsc --noEmit
 if errorlevel 1 (
     echo %RED%[ERRO]%RESET% Falha ao validar o codigo TypeScript.
@@ -99,7 +99,7 @@ if errorlevel 1 (
 echo       %GREEN%OK%RESET% Compilacao concluida.
 echo.
 
-echo %BLUE%[5/5]%RESET% %BOLD%Atualizacao finalizada.%RESET%
+echo %STEP%[5/5]%RESET% %BOLD%Atualizacao finalizada.%RESET%
 echo.
 echo %GREEN%Seu IalClaw foi atualizado para a ultima versao oficial com sucesso.%RESET%
 echo %DIM%Seu banco de dados e suas configuracoes permanecem intactos.%RESET%
