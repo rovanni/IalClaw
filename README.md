@@ -165,22 +165,27 @@ The system now has unified language behavior across CLI, backend, and web dashbo
 
 ## 🔍 Semantic Search System
 
-IalClaw includes a **semantic search system** based on intelligent indexing without embeddings or vector databases.
+IalClaw includes a **hybrid semantic search system** that combines intelligent indexing with Graph-RAG expansion.
 
 ### Features
 
 - **Inverted Index**: Fast term-based search
 - **Smart Tokenization**: With normalization and stopwords
-- **Auto-tagging**: Generates semantic structure using LLM (tokens, keywords, tags, category)
+- **Auto-tagging**: Generates semantic structure using LLM (tokens, keywords, tags, category, relations)
+- **Graph Integration**: Expands queries via cognitive graph relations
+- **Hybrid Scoring**: Combines token, tag, and graph relation matches
 - **LLM Re-ranking**: Optional re-ranking of top results
 - **Synonym Expansion**: Local synonym expansion for better results
+- **Debug Mode**: Detailed score breakdowns and expansion info
 
 ### Usage
 
 ```typescript
 import { createSearchEngine } from './search';
 
-const engine = createSearchEngine();
+const engine = createSearchEngine({
+  useGraphExpansion: true
+});
 
 await engine.indexDocument({
   id: '1',
@@ -188,7 +193,21 @@ await engine.indexDocument({
   content: 'Machine learning is a subset of AI...'
 });
 
-const results = await engine.search('machine learning');
+// Basic search with graph expansion
+const results = await engine.search('machine learning', {
+  expandWithGraph: true
+});
+
+// Debug mode for detailed info
+const resultsWithDebug = await engine.search('machine learning', {
+  expandWithGraph: true,
+  debug: true
+});
+
+resultsWithDebug.forEach(r => {
+  console.log(r.debugInfo.graphTerms);
+  console.log(r.debugInfo.scoreBreakdown);
+});
 ```
 
 > For technical specification, see [specs/search-system.md](./specs/search-system.md).
@@ -496,22 +515,27 @@ O sistema agora possui comportamento unificado de idioma entre CLI, backend e da
 
 ## 🔍 Sistema de Busca Semântica
 
-O IalClaw inclui um **sistema de busca semântica** baseado em indexação inteligente sem uso de embeddings ou vector databases.
+O IalClaw inclui um **sistema de busca semântica híbrido** que combina indexação inteligente com expansão via Graph-RAG.
 
 ### Funcionalidades
 
 - **Índice Invertido**: Busca rápida por termos
 - **Tokenização Inteligente**: Com normalização e stopwords
-- **Auto-tagging**: Gera estrutura semântica usando LLM (tokens, keywords, tags, categoria)
+- **Auto-tagging**: Gera estrutura semântica usando LLM (tokens, keywords, tags, categoria, relações)
+- **Integração com Grafo**: Expande queries via relações do grafo cognitivo
+- **Pontuação Híbrida**: Combina matches de tokens, tags e relações do grafo
 - **Re-ranking LLM**: Opcional, re-ordena top resultados
 - **Expansão de Sinônimos**: Expansão local de sinônimos para melhores resultados
+- **Modo Debug**: Detalhamento de scores e expansão
 
 ### Uso
 
 ```typescript
 import { createSearchEngine } from './search';
 
-const engine = createSearchEngine();
+const engine = createSearchEngine({
+  useGraphExpansion: true
+});
 
 await engine.indexDocument({
   id: '1',
@@ -519,7 +543,21 @@ await engine.indexDocument({
   content: 'Machine learning is a subset of AI...'
 });
 
-const results = await engine.search('machine learning');
+// Busca básica com expansão via grafo
+const results = await engine.search('machine learning', {
+  expandWithGraph: true
+});
+
+// Modo debug para informações detalhadas
+const resultsWithDebug = await engine.search('machine learning', {
+  expandWithGraph: true,
+  debug: true
+});
+
+resultsWithDebug.forEach(r => {
+  console.log(r.debugInfo.graphTerms);
+  console.log(r.debugInfo.scoreBreakdown);
+});
 ```
 
 > Para especificação técnica, veja [specs/search-system.md](./specs/search-system.md).

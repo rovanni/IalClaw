@@ -297,7 +297,7 @@ console.log(engine.getStats());
 
 ## Extensões Futuras
 
-- Integração com vector embeddings para RAG híbrido
 - Cache de embeddings para performance
 - Indexação incremental
 - Suporte a múltiplos idiomas
+- Integração com vector embeddings para RAG híbrido completo
