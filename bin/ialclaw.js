@@ -41,8 +41,14 @@ setLanguage(cliLanguage);
 process.env.APP_LANG = cliLanguage;
 
 let version = '0.0.0';
+const versionFilePath = path.join(root, 'version.json');
 try {
-    version = require(path.join(root, 'package.json')).version || version;
+    if (fs.existsSync(versionFilePath)) {
+        const versionData = JSON.parse(fs.readFileSync(versionFilePath, 'utf8'));
+        version = versionData.version || version;
+    } else {
+        version = require(path.join(root, 'package.json')).version || version;
+    }
 } catch {}
 
 try {
@@ -52,8 +58,8 @@ try {
     const isDirty = execSync('git status --porcelain', { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] })
         .toString()
         .trim().length > 0;
-    if (gitHash) {
-        version = `${version}+${gitHash}${isDirty ? '-dirty' : ''}`;
+    if (gitHash && isDirty) {
+        version = `${version}+${gitHash}-dirty`;
     }
 } catch {}
 
@@ -322,7 +328,7 @@ function start() {
         child.unref();
 
         console.log('');
-        console.log(`${CYAN}IALCLAW${RESET} ${DIM}v${version}${RESET}`);
+        console.log(`${CYAN}🐙 IALCLAW${RESET} ${DIM}v${version}${RESET}`);
         console.log(`  ${t('cli.start.daemon')}`);
         console.log(`  ${t('cli.start.mode', { mode })}`);
         console.log(`  ${t('cli.start.pid', { pid: child.pid })}`);
@@ -521,7 +527,7 @@ function lang() {
 }
 
 function help() {
-    console.log(`${CYAN}IALCLAW CLI${RESET} ${DIM}v${version}${RESET}`);
+    console.log(`${CYAN}🐙 IALCLAW CLI${RESET} ${DIM}v${version}${RESET}`);
     console.log(t('cli.help.title'));
     console.log(t('cli.help.start'));
     console.log(t('cli.help.start_daemon'));
