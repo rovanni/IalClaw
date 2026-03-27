@@ -1283,9 +1283,7 @@
     if (languageSelect) languageSelect.addEventListener('change', (event) => {
       const selected = event.target.value;
       dashboardI18n?.setLanguage?.(selected);
-      applyStaticTranslations();
-      applyTheme(currentTheme);
-      updateChatActionButtons();
+      window.location.reload();
     });
 
     document.querySelectorAll('[data-prompt]').forEach((button) => {
