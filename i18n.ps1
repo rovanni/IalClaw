@@ -1,5 +1,22 @@
-$Global:IalClawLang = if ($env:IALCLAW_LANG) { $env:IALCLAW_LANG } else { "pt-BR" }
-$Global:IalClawFallback = "en-US"
+$Global:IalClawFallback = "pt-BR"
+
+if (Test-Path (Join-Path $PSScriptRoot "config.json")) {
+    try {
+        $config = Get-Content (Join-Path $PSScriptRoot "config.json") -Raw | ConvertFrom-Json
+        if ($config.language) { $Global:IalClawLang = $config.language }
+    }
+    catch { $Global:IalClawLang = $env:IALCLAW_LANG }
+}
+elseif (Test-Path (Join-Path $PSScriptRoot ".env")) {
+    $envContent = Get-Content (Join-Path $PSScriptRoot ".env") -Raw
+    if ($envContent -match "APP_LANG=([^\s#]+)") {
+        $Global:IalClawLang = $matches[1]
+    }
+}
+else {
+    $Global:IalClawLang = if ($env:IALCLAW_LANG) { $env:IALCLAW_LANG } else { "pt-BR" }
+}
+
 $Global:IalClawTranslations = @{}
 
 $Global:IalClawI18nDir = Split-Path -Parent $PSCommandPath

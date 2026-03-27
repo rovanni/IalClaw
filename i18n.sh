@@ -5,8 +5,15 @@ export I18N
 
 _IALCLAW_I18N_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _IALCLAW_I18N_FILE="${_IALCLAW_I18N_DIR}/i18n.json"
-_IALCLAW_LANG="${IALCLAW_LANG:-${LANG:-pt-BR}}"
-_IALCLAW_FALLBACK="en-US"
+
+if [[ -f "${_IALCLAW_I18N_DIR}/config.json" ]]; then
+    _IALCLAW_LANG="$(grep -o '"language"[[:space:]]*:[[:space:]]*"[^"]*"' "${_IALCLAW_I18N_DIR}/config.json" | sed 's/.*"language"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' | head -1)"
+elif [[ -f "${_IALCLAW_I18N_DIR}/.env" ]]; then
+    _IALCLAW_LANG="$(grep -o '^APP_LANG=[^#]*' "${_IALCLAW_I18N_DIR}/.env" | cut -d= -f2 | tr -d ' ')"
+fi
+
+_IALCLAW_LANG="${_IALCLAW_LANG:-${IALCLAW_LANG:-${LANG:-pt-BR}}}"
+_IALCLAW_FALLBACK="pt-BR"
 
 _i18n_load_from_json() {
     if [[ ! -f "$_IALCLAW_I18N_FILE" ]]; then

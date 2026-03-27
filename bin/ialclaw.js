@@ -120,7 +120,7 @@ function resolveCliLanguage({ langArg }) {
         return normalizeLanguage(config.language);
     }
 
-    return 'en-US';
+    return 'pt-BR';
 }
 
 function ensureStateDir() {

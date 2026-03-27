@@ -3,7 +3,7 @@ import path from 'path';
 import { Lang } from '../i18n/types';
 
 export const LANGUAGE_CONFIG_FILE = 'config.json';
-export const LANGUAGE_FALLBACK: Lang = 'en-US';
+export const LANGUAGE_FALLBACK: Lang = 'pt-BR';
 
 export type AppConfig = {
     language?: string;

@@ -124,22 +124,22 @@ node bin/ialclaw.js logs --follow    # tail logs in real time (cross-platform)
 
 | Command | Description |
 |---|---|
-| `ialclaw start` | Start in foreground (dev) |
-| `ialclaw start --daemon` | Start in background (VPS/production) |
-| `ialclaw start --debug` | Start with `LOG_LEVEL=debug` |
-| `ialclaw start --debug --tail` | Debug + live log stream |
-| `ialclaw stop` | Stop the running agent |
-| `ialclaw restart` | Restart (stop + start) |
-| `ialclaw status` | Show PID, uptime, mode, daemon status |
-| `ialclaw logs` | Print last 30 log lines |
-| `ialclaw logs --follow` | Tail logs in real time |
-| `ialclaw lang` | Show current language and configured language |
-| `ialclaw lang pt-BR` | Persist language to `config.json` |
-| `ialclaw help` | Show all commands |
+| `node bin/ialclaw start` | Start in foreground (dev) |
+| `node bin/ialclaw start --daemon` | Start in background (VPS/production) |
+| `node bin/ialclaw start --debug` | Start with `LOG_LEVEL=debug` |
+| `node bin/ialclaw start --debug --tail` | Debug + live log stream |
+| `node bin/ialclaw stop` | Stop the running agent |
+| `node bin/ialclaw restart` | Restart (stop + start) |
+| `node bin/ialclaw status` | Show PID, uptime, mode, daemon status |
+| `node bin/ialclaw logs` | Print last 30 log lines |
+| `node bin/ialclaw logs --follow` | Tail logs in real time |
+| `node bin/ialclaw lang` | Show current language and configured language |
+| `node bin/ialclaw lang pt-BR` | Persist language to `config.json` |
+| `node bin/ialclaw help` | Show all commands |
 
 You can override the language for a single command with:
-- `ialclaw status --lang=en-US`
-- `ialclaw start --lang=pt-BR`
+- `node bin/ialclaw status --lang=en-US`
+- `node bin/ialclaw start --lang=pt-BR`
 
 Internal features:
 - **Lock file** — prevents two simultaneous starts (race condition protection)
@@ -423,22 +423,22 @@ node bin/ialclaw.js logs --follow    # acompanha log em tempo real (cross-platfo
 
 | Comando | Descrição |
 |---|---|
-| `ialclaw start` | Inicia em foreground (dev) |
-| `ialclaw start --daemon` | Inicia em background (VPS/produção) |
-| `ialclaw start --debug` | Inicia com `LOG_LEVEL=debug` |
-| `ialclaw start --debug --tail` | Debug + stream de log ao vivo |
-| `ialclaw stop` | Encerra o agente |
-| `ialclaw restart` | Reinicia (stop + start) |
-| `ialclaw status` | Mostra PID, uptime, modo, daemon |
-| `ialclaw logs` | Últimas 30 linhas do log |
-| `ialclaw logs --follow` | Tail do log em tempo real |
-| `ialclaw lang` | Mostra idioma atual e idioma configurado |
-| `ialclaw lang pt-BR` | Persiste idioma no `config.json` |
-| `ialclaw help` | Exibe todos os comandos |
+| `node bin/ialclaw start` | Inicia em foreground (dev) |
+| `node bin/ialclaw start --daemon` | Inicia em background (VPS/produção) |
+| `node bin/ialclaw start --debug` | Inicia com `LOG_LEVEL=debug` |
+| `node bin/ialclaw start --debug --tail` | Debug + stream de log ao vivo |
+| `node bin/ialclaw stop` | Encerra o agente |
+| `node bin/ialclaw restart` | Reinicia (stop + start) |
+| `node bin/ialclaw status` | Mostra PID, uptime, modo, daemon |
+| `node bin/ialclaw logs` | Últimas 30 linhas do log |
+| `node bin/ialclaw logs --follow` | Tail do log em tempo real |
+| `node bin/ialclaw lang` | Mostra idioma atual e idioma configurado |
+| `node bin/ialclaw lang pt-BR` | Persiste idioma no `config.json` |
+| `node bin/ialclaw help` | Exibe todos os comandos |
 
 Você pode sobrescrever o idioma em um único comando com:
-- `ialclaw status --lang=en-US`
-- `ialclaw start --lang=pt-BR`
+- `node bin/ialclaw status --lang=en-US`
+- `node bin/ialclaw start --lang=pt-BR`
 
 Recursos internos:
 - **Lock file** — impede dois starts simultâneos (proteção contra race condition)
