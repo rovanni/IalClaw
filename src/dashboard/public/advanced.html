@@ -1751,7 +1751,41 @@ applyStaticTranslations();
     bootstrapDashboard();
     setInterval(loadGraph, 10000);
   </script>
-</body>
+  <!-- Funções globais para evitar quebra dos botões -->
+  <script>
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme");
+      document.documentElement.setAttribute(
+        "data-theme",
+        current === "dark" ? "light" : "dark"
+      );
+    }
+    function changeZoom(delta) {
+      const html = document.documentElement;
+      const current = parseFloat(getComputedStyle(html).fontSize);
+      const newSize = current + delta * 16;
+      html.style.fontSize = newSize + "px";
+      const zoomLevel = document.getElementById("zoom-level");
+      if (zoomLevel) {
+        zoomLevel.textContent = Math.round((newSize / 16) * 100) + "%";
+      }
+    }
+    // Exemplo de binding i18n para um label
+    document.addEventListener("DOMContentLoaded", () => {
+      const t = window.IalclawDashboardI18n?.t;
+      if (!t) return;
+      const memoryLabel = document.getElementById("memory-btn-label");
+      if (memoryLabel) {
+        memoryLabel.textContent = t('dashboard.button.memory', 'Memória');
+      }
+      // Corrige texto do botão de tema se necessário
+      const themeBtn = document.getElementById("theme-toggle-btn");
+      if (themeBtn && themeBtn.innerText.includes("Ã°Å¸Å’â€œ")) {
+        themeBtn.innerText = '🌗 Theme';
+      }
+    });
+    </script>
+  </body>
 
 </html>
 
