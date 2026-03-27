@@ -1050,6 +1050,37 @@ Considere:
     private static readonly EXPLORATION_RATE_LOW = 0.05;
     private static readonly CONFIDENCE_HIGH = 0.8;
     private static readonly CONFIDENCE_MEDIUM = 0.5;
+    private static readonly MIN_CONTEXTUAL_SAMPLES = 2;
+
+    private getContextualConfidence(stepType: string, tool: string): { confidence: number; isContextual: boolean } {
+        const recentMemory = this.executionMemory.filter(
+            e => e.stepType === stepType && e.tool === tool && Date.now() - e.timestamp < 3600000
+        );
+
+        if (recentMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
+            const successes = recentMemory.filter(e => e.success).length;
+            const confidence = successes / recentMemory.length;
+            
+            this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} contextual_samples=${recentMemory.length} rate=${confidence.toFixed(2)}`);
+            
+            return { confidence, isContextual: true };
+        }
+
+        const globalMemory = this.executionMemory.filter(
+            e => e.tool === tool && Date.now() - e.timestamp < 3600000
+        );
+
+        if (globalMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
+            const successes = globalMemory.filter(e => e.success).length;
+            const confidence = successes / globalMemory.length;
+            
+            this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} global_samples=${globalMemory.length} rate=${confidence.toFixed(2)} (fallback)`);
+            
+            return { confidence, isContextual: false };
+        }
+
+        return { confidence: 0, isContextual: false };
+    }
 
     private getDecisionConfidence(stepType: string, scores: ToolScore[]): number {
         if (scores.length === 0) {
@@ -1059,6 +1090,12 @@ Considere:
         const bestScore = scores[0];
         if (!bestScore) {
             return 0;
+        }
+
+        const { confidence, isContextual } = this.getContextualConfidence(stepType, bestScore.tool);
+        
+        if (confidence > 0) {
+            return confidence;
         }
 
         const totalAttempts = bestScore.successes + bestScore.failures;
@@ -1086,8 +1123,22 @@ Considere:
         if (scores.length === 0) {
             return null;
         }
+
+        let bestCandidate = candidateTools[0];
+        let bestConfidence = 0;
         
-        const decisionConfidence = this.getDecisionConfidence(stepType, scores);
+        for (const candidate of candidateTools) {
+            const scoreEntry = scores.find(s => s.tool === candidate);
+            if (scoreEntry && scoreEntry.score > 0) {
+                const { confidence } = this.getContextualConfidence(stepType, candidate);
+                if (confidence > bestConfidence) {
+                    bestConfidence = confidence;
+                    bestCandidate = candidate;
+                }
+            }
+        }
+        
+        const decisionConfidence = bestConfidence > 0 ? bestConfidence : this.getDecisionConfidence(stepType, scores);
         const explorationRate = this.getAdaptiveExplorationRate(decisionConfidence);
         
         const shouldExplore = candidateTools.length > 1 && Math.random() < explorationRate;
@@ -1100,7 +1151,7 @@ Considere:
             
             if (validAlternatives.length > 1) {
                 const randomTool = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
-                this.logger.info('tool_selection', `[EXPLORATION] confidence=${decisionConfidence.toFixed(2)} rate=${explorationRate} escolhendo tool alternativa: ${randomTool} para ${stepType}`);
+                this.logger.info('tool_selection', `[EXPLORATION] confidence=${decisionConfidence.toFixed(2)} rate=${explorationRate} choosing_alternative=${randomTool} for_step=${stepType}`);
                 return randomTool;
             }
         }
@@ -1108,14 +1159,14 @@ Considere:
         for (const candidate of candidateTools) {
             const scoreEntry = scores.find(s => s.tool === candidate);
             if (scoreEntry && scoreEntry.score > 0) {
-                this.logger.debug('tool_selection', `[LEARNING] Tool ${candidate} selecionada (score: ${scoreEntry.score}) para ${stepType}`);
+                this.logger.debug('tool_selection', `[LEARNING] Tool ${candidate} selected (score=${scoreEntry.score}) for ${stepType}`);
                 return candidate;
             }
         }
         
         const lowestFailing = scores.filter(s => s.score < 0).pop();
         if (lowestFailing) {
-            this.logger.debug('tool_selection', `[LEARNING] Evitando tool ${lowestFailing.tool} (score: ${lowestFailing.score}) para ${stepType}`);
+            this.logger.debug('tool_selection', `[LEARNING] Avoiding tool ${lowestFailing.tool} (score=${lowestFailing.score}) for ${stepType}`);
         }
         
         return null;
