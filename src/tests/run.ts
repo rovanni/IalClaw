@@ -369,16 +369,23 @@ async function run() {
     await SessionManager.runWithSession('skill-history-test', async () => {
         const fakeMemory = {
             saveMessage: () => undefined,
-            learn: async () => undefined
+            learn: async () => undefined,
+            retrieveWithTraversal: async () => [],
+            getIdentityNodes: async () => []
+        } as any;
+
+        const mockProvider = {
+            embed: async () => []
         } as any;
 
         const fakeLoop = {
-            run: async () => ({ answer: 'Confirma a instalacao? (sim/nao)', newMessages: [] })
+            run: async () => ({ answer: 'Confirma a instalacao? (sim/nao)', newMessages: [] }),
+            getProvider: () => mockProvider
         } as any;
 
         const controller = new AgentController(
             fakeMemory,
-            {} as any,
+            { build: () => '' } as any,
             fakeLoop,
             {} as any,
             {} as any

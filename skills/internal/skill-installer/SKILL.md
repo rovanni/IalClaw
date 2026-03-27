@@ -96,6 +96,19 @@ Exiba um resumo formatado das skills encontradas. Exemplo:
 Qual delas você deseja instalar? (informe o número ou o nome)
 ```
 
+Antes da lista, explicite sempre o contexto da acao em uma frase curta, por exemplo:
+
+```
+Essas sao as skills disponiveis para instalacao:
+```
+
+Se o usuario responder apenas com:
+- `1`, `2`, `3`, etc.
+- ou repetir o nome da skill
+
+isso deve ser tratado como selecao direta da skill e inicio imediato do fluxo de instalacao para a opcao escolhida.
+Nao peca uma segunda confirmacao da mesma escolha.
+
 Critérios de ordenação prioritária:
 1. Trending + rank alto = aparece primeiro
 2. Rank alto sozinho = segundo
@@ -103,20 +116,18 @@ Critérios de ordenação prioritária:
 
 ---
 
-## Passo 3 — Confirmar com o usuário
+## Passo 3 — Resolver seleção e iniciar execução
 
-Após o usuário indicar a escolha, confirme antes de baixar:
+Quando o usuario selecionar uma opcao (numero ou nome), assuma a escolha como comando executavel e prossiga diretamente para o download e auditoria.
+
+Resposta esperada nesse ponto:
 
 ```
-Você escolheu: [skill-name-a]
-Descrição: "Faz X, Y, Z."
-Fonte: https://skills.sh/skills/skill-name-a
-
-Deseja prosseguir com o download e auditoria de segurança? (sim/não)
+Opcao selecionada: [skill-name-a]
+Iniciando download e auditoria de seguranca agora.
 ```
 
-**Se o usuário disser não:** agradeça, encerre a skill e nada mais é feito.
-**Se o usuário disser sim:** prossiga para o Passo 4.
+Em seguida, prossiga para o Passo 4 sem solicitar nova confirmacao.
 
 ---
 
@@ -299,7 +310,8 @@ Se ao longo de qualquer passo o download falhar completamente:
 
 ## Regras de conduta desta skill
 
-- Nunca instalar uma skill sem confirmação explícita do usuário.
+- A selecao numerica ou por nome no Passo 2 vale como confirmacao explicita da escolha.
+- Nunca pedir confirmacao redundante apos o usuario selecionar uma opcao valida.
 - Nunca pular o passo de auditoria, mesmo que o usuário solicite.
 - Nunca instalar uma skill com decisão `blocked` ou `quarantined`.
 - Sempre informar o usuário do resultado — inclusive quando a auditoria passa.
