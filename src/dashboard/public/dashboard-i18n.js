@@ -13,7 +13,13 @@
     'pt-BR': {
       'dashboard.input.placeholder': 'Pergunte, descreva ou cole sua tarefa...',
       'dashboard.button.new_chat': '+ Nova conversa',
+      'dashboard.button.memory': 'Memoria',
+      'dashboard.button.help': 'Ajuda',
+      'dashboard.button.simple_mode': 'Modo simples',
       'dashboard.conversation.loading': 'Carregando historico...',
+      'dashboard.language.label': 'Idioma',
+      'dashboard.language.portuguese': 'Portugues',
+      'dashboard.language.english': 'English',
       'dashboard.action.send': 'Enviar',
       'dashboard.action.send_title': 'Enviar mensagem',
       'dashboard.action.stop': 'Parar',
@@ -75,7 +81,13 @@
     'en-US': {
       'dashboard.input.placeholder': 'Ask, describe, or paste your task...',
       'dashboard.button.new_chat': '+ New chat',
+      'dashboard.button.memory': 'Memory',
+      'dashboard.button.help': 'Help',
+      'dashboard.button.simple_mode': 'Simple mode',
       'dashboard.conversation.loading': 'Loading history...',
+      'dashboard.language.label': 'Language',
+      'dashboard.language.portuguese': 'Portuguese',
+      'dashboard.language.english': 'English',
       'dashboard.action.send': 'Send',
       'dashboard.action.send_title': 'Send message',
       'dashboard.action.stop': 'Stop',
@@ -136,6 +148,7 @@
     }
   };
 
+  const STORAGE_KEY = 'ialclaw_lang';
   let language = FALLBACK;
   let initialized = false;
 
@@ -167,7 +180,9 @@
     try {
       const params = new URLSearchParams(window.location.search || '');
       const langQuery = params.get('lang');
-      const url = langQuery ? '/api/i18n/language?lang=' + encodeURIComponent(langQuery) : '/api/i18n/language';
+      const langStored = window.localStorage.getItem(STORAGE_KEY);
+      const preferred = langQuery || langStored || '';
+      const url = preferred ? '/api/i18n/language?lang=' + encodeURIComponent(preferred) : '/api/i18n/language';
       const response = await fetch(url);
       const data = await response.json();
       language = normalize(data && data.language);
@@ -180,6 +195,9 @@
     }
 
     document.documentElement.lang = language;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, language);
+    } catch (_error) {}
     initialized = true;
     return language;
   }
@@ -188,10 +206,22 @@
     return language;
   }
 
+  function setLanguage(nextLang) {
+    const normalized = normalize(nextLang);
+    language = normalized;
+    document.documentElement.lang = normalized;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, normalized);
+    } catch (_error) {}
+    initialized = true;
+    return language;
+  }
+
   return {
     init,
     t,
     getLanguage,
-    normalize
+    normalize,
+    setLanguage
   };
 });

@@ -33,11 +33,11 @@ export class DashboardServer {
         });
 
         this.app.get('/advanced', (_req, res) => {
-            res.sendFile(path.join(__dirname, 'public', 'index.html'));
+            res.sendFile(path.join(__dirname, 'public', 'advanced.html'));
         });
 
         this.app.get('/simple', (_req, res) => {
-            res.sendFile(path.join(__dirname, 'public', 'simple.html'));
+            res.sendFile(path.join(__dirname, 'public', 'index.html'));
         });
 
         this.app.get('/help', (_req, res) => {

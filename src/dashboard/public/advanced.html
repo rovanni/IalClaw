@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IalClaw v3.0 - Cognitive Console</title>
+  <link rel="icon" href="data:,">
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="/dashboard-i18n.js"></script>
+  <script src="/dashboard-ui-core.js"></script>
+  <style>
+    :root {
+      --font-xs: 0.75rem;
+      --font-sm: 0.875rem;
+      --font-md: 1rem;
+      --font-lg: 1.125rem;
+      --font-xl: 1.25rem;
+      --font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+
+      --bg-base: #f8f9fa;
+      --bg-surface: #ffffff;
+      --bg-header: #ffffff;
+      --bg-input: #f1f3f4;
+      --text-main: #202124;
+      --text-muted: #5f6368;
+      --border-color: #dadce0;
+      --accent: #1a73e8;
+      --accent-hover: #174ea6;
+      --shadow-sm: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+      --shadow-lg: 0 24px 64px rgba(15, 23, 42, 0.18);
+      --overlay-bg: rgba(15, 23, 42, 0.38);
+
+      --stat-ok: #1e8e3e;
+      --stat-warn: #f29900;
+      --line-user: #1967d2;
+      --line-thought: #681da8;
+      --line-action: #b06000;
+      --line-obs: #0d652d;
+      --line-final: #1a73e8;
+      --line-error: #c5221f;
+      --line-debug: #5f6368;
+      --line-rag: #c5221f;
+    }
+
+    [data-theme="dark"] {
+      --bg-base: #202124;
+      --bg-surface: #292a2d;
+      --bg-header: #292a2d;
+      --bg-input: #303134;
+      --text-main: #e8eaed;
+      --text-muted: #9aa0a6;
+      --border-color: #3c4043;
+      --accent: #8ab4f8;
+      --accent-hover: #aecbfa;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+      --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.46);
+      --overlay-bg: rgba(2, 6, 23, 0.7);
+
+      --stat-ok: #81c995;
+      --stat-warn: #fde293;
+      --line-user: #8ab4f8;
+      --line-thought: #d7aefb;
+      --line-action: #fde293;
+      --line-obs: #81c995;
+      --line-final: #8ab4f8;
+      --line-error: #f28b82;
+      --line-debug: #9aa0a6;
+      --line-rag: #f28b82;
+    }
+
+    html {
+      font-size: 16px;
+      transition: font-size 0.2s ease-out;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    #status-bar {
+      min-height: 56px;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      font-size: var(--font-sm);
+      font-weight: 500;
+      color: var(--text-muted);
+      gap: 16px;
+      z-index: 100;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      flex-wrap: wrap;
+    }
+
+    .stat-badge {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .stat-ok {
+      color: var(--stat-ok);
+    }
+
+    .stat-warn {
+      color: var(--stat-warn);
+    }
+
+    .mode-select {
+      background: var(--bg-input);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      font-family: inherit;
+      min-width: 180px;
+    }
+
+    .mode-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .mode-meta {
+      color: var(--text-muted);
+      font-size: var(--font-xs);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .zoom-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+    }
+
+    .zoom-btn:hover {
+      background: var(--bg-input);
+      color: var(--text-main);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: #fff;
+    }
+
+    #workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      padding: 14px;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    #conversation-sidebar {
+      width: 280px;
+      min-width: 280px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .sidebar-header {
+      padding: 14px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sidebar-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .sidebar-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .sidebar-btn {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-input);
+      color: var(--text-main);
+      padding: 8px 12px;
+      font-size: var(--font-sm);
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .sidebar-btn:hover {
+      background: var(--bg-surface);
+    }
+
+    #conversation-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conversation-item {
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      background: var(--bg-surface);
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+      color: inherit;
+    }
+
+    .conversation-item:hover {
+      border-color: var(--accent);
+      background: var(--bg-input);
+    }
+
+    .conversation-item.active {
+      border-color: var(--accent);
+      background: var(--bg-input);
+    }
+
+    .conversation-name {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .conversation-preview {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+      display: -webkit-box;
+      line-clamp: 2;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .conversation-meta {
+      margin-top: 8px;
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .conversation-empty {
+      padding: 16px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.5;
+    }
+
+    #main-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    #mynetwork-container {
+      flex: 1;
+      background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    #mynetwork {
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel-header {
+      background: var(--bg-surface);
+      padding: 10px 14px;
+      font-size: var(--font-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #timeline-panel {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .memory-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-bg);
+      z-index: 120;
+    }
+
+    .memory-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(420px, 92vw);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-lg);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+      z-index: 130;
+    }
+
+    .memory-drawer.is-open {
+      transform: translateX(0);
+    }
+
+    .memory-drawer-header {
+      padding: 14px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .memory-drawer-title {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .memory-drawer-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+
+    .memory-drawer-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .memory-drawer-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 12px;
+    }
+
+    .memory-empty {
+      display: none;
+      padding: 18px;
+      border: 1px dashed var(--border-color);
+      border-radius: 12px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.55;
+      background: rgba(95, 99, 104, 0.04);
+    }
+
+    .memory-empty.is-visible {
+      display: block;
+    }
+
+    .interaction-layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.9fr);
+      gap: 0;
+    }
+
+    .chat-panel {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      border-right: 1px solid var(--border-color);
+      background: linear-gradient(180deg, rgba(26, 115, 232, 0.04) 0%, transparent 120px);
+    }
+
+    .chat-panel-header,
+    .log-panel-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    [data-theme="dark"] .chat-panel-header,
+    [data-theme="dark"] .log-panel-header {
+      background: rgba(41, 42, 45, 0.55);
+    }
+
+    .chat-panel-title,
+    .log-panel-title {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .chat-panel-subtitle,
+    .log-panel-subtitle {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .log-panel {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: rgba(95, 99, 104, 0.04);
+    }
+
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+      padding: 18px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    #log-container {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: var(--font-xs);
+      line-height: 1.4;
+      color: var(--text-muted);
+      background: rgba(95, 99, 104, 0.04);
+    }
+
+    .status-line {
+      padding: 8px 0;
+      border-bottom: 1px dashed rgba(128, 128, 128, 0.12);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .chat-message {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 82%;
+    }
+
+    .chat-user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .chat-final {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .chat-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: var(--font-xs);
+      user-select: none;
+    }
+
+    .chat-tag {
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .chat-bubble {
+      min-width: 0;
+      padding: 14px 16px;
+      border-radius: 18px;
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.55;
+      font-size: var(--font-md);
+      background: var(--bg-surface);
+      border: 1px solid rgba(26, 115, 232, 0.08);
+    }
+
+    .chat-user .chat-bubble {
+      background: linear-gradient(180deg, rgba(26, 115, 232, 0.12) 0%, rgba(26, 115, 232, 0.06) 100%);
+      border-bottom-right-radius: 6px;
+    }
+
+    .chat-final .chat-bubble {
+      background: var(--bg-surface);
+      border-bottom-left-radius: 6px;
+    }
+
+    .chat-user .chat-tag {
+      color: var(--line-user);
+    }
+
+    .chat-final .chat-tag {
+      color: var(--line-final);
+    }
+
+    .trace-btn {
+      align-self: flex-start;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: var(--font-xs);
+      font-family: var(--font-mono);
+      cursor: pointer;
+    }
+
+    .trace-btn:hover {
+      background: var(--bg-input);
+    }
+
+    #typing-indicator {
+      display: none;
+      margin: 0 16px 12px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: var(--font-xs);
+      background: rgba(95, 99, 104, 0.06);
+      border: 1px dashed rgba(95, 99, 104, 0.22);
+      border-radius: 12px;
+    }
+
+    .input-area {
+      flex-shrink: 0;
+      padding: 10px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #chat-input {
+      flex: 1;
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      color: var(--text-main);
+      border-radius: 8px;
+      outline: none;
+      font-size: var(--font-md);
+      font-family: var(--font-mono);
+      transition: all 0.2s;
+    }
+
+    #chat-input:focus {
+      border: 1px solid var(--accent);
+      background: var(--bg-surface);
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+    }
+
+    .console-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0 14px;
+      height: 40px;
+      font-weight: 700;
+      font-size: var(--font-sm);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .console-btn.console-btn-stop {
+      background: var(--line-error);
+    }
+
+    .console-btn.console-btn-stop:hover {
+      background: #a61d1a;
+    }
+
+    .console-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .console-btn:disabled {
+      background: var(--border-color);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    #speech-btn {
+      min-width: 46px;
+      padding: 0 10px;
+      font-size: 1rem;
+      font-family: var(--font-mono);
+    }
+
+    #speech-btn.recording {
+      background: #c5221f;
+      color: #fff;
+    }
+
+    #tts-toggle {
+      min-width: 56px;
+      padding: 0 10px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+    }
+
+    #tts-toggle.active {
+      background: var(--bg-input);
+      color: var(--text-main);
+    }
+
+    #console-status {
+      font-family: var(--font-mono);
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      margin-left: auto;
+      white-space: nowrap;
+      max-width: 220px;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    @media (max-width: 1200px) {
+      #conversation-sidebar {
+        width: 240px;
+        min-width: 240px;
+      }
+
+    }
+
+    @media (max-width: 960px) {
+      #workspace {
+        flex-direction: column;
+      }
+
+      #conversation-sidebar {
+        width: 100%;
+        min-width: 0;
+        max-height: 260px;
+      }
+
+      .interaction-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .chat-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      #log-container {
+        max-height: 180px;
+      }
+
+      .chat-message {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header id="status-bar">
+    <div>IalClaw V3.0 <span class="stat-badge">COGNITIVE CONSOLE</span></div>
+    <div>|</div>
+    <div>Gateway: <span class="stat-ok">ONLINE</span></div>
+    <div>Engine: <span class="stat-warn">STANDBY</span></div>
+    <div>|</div>
+    <div class="mode-status">Modo atual: <span id="mode-badge" class="stat-badge" data-mode="balanced">Equilibrado</span></div>
+    <div id="mode-behavior" class="mode-meta">Fallback ativo, validacao leve</div>
+
+    <div style="margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <label for="execution-mode" style="font-size: var(--font-xs); color: var(--text-muted);">MODO</label>
+      <select id="execution-mode" class="mode-select">
+        <option value="strict">Seguro</option>
+        <option value="balanced" selected>Equilibrado</option>
+        <option value="aggressive">Livre</option>
+      </select>
+      <button class="zoom-btn" id="memory-toggle-btn" type="button">Ã°Å¸Â§Â  MemÃƒÂ³ria</button>
+      <a href="/" class="zoom-btn">Modo simples</a>
+      <a href="/help" class="zoom-btn">Ajuda</a>
+      <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
+      <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
+      <span id="zoom-level" style="color: var(--text-muted); width: 45px; text-align: center; font-size: var(--font-xs);">100%</span>
+      <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
+      <button class="zoom-btn" id="theme-toggle-btn" onclick="toggleTheme()">Ã°Å¸Å’â€œ Theme</button>
+    </div>
+
+    <div>|</div>
+    <div>Nodes: <span id="stat-nodes" class="stat-badge">0</span></div>
+    <div>Edges: <span id="stat-edges" class="stat-badge">0</span></div>
+  </header>
+
+  <div id="workspace">
+    <aside class="panel" id="conversation-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <span>Conversas</span>
+          <span id="conversation-count">0</span>
+        </div>
+        <div class="sidebar-subtitle">Continue uma sessÃƒÂ£o anterior ou comece uma nova conversa.</div>
+        <button class="sidebar-btn btn-primary" id="new-chat-btn">+ Nova conversa</button>
+      </div>
+      <div id="conversation-list">
+        <div class="conversation-empty">Carregando histÃƒÂ³rico...</div>
+      </div>
+    </aside>
+
+    <div id="main-col">
+      <div class="panel" id="timeline-panel">
+        <div class="panel-header">
+          <span>InteraÃƒÂ§ÃƒÂ£o com o Agente</span>
+          <span id="console-status">sse: conectando...</span>
+        </div>
+        <div class="interaction-layout">
+          <section class="chat-panel">
+            <div class="chat-panel-header">
+              <div class="chat-panel-title">Conversa</div>
+              <div class="chat-panel-subtitle">Somente mensagens do usuÃƒÂ¡rio e respostas finais ficam aqui.</div>
+            </div>
+            <div id="chat-container"></div>
+            <div id="typing-indicator">[SYSTEM] processando...</div>
+          </section>
+          <aside class="log-panel">
+            <div class="log-panel-header">
+              <div class="log-panel-title">Logs de ExecuÃƒÂ§ÃƒÂ£o</div>
+              <div class="log-panel-subtitle">Progresso, observaÃƒÂ§ÃƒÂµes e ferramentas em execuÃƒÂ§ÃƒÂ£o.</div>
+            </div>
+            <div id="log-container"></div>
+          </aside>
+        </div>
+        <div class="input-area">
+          <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off">
+          <button id="speech-btn" class="console-btn" title="Entrada por voz">Ã°Å¸Å½Â¤</button>
+          <button id="tts-toggle" class="console-btn" title="Ler respostas finais">Ã°Å¸â€Ë†</button>
+          <button id="action-btn" class="console-btn" title="Enviar mensagem">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="memory-drawer-backdrop" class="memory-drawer-backdrop" hidden></div>
+  <aside id="memory-drawer" class="memory-drawer" aria-hidden="true">
+    <div class="memory-drawer-header">
+      <div>
+        <div class="memory-drawer-title">Memoria Cognitiva</div>
+        <div class="memory-drawer-subtitle">Visualizacao sob demanda para nao competir com o chat.</div>
+      </div>
+      <div class="memory-drawer-actions">
+        <button class="zoom-btn btn-primary" id="replay-btn" type="button">Replay por Trace</button>
+        <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memoria">Fechar</button>
+      </div>
+    </div>
+    <div class="memory-drawer-body">
+      <div id="memory-empty" class="memory-empty">Nenhuma memÃ³ria ativa</div>
+      <div id="mynetwork-container">
+        <div id="mynetwork"></div>
+      </div>
+    </div>
+  </aside>
+
+  <script type="text/javascript">
+    let sessionId = localStorage.getItem('ialclaw_session_id');
+    if (!sessionId) {
+      sessionId = createSessionId();
+      localStorage.setItem('ialclaw_session_id', sessionId);
+    }
+
+    const chatInput = document.getElementById('chat-input');
+    const actionBtn = document.getElementById('action-btn');
+    const speechBtn = document.getElementById('speech-btn');
+    const ttsToggleBtn = document.getElementById('tts-toggle');
+    const chatContainer = document.getElementById('chat-container');
+    const logContainer = document.getElementById('log-container');
+    const typingIndicator = document.getElementById('typing-indicator');
+    const conversationList = document.getElementById('conversation-list');
+    const conversationCount = document.getElementById('conversation-count');
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const replayBtn = document.getElementById('replay-btn');
+    const memoryToggleBtn = document.getElementById('memory-toggle-btn');
+    const memoryCloseBtn = document.getElementById('memory-close-btn');
+    const memoryDrawer = document.getElementById('memory-drawer');
+    const memoryDrawerBackdrop = document.getElementById('memory-drawer-backdrop');
+    const memoryEmpty = document.getElementById('memory-empty');
+    const memoryNetworkContainer = document.getElementById('mynetwork-container');
+    const executionModeSelect = document.getElementById('execution-mode');
+    const modeBadge = document.getElementById('mode-badge');
+    const modeBehavior = document.getElementById('mode-behavior');
+    const consoleStatus = document.getElementById('console-status');
+
+    let network = null;
+    let eventSource = null;
+    let currentZoom = parseFloat(localStorage.getItem('ialclaw_zoom')) || 1.0;
+    let currentTheme = localStorage.getItem('ialclaw_theme') || 'dark';
+    let commandHistory = [];
+    let historyCursor = -1;
+    let ttsEnabled = localStorage.getItem('ialclaw_tts') === '1';
+    let recognition = null;
+    let isRecording = false;
+    let activeChatRequestController = null;
+    let requestInFlight = false;
+    let memoryDrawerOpen = false;
+    let latestGraphSnapshot = { nodes: [], edges: [] };
+    const dashboardI18n = window.IalclawDashboardI18n;
+    const tf = (key, params, fallback) => dashboardI18n?.t?.(key, params, fallback) || fallback || key;
+
+    function updateChatActionButtons() {
+      const state = IalclawDashboardUiCore.getActionButtonState(requestInFlight);
+      actionBtn.textContent = state.label;
+      actionBtn.title = state.title;
+      actionBtn.classList.toggle('console-btn-stop', state.action === 'stop');
+      actionBtn.disabled = chatInput.disabled && state.action !== 'stop';
+    }
+
+    const EVENT_LABELS = {
+      user: 'USER',
+      thought: 'THOUGHT',
+      action: 'ACTION',
+      obs: 'OBS',
+      progress: 'PROGRESS',
+      final: 'FINAL',
+      error: 'ERROR',
+      debug: 'DEBUG',
+      rag: 'RAG'
+    };
+
+    function createSessionId() {
+      return crypto.randomUUID ? crypto.randomUUID() : 'session-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function nowLabel(ts) {
+      const dt = ts ? new Date(ts) : new Date();
+      return dt.toLocaleTimeString(dashboardI18n?.getLanguage?.() || 'en-US', { hour12: false });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function eventContentToString(content) {
+      if (typeof content === 'string') return content;
+      try {
+        return JSON.stringify(content, null, 2);
+      } catch (_err) {
+        return String(content);
+      }
+    }
+
+    function renderChat(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (normalizedType !== 'user' && normalizedType !== 'final') return;
+
+      const labelType = EVENT_LABELS[normalizedType] ? normalizedType : 'final';
+      const row = document.createElement('article');
+      row.className = `chat-message chat-${labelType}`;
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'chat-meta';
+
+      const tagEl = document.createElement('span');
+      tagEl.className = 'chat-tag';
+      tagEl.textContent = EVENT_LABELS[labelType];
+
+      const timeEl = document.createElement('span');
+      timeEl.textContent = nowLabel(meta.timestamp);
+
+      const bubbleEl = document.createElement('div');
+      bubbleEl.className = 'chat-bubble';
+      bubbleEl.textContent = eventContentToString(content);
+
+      metaEl.appendChild(tagEl);
+      metaEl.appendChild(timeEl);
+      row.appendChild(metaEl);
+      row.appendChild(bubbleEl);
+
+      const traceId = typeof meta.traceId === 'string' ? meta.traceId : '';
+      if (traceId && labelType === 'final') {
+        const traceBtn = document.createElement('button');
+        traceBtn.className = 'trace-btn';
+        traceBtn.type = 'button';
+        traceBtn.textContent = tf('dashboard.view.trace', undefined, 'View execution');
+        traceBtn.addEventListener('click', () => replayTrace(traceId));
+        row.appendChild(traceBtn);
+      }
+
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      const maxRows = 1500;
+      if (chatContainer.children.length > maxRows) {
+        chatContainer.removeChild(chatContainer.firstChild);
+      }
+    }
+
+    function renderLog(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type) || 'obs';
+      const line = document.createElement('div');
+      line.className = 'status-line';
+      line.textContent = `${nowLabel(meta.timestamp)}  [${EVENT_LABELS[normalizedType] || normalizedType.toUpperCase()}] ${eventContentToString(content)}`;
+      logContainer.appendChild(line);
+      logContainer.scrollTop = logContainer.scrollHeight;
+
+      const maxRows = 300;
+      if (logContainer.children.length > maxRows) {
+        logContainer.removeChild(logContainer.firstChild);
+      }
+    }
+
+    function routeEvent(type, content, meta = {}) {
+      const normalizedType = IalclawDashboardUiCore.normalizeEventType(type);
+      if (IalclawDashboardUiCore.getEventChannel(normalizedType) === 'chat') {
+        renderChat(normalizedType, content, meta);
+        return;
+      }
+      renderLog(normalizedType || 'obs', content, meta);
+    }
+
+    function appendEvent(type, content, meta = {}) {
+      routeEvent(type, content, meta);
+    }
+
+    function appendStatus(content, meta = {}, type = 'obs') {
+      renderLog(type, content, meta);
+    }
+
+    window.routeEvent = routeEvent;
+
+    function applyZoom() {
+      document.documentElement.style.fontSize = `${16 * currentZoom}px`;
+      document.getElementById('zoom-level').innerText = `${Math.round(currentZoom * 100)}%`;
+      localStorage.setItem('ialclaw_zoom', String(currentZoom));
+    }
+
+    function changeZoom(delta) {
+      currentZoom = Math.max(0.5, Math.min(2.0, currentZoom + delta));
+      applyZoom();
+    }
+
+    function ensureGraphInitialized() {
+      if (network) return;
+      const container = document.getElementById('mynetwork');
+      network = new vis.Network(container, { nodes: nodesData, edges: edgesData }, getGraphOptions());
+    }
+
+    function renderMemoryState() {
+      const hasNodes = Array.isArray(latestGraphSnapshot.nodes) && latestGraphSnapshot.nodes.length > 0;
+      memoryEmpty.classList.toggle('is-visible', !hasNodes);
+      memoryNetworkContainer.hidden = !hasNodes;
+
+      if (!hasNodes) {
+        nodesData.clear();
+        edgesData.clear();
+        return;
+      }
+
+      if (!memoryDrawerOpen) {
+        return;
+      }
+
+      ensureGraphInitialized();
+
+      nodesData.clear();
+      edgesData.clear();
+      nodesData.update(latestGraphSnapshot.nodes);
+      edgesData.update(latestGraphSnapshot.edges);
+      network.fit({
+        animation: { duration: 250, easingFunction: 'easeInOutQuad' }
+      });
+    }
+
+    function openMemoryDrawer() {
+      memoryDrawerOpen = true;
+      memoryDrawer.classList.add('is-open');
+      memoryDrawer.setAttribute('aria-hidden', 'false');
+      memoryDrawerBackdrop.hidden = false;
+      renderMemoryState();
+    }
+
+    function closeMemoryDrawer() {
+      memoryDrawerOpen = false;
+      memoryDrawer.classList.remove('is-open');
+      memoryDrawer.setAttribute('aria-hidden', 'true');
+      memoryDrawerBackdrop.hidden = true;
+    }
+
+    function toggleMemoryDrawer() {
+      if (memoryDrawerOpen) {
+        closeMemoryDrawer();
+      } else {
+        openMemoryDrawer();
+      }
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('theme-toggle-btn').innerText = theme === 'light'
+        ? `Ã°Å¸Å’â„¢ ${tf('dashboard.theme.dark', undefined, 'Dark')}`
+        : `Ã¢Ëœâ‚¬Ã¯Â¸Â ${tf('dashboard.theme.light', undefined, 'Light')}`;
+      if (network) network.setOptions(getGraphOptions());
+    }
+
+    
+    function applyStaticTranslations() {
+      chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
+      newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
+      const loading = conversationList.querySelector('.conversation-empty');
+      if (loading) {
+        loading.textContent = tf('dashboard.conversation.loading', undefined, loading.textContent);
+      }
+      consoleStatus.textContent = 'sse: connecting...';
+    }
+
+    function setTtsState(enabled) {
+      ttsEnabled = enabled;
+      localStorage.setItem('ialclaw_tts', enabled ? '1' : '0');
+      ttsToggleBtn.classList.toggle('active', enabled);
+      ttsToggleBtn.textContent = enabled ? 'Ã°Å¸â€Å ' : 'Ã°Å¸â€Ë†';
+    }
+
+    function speak(text) {
+      if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(String(text));
+      utterance.lang = dashboardI18n?.getLanguage?.() || 'en-US';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function handleSpeechInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        appendStatus(tf('dashboard.error.speech_not_supported', undefined, 'Web Speech API is not supported in this browser.'));
+        speechBtn.disabled = true;
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.lang = dashboardI18n?.getLanguage?.() || 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        speechBtn.classList.add('recording');
+        speechBtn.textContent = 'Ã°Å¸â€Â´';
+        appendStatus(tf('dashboard.voice.started', undefined, 'Voice capture started.'));
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) return;
+        chatInput.value = transcript;
+        chatInput.focus();
+        appendStatus(tf('dashboard.voice.captured', { transcript }, `Voice captured: ${transcript}`));
+      };
+
+      recognition.onerror = (event) => {
+        appendStatus(tf('dashboard.error.speech_failed', { error: event.error || 'unknown' }, `Voice recognition failed: ${event.error || 'unknown'}`));
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        speechBtn.classList.remove('recording');
+        speechBtn.textContent = 'Ã°Å¸Å½Â¤';
+      };
+
+      speechBtn.addEventListener('click', () => {
+        if (!recognition) return;
+        if (isRecording) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      });
+    }
+
+    function resetConversationView() {
+      chatContainer.innerHTML = '';
+      logContainer.innerHTML = '';
+      appendStatus(tf('dashboard.session.active', { sessionId }, `Active session: ${sessionId}`));
+      appendStatus(tf('dashboard.session.channel_ready', undefined, 'Status channel ready for internal progress.'));
+    }
+
+    async function resetSessionState(targetSessionId) {
+      await fetch('/api/sessions/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: targetSessionId })
+      }).catch(() => null);
+    }
+
+    function shouldConsumeEvent(payload) {
+      if (!payload || typeof payload !== 'object') return true;
+      const payloadSession = payload.sessionId || payload.session_id || payload.conversation_id || payload.conversationId;
+      if (!payloadSession) return true;
+      return String(payloadSession) === String(sessionId);
+    }
+
+    function applyExecutionConfig(config) {
+      if (!config) return;
+      executionModeSelect.value = config.executionMode;
+      modeBadge.innerText = config.label;
+      modeBehavior.innerText = config.behavior;
+      modeBadge.dataset.mode = config.executionMode;
+    }
+
+    async function loadExecutionConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (res.ok && data?.config) applyExecutionConfig(data.config);
+      } catch (_err) {
+        appendStatus(tf('dashboard.mode.update_failed', { error: 'load-config' }, 'Could not update mode: load-config'));
+      }
+    }
+
+    async function updateExecutionMode(nextMode, previousMode) {
+      executionModeSelect.disabled = true;
+      try {
+        const res = await fetch('/api/config/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: nextMode })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.config) throw new Error(data.error || tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
+
+        applyExecutionConfig(data.config);
+        appendStatus(tf('dashboard.mode.updated', { label: data.config.label }, `Execution mode changed to ${data.config.label}.`));
+      } catch (err) {
+        executionModeSelect.value = previousMode;
+        appendStatus(tf('dashboard.mode.update_failed', { error: err.message || err }, `Could not update mode: ${err.message || err}`));
+      } finally {
+        executionModeSelect.disabled = false;
+      }
+    }
+
+    async function loadConversationList() {
+      try {
+        const res = await fetch('/api/conversations');
+        const conversations = await res.json();
+
+        if (!Array.isArray(conversations)) {
+          throw new Error(tf('dashboard.error.invalid_response', undefined, 'Invalid response'));
+        }
+
+        conversationCount.innerText = String(conversations.length);
+        renderConversationList(conversations);
+      } catch (_err) {
+        conversationList.innerHTML = `<div class="conversation-empty">${tf('dashboard.error.history_load', undefined, 'Could not load history.')}</div>`;
+      }
+    }
+
+    function renderConversationList(conversations) {
+      if (!conversations.length) {
+        conversationList.innerHTML = `<div class="conversation-empty">${tf('dashboard.error.empty_history', undefined, 'History is empty. Type a cognitive command.')}</div>`;
+        return;
+      }
+
+      conversationList.innerHTML = '';
+      conversations.forEach((conversation) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `conversation-item${conversation.conversation_id === sessionId ? ' active' : ''}`;
+        item.dataset.sessionId = conversation.conversation_id;
+
+        const lastContent = String(conversation.last_content || '').trim();
+        const label = String(conversation.title || lastContent || conversation.conversation_id).trim();
+
+        item.innerHTML = `
+          <div class="conversation-name">${escapeHtml(label.slice(0, 64))}</div>
+          <div class="conversation-preview">${escapeHtml(lastContent || tf('dashboard.conversation.no_messages', undefined, 'No messages'))}</div>
+          <div class="conversation-meta">
+            <span>${escapeHtml(conversation.conversation_id)}</span>
+            <span>${tf('dashboard.conversation.msg_count', { count: conversation.message_count || 0 }, `${conversation.message_count || 0} msgs`)}</span>
+          </div>
+        `;
+
+        item.addEventListener('click', () => switchConversation(conversation.conversation_id));
+        conversationList.appendChild(item);
+      });
+    }
+
+    async function loadConversationMessages(targetSessionId) {
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(targetSessionId)}`);
+        const messages = await res.json();
+
+        chatContainer.innerHTML = '';
+        appendStatus(tf('dashboard.session.active', { sessionId: targetSessionId }, `Active session: ${targetSessionId}`));
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+          appendStatus(tf('dashboard.error.empty_history', undefined, 'History is empty. Type a cognitive command.'));
+          return;
+        }
+
+        messages.forEach((message) => {
+          if (message.role === 'user') {
+            routeEvent('user', message.content, { timestamp: message.created_at });
+          } else if (message.role === 'assistant') {
+            routeEvent('final', message.content, { timestamp: message.created_at });
+          } else if (message.role === 'tool') {
+            routeEvent('tool', tf('dashboard.logs.tool_history', { content: message.content }, `Tool (history): ${message.content}`), { timestamp: message.created_at });
+          }
+        });
+      } catch (_err) {
+        resetConversationView();
+      }
+    }
+
+    async function switchConversation(nextSessionId) {
+      if (!nextSessionId || nextSessionId === sessionId) return;
+
+      sessionId = nextSessionId;
+      localStorage.setItem('ialclaw_session_id', sessionId);
+      await resetSessionState(sessionId);
+      resetConversationView();
+      await loadConversationMessages(sessionId);
+      await loadConversationList();
+    }
+
+    function startNewConversation() {
+      sessionId = createSessionId();
+      localStorage.setItem('ialclaw_session_id', sessionId);
+      resetSessionState(sessionId).finally(async () => {
+        resetConversationView();
+        await loadConversationList();
+        chatInput.focus();
+      });
+    }
+
+    function parseSsePayload(event) {
+      try {
+        return JSON.parse(event.data);
+      } catch (_err) {
+        return { raw: String(event.data || '') };
+      }
+    }
+
+    function connectSSE() {
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      eventSource = new EventSource('/debug/stream');
+      consoleStatus.textContent = 'sse: connected';
+
+      const onEvent = (eventType, mapper) => (event) => {
+        const data = parseSsePayload(event);
+        if (!shouldConsumeEvent(data)) return;
+        const mapped = mapper(data);
+        if (!mapped) return;
+        if (mapped.channel === 'status') {
+          routeEvent(mapped.type || eventType || 'progress', mapped.content, { timestamp: data.timestamp || data.created_at, traceId: data.trace_id || data.traceId || '' });
+          return;
+        }
+        routeEvent(mapped.type || eventType, mapped.content, { traceId: data.trace_id || data.traceId || '', timestamp: data.timestamp || data.created_at });
+      };
+
+      eventSource.addEventListener('thought', onEvent('thought', (data) => ({ type: 'obs', channel: 'status', content: data.content || tf('dashboard.logs.thought_empty', undefined, 'thought event without content') })));
+
+      eventSource.addEventListener('tool', onEvent('tool', (data) => {
+        const status = String(data.status || '').toLowerCase();
+        if (status.includes('error') || status.includes('fail')) {
+          return { type: 'tool', channel: 'status', content: tf('dashboard.logs.tool_failed', { name: data.name || 'unknown', status }, `Tool ${data.name || 'unknown'} failed: ${status}`) };
+        }
+        return { type: 'tool', channel: 'status', content: tf('dashboard.logs.tool_done', { name: data.name || 'unknown', status: data.status || 'done', latency: data.latency || 0 }, `Tool ${data.name || 'unknown'}: ${data.status || 'done'} (${data.latency || 0}ms)`) };
+      }));
+
+      eventSource.addEventListener('rag', onEvent('rag', (data) => ({
+        type: 'rag',
+        channel: 'status',
+        content: tf('dashboard.logs.rag', { count: data.nodes?.length || 0, score: data.nodes?.[0]?.score || 0 }, `Retrieved nodes: ${data.nodes?.length || 0} | Top score: ${data.nodes?.[0]?.score || 0}`)
+      })));
+
+      eventSource.addEventListener('gateway', onEvent('gateway', (data) => ({
+        type: 'obs',
+        channel: 'status',
+        content: tf('dashboard.logs.gateway', { summary: data.summary || data.route || data.decision || 'event received' }, `Gateway: ${data.summary || data.route || data.decision || 'event received'}`)
+      })));
+
+      eventSource.addEventListener('execution_summary', onEvent('execution_summary', (data) => ({
+        type: 'progress',
+        channel: 'status',
+        content: data.summary || tf('dashboard.logs.exec_summary', undefined, 'Execution summary received')
+      })));
+
+      eventSource.addEventListener('execution_mode', onEvent('execution_mode', (data) => ({
+        type: 'obs',
+        channel: 'status',
+        content: tf('dashboard.logs.exec_mode', { mode: data.selected || data.executionMode || 'balanced', stage: data.stage || 'runtime' }, `Mode ${data.selected || data.executionMode || 'balanced'} (${data.stage || 'runtime'})`)
+      })));
+
+      eventSource.addEventListener('tool_input_error', onEvent('tool_input_error', (data) => ({
+        type: 'error',
+        channel: 'status',
+        content: tf('dashboard.logs.tool_input_error', { tool: data.tool || 'unknown tool' }, `Tool input error: ${data.tool || 'unknown tool'}`)
+      })));
+
+      eventSource.addEventListener('self_healing', onEvent('self_healing', (data) => ({
+        type: 'progress',
+        channel: 'status',
+        content: tf('dashboard.logs.self_healing', { stage: data.stage || 'unknown', attempt: data.attempt ?? '-' }, `Self-healing ${data.stage || 'unknown'} attempt ${data.attempt ?? '-'}`)
+      })));
+
+      eventSource.addEventListener('self_healing_abort', onEvent('self_healing_abort', (data) => ({
+        type: 'error',
+        channel: 'status',
+        content: tf('dashboard.logs.self_healing_abort', { reason: data.reason || 'no reason' }, `Self-healing aborted: ${data.reason || 'no reason'}`)
+      })));
+
+      eventSource.addEventListener('agent_status', onEvent('agent_status', (data) => ({
+        type: 'progress',
+        channel: 'status',
+        content: data.message || tf('dashboard.logs.agent_status', undefined, 'Execution status updated')
+      })));
+
+      eventSource.addEventListener('agent_config', onEvent('agent_config', (data) => {
+        applyExecutionConfig(data);
+        return {
+          type: 'obs',
+          channel: 'status',
+          content: `Configuracao atualizada: ${data.label || data.executionMode || 'modo'}`
+        };
+      }));
+
+      eventSource.addEventListener('web_progress', onEvent('web_progress', (data) => {
+        const message = String(data.message || tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...'));
+        typingIndicator.style.display = 'block';
+        typingIndicator.textContent = `[SYSTEM] ${message}`;
+
+        const stage = String(data.stage || '');
+        if (stage === 'completed' || stage === 'failed' || stage === 'stopped') {
+          setTimeout(() => {
+            typingIndicator.style.display = 'none';
+            typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
+          }, 700);
+        }
+
+        return {
+          type: 'progress',
+          channel: 'status',
+          content: message
+        };
+      }));
+
+      eventSource.onerror = () => {
+        consoleStatus.textContent = 'sse: reconnecting...';
+      };
+    }
+
+    async function replayTrace(traceId) {
+      if (!traceId) return;
+      appendStatus(tf('dashboard.trace.start', { traceId }, `Trace replay ${traceId} started...`));
+
+      try {
+        const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
+        if (!res.ok) throw new Error(tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
+
+        const events = await res.json();
+        if (!Array.isArray(events) || events.length === 0) {
+          appendStatus(tf('dashboard.trace.empty', undefined, 'No events found for this trace.'));
+          return;
+        }
+
+        for (const event of events) {
+          let payload = {};
+          try {
+            payload = JSON.parse(event.payload || '{}');
+          } catch (_err) {
+            payload = { raw: event.payload };
+          }
+
+          if (event.type === 'thought') {
+            routeEvent('obs', payload.content || 'thought', { timestamp: event.created_at });
+          } else if (event.type === 'tool') {
+            routeEvent('tool', `Tool ${payload.name || 'unknown'}: ${payload.status || 'executada'}`, { timestamp: event.created_at });
+          } else if (event.type === 'rag') {
+            routeEvent('rag', `Nos recuperados: ${payload.nodes?.length || 0}`, { timestamp: event.created_at });
+          } else if (event.type === 'gateway') {
+            routeEvent('obs', payload.summary || JSON.stringify(payload), { timestamp: event.created_at });
+          } else if (event.type === 'execution_summary') {
+            routeEvent('progress', payload.answer || payload.summary || tf('dashboard.logs.replay_summary', undefined, 'Final execution summary'), { timestamp: event.created_at });
+          } else {
+            routeEvent('obs', `${event.type}: ${payload.summary || payload.message || JSON.stringify(payload)}`, { timestamp: event.created_at });
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+
+        appendStatus(tf('dashboard.trace.end', { traceId }, `Trace replay ${traceId} finished.`));
+      } catch (err) {
+        appendStatus(tf('dashboard.error.trace_replay', { error: err.message || err }, `Trace replay failed: ${err.message || err}`));
+      }
+    }
+
+    async function sendMessage() {
+      const text = chatInput.value.trim();
+      if (!text || chatInput.disabled) return;
+
+      chatInput.value = '';
+      chatInput.disabled = true;
+      requestInFlight = true;
+      updateChatActionButtons();
+      speechBtn.disabled = true;
+      typingIndicator.style.display = 'block';
+      typingIndicator.textContent = tf('dashboard.typing.preparing', undefined, '[SYSTEM] Preparing execution...');
+
+      routeEvent('user', text);
+
+      commandHistory.push(text);
+      if (commandHistory.length > 100) commandHistory.shift();
+      historyCursor = commandHistory.length;
+
+      try {
+        activeChatRequestController = new AbortController();
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, sessionId }),
+          signal: activeChatRequestController.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || tf('dashboard.http.failed', { status: res.status }, `HTTP failure ${res.status}`));
+
+        const responseText = data.response || data.answer || '';
+        if (responseText) {
+          routeEvent('final', responseText, { traceId: data.trace_id || '' });
+          speak(responseText);
+        } else {
+          appendStatus(tf('dashboard.error.empty_response', undefined, 'Empty backend response.'));
+        }
+
+        if (data.mode) {
+          appendStatus(tf('dashboard.mode.effective', { mode: data.mode, confidence: data.confidence ?? 'n/a' }, `Effective mode: ${data.mode} | confidence: ${data.confidence ?? 'n/a'}`));
+        }
+
+        await loadGraph();
+        await loadConversationList();
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          appendStatus(tf('dashboard.execution.cancelled', undefined, 'Execution stopped by user.'));
+        } else {
+          appendStatus(tf('dashboard.chat.error', { error: err.message || err }, `Error talking to IalClaw: ${err.message || err}`));
+        }
+      } finally {
+        typingIndicator.style.display = 'none';
+        typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
+        chatInput.disabled = false;
+        requestInFlight = false;
+        updateChatActionButtons();
+        activeChatRequestController = null;
+        speechBtn.disabled = false;
+        chatInput.focus();
+      }
+    }
+
+    async function stopCurrentExecution() {
+      if (!requestInFlight) return;
+
+      typingIndicator.style.display = 'block';
+      typingIndicator.textContent = tf('dashboard.typing.stopping', undefined, '[SYSTEM] Stopping execution...');
+      updateChatActionButtons();
+      actionBtn.disabled = true;
+
+      try {
+        await fetch('/api/chat/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+      } catch (_err) {
+        // best effort
+      }
+
+      if (activeChatRequestController) {
+        activeChatRequestController.abort();
+      }
+    }
+
+    function handlePrimaryAction() {
+      if (requestInFlight) {
+        stopCurrentExecution();
+        return;
+      }
+      sendMessage();
+    }
+
+    function handleInputKeyboard(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (requestInFlight) return;
+        sendMessage();
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.max(0, historyCursor - 1);
+        chatInput.value = commandHistory[historyCursor] || '';
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        if (commandHistory.length === 0) return;
+        event.preventDefault();
+        historyCursor = Math.min(commandHistory.length, historyCursor + 1);
+        chatInput.value = historyCursor >= commandHistory.length ? '' : commandHistory[historyCursor] || '';
+      }
+    }
+
+    const nodesData = new vis.DataSet([]);
+    const edgesData = new vis.DataSet([]);
+
+    function getGraphOptions() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#e8eaed' : '#202124';
+      const nodeBg = isDark ? '#8ab4f8' : '#1a73e8';
+      const nodeBorder = isDark ? '#3c4043' : '#dadce0';
+      const edgeColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
+      const edgeHighlight = isDark ? '#8ab4f8' : '#1a73e8';
+
+      return {
+        nodes: {
+          shape: 'dot',
+          size: 16,
+          font: { color: textColor, face: 'JetBrains Mono, Consolas, monospace', size: 13 },
+          borderWidth: 2,
+          color: {
+            border: nodeBorder,
+            background: nodeBg,
+            highlight: { border: textColor, background: '#ea4335' }
+          },
+          shadow: { enabled: true, color: 'rgba(0,0,0,0.15)', size: 5, x: 0, y: 2 }
+        },
+        edges: {
+          width: 1.4,
+          color: { color: edgeColor, highlight: edgeHighlight },
+          font: { color: textColor, align: 'middle', size: 11, face: 'JetBrains Mono, Consolas, monospace' },
+          arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+          smooth: { type: 'continuous' }
+        },
+        physics: {
+          barnesHut: { gravitationalConstant: -3000, centralGravity: 0.1, springLength: 200 },
+          stabilization: { iterations: 120 }
+        },
+        interaction: { hover: true, tooltipDelay: 200 }
+      };
+    }
+
+    async function loadGraph() {
+      try {
+        const res = await fetch('/api/graph');
+        const data = await res.json();
+        if (!data || !Array.isArray(data.nodes)) return;
+
+        document.getElementById('stat-nodes').innerText = String(data.nodes.length);
+        document.getElementById('stat-edges').innerText = String((data.edges || []).length);
+
+        const processedNodes = data.nodes.map((node) => ({
+          ...node,
+          label: node.label || node.name
+        }));
+
+        const processedEdges = (data.edges || []).map((edge) => ({
+          ...edge,
+          from: edge.from || edge.source,
+          to: edge.to || edge.target,
+          label: edge.label || edge.relation,
+          id: edge.id || `${edge.source || edge.from}-${edge.target || edge.to}-${edge.relation || edge.label}`
+        }));
+
+        latestGraphSnapshot = {
+          nodes: processedNodes,
+          edges: processedEdges
+        };
+
+        renderMemoryState();
+      } catch (_err) {
+        appendStatus(tf('dashboard.graph.load_failed', undefined, 'Failed to load cognitive graph.'));
+      }
+    }
+
+    async function promptReplay() {
+      const traceId = prompt('trace_id:');
+      if (!traceId) return;
+      await replayTrace(traceId.trim());
+    }
+
+    actionBtn.addEventListener('click', handlePrimaryAction);
+    chatInput.addEventListener('keydown', handleInputKeyboard);
+    newChatBtn.addEventListener('click', startNewConversation);
+    replayBtn.addEventListener('click', promptReplay);
+    memoryToggleBtn.addEventListener('click', toggleMemoryDrawer);
+    memoryCloseBtn.addEventListener('click', closeMemoryDrawer);
+    memoryDrawerBackdrop.addEventListener('click', closeMemoryDrawer);
+
+    executionModeSelect.addEventListener('change', (event) => {
+      const previousMode = modeBadge.dataset.mode || 'balanced';
+      updateExecutionMode(event.target.value, previousMode);
+    });
+
+    ttsToggleBtn.addEventListener('click', () => {
+      setTtsState(!ttsEnabled);
+      appendStatus(tf('dashboard.voice.reading', { state: ttsEnabled ? tf('dashboard.voice.enabled', undefined, 'enabled') : tf('dashboard.voice.disabled', undefined, 'disabled') }, `Voice reading ${ttsEnabled ? 'enabled' : 'disabled'}.`));
+    });
+
+    async function bootstrapDashboard() {
+      await dashboardI18n?.init?.();
+applyStaticTranslations();
+      applyZoom();
+      applyTheme(currentTheme);
+      setTtsState(ttsEnabled);
+      updateChatActionButtons();
+      resetConversationView();
+      loadConversationMessages(sessionId);
+      loadConversationList();
+      loadExecutionConfig();
+      loadGraph();
+      connectSSE();
+      handleSpeechInput();
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && memoryDrawerOpen) {
+        closeMemoryDrawer();
+      }
+    });
+
+    bootstrapDashboard();
+    setInterval(loadGraph, 10000);
+  </script>
+</body>
+
+</html>
+
+
+
