@@ -144,6 +144,9 @@ export class AgentLoop {
     private readonly MAX_RECLASSIFY_ATTEMPTS = 1;
     private readonly LOW_CONFIDENCE_THRESHOLD = 0.85;
     private readonly STEP_CONFIDENCE_THRESHOLD = 0.5;
+    private readonly GLOBAL_CONFIDENCE_THRESHOLD = 0.8;
+    private readonly MAX_STEPS_BEFORE_OVEREXECUTION_CHECK = 4;
+    private lastStepResult: string = '';
 
     constructor(llm: LLMProvider, registry: SkillRegistry) {
         this.llm = llm;
