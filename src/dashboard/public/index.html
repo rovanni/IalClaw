@@ -515,12 +515,6 @@
 
       <div id="typing-indicator">IalClaw esta pensando...</div>
 
-      <div id="starter-list" class="starter-list">
-        <button data-prompt="Crie um jogo da cobrinha em HTML">Criar jogo da cobrinha</button>
-        <button data-prompt="Explique o que este projeto faz de forma simples">Explicar projeto</button>
-        <button data-prompt="Me ajude a organizar uma pagina inicial bonita">Criar pagina inicial</button>
-      </div>
-
       <div class="input-area">
         <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off">
         <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz">🎤</button>
@@ -573,7 +567,7 @@
     const logContainer = document.getElementById('log-container');
     const typing = document.getElementById('typing-indicator');
     const statusLabel = document.getElementById('status-label');
-    const starterList = document.getElementById('starter-list');
+
     const emptyState = document.getElementById('empty-state');
     const conversationList = document.getElementById('conversation-list');
     const conversationCount = document.getElementById('conversation-count');
@@ -655,7 +649,6 @@
     function syncSimpleLayout() {
       const hasMessages = chatContainer.children.length > 0;
       emptyState.hidden = hasMessages;
-      starterList.hidden = hasMessages;
     }
 
     function closeDrawers() {
