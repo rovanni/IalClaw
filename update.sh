@@ -73,7 +73,16 @@ echo ""
 
 print_step "2" "$(t 'step.fetch')"
 git fetch origin || { print_error "$(t 'step.fetch_error')"; exit 1; }
-git pull --ff-only || { print_error "$(t 'step.pull_error')"; exit 1; }
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+    git checkout main || { print_error "Failed to switch to main"; exit 1; }
+fi
+git merge origin/main --no-edit || { 
+    print_error "$(t 'step.pull_error')"
+    echo "        Pode haver conflitos. Resolva manualmente."
+    exit 1
+}
 print_success "$(t 'step.sync_done')"
 
 if [ "$STASHED" = true ]; then

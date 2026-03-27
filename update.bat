@@ -89,10 +89,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
-call git pull --ff-only
+for /f %%a in ('git rev-parse --abbrev-ref HEAD') do set "CURRENT_BRANCH=%%a"
+if not "%CURRENT_BRANCH%"=="main" (
+    call git checkout main
+    if errorlevel 1 (
+        set "MSG=error.pull_failed"
+        set "MSG_FALLBACK=Falha ao trocar para branch main."
+        call:echo_error
+        pause
+        exit /b 1
+    )
+)
+
+call git merge origin/main --no-edit
 if errorlevel 1 (
     set "MSG=error.pull_failed"
-    set "MSG_FALLBACK=Falha ao aplicar a atualizacao (git pull --ff-only)."
+    set "MSG_FALLBACK=Falha ao aplicar a atualizacao. Pode haver conflitos."
     call:echo_error
     pause
     exit /b 1
