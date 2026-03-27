@@ -3,6 +3,7 @@ import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 import { t } from '../i18n';
+import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 
 export type AgentProgressEvent = {
     stage:
@@ -136,6 +137,13 @@ export class AgentLoop {
     };
     private executionMemory: ExecutionMemoryEntry[] = [];
     private readonly MAX_MEMORY_ENTRIES = 50;
+    private originalInput: string = '';
+    private currentTaskType: TaskType | null = null;
+    private stepValidations: number[] = [];
+    private reclassificationAttempts: number = 0;
+    private readonly MAX_RECLASSIFY_ATTEMPTS = 1;
+    private readonly LOW_CONFIDENCE_THRESHOLD = 0.85;
+    private readonly STEP_CONFIDENCE_THRESHOLD = 0.5;
 
     constructor(llm: LLMProvider, registry: SkillRegistry) {
         this.llm = llm;
@@ -186,7 +194,10 @@ export class AgentLoop {
         let messages = [...initialMessages];
         const newMessages: MessagePayload[] = [];
         
-        messages = this.addPlanningGuidanceToMessages(messages);
+        const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
+        this.setOriginalInput(userInput);
+        
+        messages = this.addPlanningGuidanceToMessages(messages, policy);
         
         const progressCb = typeof policy?.progress?.onEvent === 'function'
             ? policy.progress.onEvent as ((event: AgentProgressEvent) => Promise<void> | void)
@@ -342,6 +353,12 @@ toolCallsCount++;
                     if (currentStep) {
                         const validation = this.validateStepResult(currentStep, result, response.tool_call.name);
                         this.logValidation(currentStep, validation);
+                        
+                        this.stepValidations.push(validation.confidence);
+                        
+                        if (this.shouldReclassify(consecutiveToolFailures)) {
+                            messages = this.reclassifyAndAdjustPlan(messages);
+                        }
                         
                         if (!validation.success) {
                             this.markCurrentStepFailed(validation.reason);
@@ -666,7 +683,45 @@ private sanitizeUserFacingAnswer(answer: string): string {
         this.logger.debug('plan_progress', logMsg);
     }
 
-    private addPlanningGuidanceToMessages(messages: MessagePayload[]): MessagePayload[] {
+    private addPlanningGuidanceToMessages(messages: MessagePayload[], policy?: any): MessagePayload[] {
+        const taskType = policy?.taskType;
+        const taskConfidence = policy?.taskConfidence;
+        
+        let taskGuidance = '';
+        if (taskType && taskConfidence && taskConfidence > 0.5) {
+            switch (taskType) {
+                case 'file_conversion':
+                    taskGuidance = `\n\n[TAREFA DETECTADA: Conversão de arquivo]
+Plano forçado para conversões:
+1. Localizar arquivo de origem
+2. Ler conteúdo do arquivo  
+3. Converter conteúdo
+4. Salvar resultado`;
+                    break;
+                case 'file_search':
+                    taskGuidance = `\n\n[TAREFA DETECTADA: Busca de arquivo]
+Plano forçado para buscas:
+1. Determinar localização de busca
+2. Buscar arquivo
+3. Retornar resultado`;
+                    break;
+                case 'content_generation':
+                    taskGuidance = `\n\n[TAREFA DETECTADA: Geração de conteúdo]
+Plano forçado:
+1. Definir estrutura do conteúdo
+2. Gerar conteúdo
+3. Salvar conteúdo`;
+                    break;
+                case 'system_operation':
+                    taskGuidance = `\n\n[TAREFA DETECTADA: Operação de sistema]
+Plano forçado:
+1. Verificar pré-requisitos
+2. Executar operação
+3. Verificar resultado`;
+                    break;
+            }
+        }
+
         const guidance: MessagePayload = {
             role: 'system',
             content: `Sempre crie um plano estruturado ANTES de usar ferramentas. 
@@ -684,7 +739,7 @@ Execute passo a passo. Escolha a ferramenta certa para cada etapa.
 Se uma ferramenta falhar, adapte a estratégia ao invés de repetir a mesma ação.
 SEMPRE verifique se o resultado de cada ação atende ao objetivo antes de continuar.
 Evite loops usando o histórico de caminhos já tentados: ${Array.from(this.executionContext.pathsTried).join(', ') || 'nenhum'}
-Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFailed.entries()).map(([k, v]) => `${k}(${v}x)`).join(', ') || 'nenhuma'}`
+Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFailed.entries()).map(([k, v]) => `${k}(${v}x)`).join(', ') || 'nenhuma'}${taskGuidance}`
         };
         
         return [...messages, guidance];
@@ -708,6 +763,76 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 this.executionContext.currentPlan.steps[currentIdx].failed = true;
                 this.executionContext.currentPlan.steps[currentIdx].error = error;
             }
+        }
+    }
+
+    private shouldReclassify(consecutiveFailures: number): boolean {
+        if (this.reclassificationAttempts >= this.MAX_RECLASSIFY_ATTEMPTS) {
+            return false;
+        }
+
+        if (consecutiveFailures >= 2) {
+            return true;
+        }
+
+        if (this.stepValidations.length > 0) {
+            const avgConfidence = this.stepValidations.reduce((a, b) => a + b, 0) / this.stepValidations.length;
+            if (avgConfidence < this.STEP_CONFIDENCE_THRESHOLD && this.stepValidations.length >= 2) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private reclassifyAndAdjustPlan(messages: MessagePayload[]): MessagePayload[] {
+        if (!this.originalInput || this.reclassificationAttempts >= this.MAX_RECLASSIFY_ATTEMPTS) {
+            return messages;
+        }
+
+        const newClassification = classifyTask(this.originalInput);
+        const oldType = this.currentTaskType;
+
+        if (newClassification.type === oldType || newClassification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+            return messages;
+        }
+
+        this.reclassificationAttempts++;
+        this.currentTaskType = newClassification.type;
+
+        this.logger.info('task_reclassification', `[RECLASSIFY] old=${oldType} new=${newClassification.type} confidence=${newClassification.confidence.toFixed(2)}`);
+
+        const forcedPlan = getForcedPlanForTaskType(newClassification.type);
+        if (forcedPlan && this.executionContext.currentPlan) {
+            const newSteps = forcedPlan.map((desc, idx) => ({
+                id: idx + 1,
+                description: desc,
+                completed: false,
+                failed: false
+            }));
+
+            this.executionContext.currentPlan.steps = newSteps;
+            this.executionContext.currentPlan.currentStepIndex = 0;
+
+            this.logger.info('plan_adjusted', `[PLAN] Plano ajustado para: ${newClassification.type}`);
+        }
+
+        this.stepValidations = [];
+        
+        const hint: MessagePayload = {
+            role: 'system',
+            content: `[TAREFA RECLASSIFICADA] O tipo de tarefa foi corrigido de "${oldType}" para "${newClassification.type}". Novo plano aplicado. Continue a execução com esta nova orientação.`
+        };
+
+        return [...messages, hint];
+    }
+
+    public setOriginalInput(input: string) {
+        this.originalInput = input;
+        const classification = classifyTask(input);
+        this.currentTaskType = classification.type;
+        if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+            this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
         }
     }
 
@@ -920,12 +1045,29 @@ Considere:
         return scores.sort((a, b) => b.score - a.score);
     }
 
+    private static readonly EXPLORATION_RATE = 0.2;
+
     private getBestToolForStep(stepDescription: string, candidateTools: string[]): string | null {
         const stepType = this.getStepType(stepDescription);
         const scores = this.getToolScores(stepType);
         
         if (scores.length === 0) {
             return null;
+        }
+        
+        const shouldExplore = candidateTools.length > 1 && Math.random() < AgentLoop.EXPLORATION_RATE;
+        
+        if (shouldExplore) {
+            const validAlternatives = candidateTools.filter(tool => {
+                const scoreEntry = scores.find(s => s.tool === tool);
+                return !scoreEntry || scoreEntry.score > -3;
+            });
+            
+            if (validAlternatives.length > 1) {
+                const randomTool = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
+                this.logger.info('tool_selection', `[EXPLORATION] tentando tool alternativa: ${randomTool} para ${stepType}`);
+                return randomTool;
+            }
         }
         
         for (const candidate of candidateTools) {

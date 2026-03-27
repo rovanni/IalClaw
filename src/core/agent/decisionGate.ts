@@ -4,11 +4,12 @@
 
 import { IntentResult, detectIntent } from './IntentDetector';
 import { SessionContext } from '../../shared/SessionManager';
+import { classifyTask, TaskType } from './TaskClassifier';
 
 export type Decision =
     | { type: 'execute'; message: string }
     | { type: 'confirm'; message: string }
-    | { type: 'pass' };   // fluxo normal do pipeline
+    | { type: 'pass'; taskType?: TaskType; taskConfidence?: number };
 
 export interface DecisionGateInput {
     text: string;
@@ -24,9 +25,16 @@ const THRESHOLD_CONFIRM = 0.4;
  */
 export function decisionGate(input: DecisionGateInput): Decision {
     const intent = detectIntent(input.text);
-    if (!intent) return { type: 'pass' };
-
+    
+    const taskClassification = classifyTask(input.text);
     const { session } = input;
+
+    if (session) {
+        (session as any).task_type = taskClassification.type;
+        (session as any).task_confidence = taskClassification.confidence;
+    }
+
+    if (!intent) return { type: 'pass', taskType: taskClassification.type, taskConfidence: taskClassification.confidence };
 
     // Boost de contexto: projeto ativo adiciona confiança
     let confidence = intent.confidence;
@@ -35,9 +43,11 @@ export function decisionGate(input: DecisionGateInput): Decision {
     // Penalidade: entrada muito curta sem verbo claro — já coberta pelo detector,
     // mas mensagens de 1-2 chars sem match forte ficam em 'pass' naturalmente.
 
+    const taskInfo = { taskType: taskClassification.type, taskConfidence: taskClassification.confidence };
+
     // ── Continue intent ──────────────────────────────────────────────────
     if (intent.type === 'continue') {
-        if (!session?.current_project_id) return { type: 'pass' };
+        if (!session?.current_project_id) return { type: 'pass', ...taskInfo };
 
         // Já em modo continuação + confiança alta → auto-resolve
         if (confidence >= THRESHOLD_EXECUTE && session.continue_project_only) {
@@ -61,20 +71,20 @@ export function decisionGate(input: DecisionGateInput): Decision {
             };
         }
 
-        return { type: 'pass' };
+        return { type: 'pass', ...taskInfo };
     }
 
     // ── Stop / Cancel intent ─────────────────────────────────────────────
     // Passamos para o pipeline principal tratar (pode envolver cleanup de sessão)
     if (intent.type === 'stop') {
-        return { type: 'pass' };
+        return { type: 'pass', ...taskInfo };
     }
 
     // ── Execute intent ───────────────────────────────────────────────────
     // "roda", "executa" etc. — passa para o pipeline normal processar
     if (intent.type === 'execute') {
-        return { type: 'pass' };
+        return { type: 'pass', ...taskInfo };
     }
 
-    return { type: 'pass' };
+    return { type: 'pass', ...taskInfo };
 }

@@ -468,7 +468,9 @@ export class AgentController {
             },
             control: {
                 shouldStop
-            }
+            },
+            taskType: session?.task_type,
+            taskConfidence: session?.task_confidence
         };
 
         const result = await this.loop.run(messages, policy);

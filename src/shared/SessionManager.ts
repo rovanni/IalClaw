@@ -33,6 +33,8 @@ export interface SessionContext {
     last_action?: string;
     conversation_history: ConversationMessage[];
     pending_actions: PendingAction[];
+    task_type?: string;
+    task_confidence?: number;
 }
 
 export type Session = SessionContext;
