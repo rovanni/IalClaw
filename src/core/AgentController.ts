@@ -14,6 +14,8 @@ import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
 import { decisionGate } from './agent/decisionGate';
 import { emitDebug } from '../shared/DebugBus';
+import { MemoryLifecycleManager } from '../memory/MemoryLifecycleManager';
+import { AgentMemoryContext } from '../memory/MemoryTypes';
 import {
     clearPendingAction,
     getPendingAction,
@@ -30,6 +32,7 @@ export class AgentController {
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
+    private memoryLifecycle?: MemoryLifecycleManager;
     private logger = createLogger('AgentController');
 
     private emitStatus(sessionId: string, message: string, channel: 'web' | 'telegram', extra?: Record<string, any>): void {
@@ -47,7 +50,8 @@ export class AgentController {
         loop: AgentLoop,
         inputHandler: TelegramInputHandler,
         outputHandler: TelegramOutputHandler,
-        skillResolver?: SkillResolver
+        skillResolver?: SkillResolver,
+        memoryLifecycle?: MemoryLifecycleManager
     ) {
         this.memory = memory;
         this.contextBuilder = contextBuilder;
@@ -56,6 +60,7 @@ export class AgentController {
         this.inputHandler = inputHandler;
         this.outputHandler = outputHandler;
         this.skillResolver = skillResolver;
+        this.memoryLifecycle = memoryLifecycle;
     }
 
     private assertLoopHasProvider(loop: AgentLoop): void {
@@ -331,6 +336,12 @@ export class AgentController {
         }
 
         this.memory.saveMessage(sessionId, 'user', userQuery);
+        await this.captureLifecycleMemory(userQuery, {
+            sessionId,
+            role: 'user',
+            projectId: session?.current_project_id,
+            recentMessages: session?.conversation_history.map((item) => item.content).slice(-5)
+        });
         logger.info('conversation_started', 'Processando nova interacao do usuario.', {
             cognitive_stage: 'start',
             summary: 'MESSAGE_RECEIVED',
@@ -488,6 +499,13 @@ export class AgentController {
             logger.info('user_name_captured', 'Nome capturado via frase direta.', { name: directNameMatch[1].trim() });
         }
 
+        await this.captureLifecycleMemory(result.answer, {
+            sessionId,
+            role: 'assistant',
+            projectId: session?.current_project_id,
+            recentMessages: [effectiveUserQuery]
+        });
+
         await this.memory.learn({
             query: effectiveUserQuery,
             nodes_used: memoryNodes,
@@ -581,6 +599,11 @@ export class AgentController {
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
 
         this.memory.saveMessage(sessionId, 'assistant', result.answer);
+        await this.captureLifecycleMemory(result.answer, {
+            sessionId,
+            role: 'assistant',
+            projectId: SessionManager.getCurrentSession()?.current_project_id
+        });
         await this.indexCodeArtifactsFromMessages(result.newMessages, SessionManager.getCurrentSession()?.current_project_id);
         await this.memory.learn({
             query: originalQuery,
@@ -594,6 +617,21 @@ export class AgentController {
         });
 
         return result.answer;
+    }
+
+    private async captureLifecycleMemory(input: string, context: AgentMemoryContext): Promise<void> {
+        if (!this.memoryLifecycle) {
+            return;
+        }
+
+        try {
+            await this.memoryLifecycle.processInput(input, context);
+        } catch (error: any) {
+            this.logger.debug('memory_lifecycle_capture_failed', 'Falha no capture do lifecycle de memoria.', {
+                conversation_id: context.sessionId,
+                reason: String(error?.message || error)
+            });
+        }
     }
 
     private updatePendingActionFromResponse(

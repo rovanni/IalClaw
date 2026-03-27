@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS learning_events (
   created_at TEXT
 );
 
+-- Memory lifecycle vector store
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+  memory_id TEXT PRIMARY KEY,
+  embedding TEXT NOT NULL,
+  model TEXT,
+  last_accessed TEXT,
+  access_count INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);
@@ -129,3 +140,4 @@ CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_cache_hash ON query_cache(query_hash);
+CREATE INDEX IF NOT EXISTS idx_memory_embeddings_accessed ON memory_embeddings(last_accessed);

@@ -23,6 +23,10 @@ import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
 import { createLogger } from './shared/AppLogger';
 import { debugBus } from './shared/DebugBus';
+import { ProviderEmbeddingService } from './memory/EmbeddingService';
+import { MemoryService } from './memory/MemoryService';
+import { MemoryLifecycleManager } from './memory/MemoryLifecycleManager';
+import { MemoryType } from './memory/MemoryTypes';
 
 dotenv.config({ debug: false });
 
@@ -104,6 +108,9 @@ const provider = ProviderFactory.getProvider();
 const memory = new CognitiveMemory(dbManager.getDb(), provider);
 const contextBuilder = new ContextBuilder();
 const registry = new SkillRegistry();
+const embeddingService = new ProviderEmbeddingService(provider);
+const memoryService = new MemoryService(dbManager.getDb(), embeddingService);
+const memoryLifecycle = new MemoryLifecycleManager(memoryService);
 
 // Carrega skills: internas direto, públicas somente após auditoria aprovada
 const skillsRoot = path.join(__dirname, '..', 'skills');
@@ -151,6 +158,70 @@ registry.register({
 });
 
 // Tool para recarregar skills após instalação (hot-reload)
+registry.register({
+    name: "memory.store",
+    description: "Armazena memoria persistente de forma explicita no grafo cognitivo + embeddings.",
+    parameters: {
+        type: "object",
+        properties: {
+            content: { type: "string", description: "Conteudo textual da memoria." },
+            session_id: { type: "string", description: "Sessao associada a memoria." },
+            project_id: { type: "string", description: "Projeto associado (opcional)." },
+            type: {
+                type: "string",
+                enum: ["user_profile", "project", "decision", "episodic", "semantic", "error_fix", "skill_usage"],
+                description: "Tipo da memoria."
+            }
+        },
+        required: ["content"]
+    }
+}, {
+    execute: async (args: any) => {
+        const type = args?.type as MemoryType | undefined;
+        const result = await memoryLifecycle.storeExplicit(
+            String(args?.content || ''),
+            {
+                sessionId: String(args?.session_id || 'tool:memory.store'),
+                role: 'assistant',
+                projectId: args?.project_id ? String(args.project_id) : undefined
+            },
+            type
+        );
+
+        if (!result.stored) {
+            return `Memoria nao armazenada: ${result.reason}.`;
+        }
+
+        return `Memoria ${result.action} com sucesso. id=${result.memoryId}, tipo=${result.type}, score=${result.score.toFixed(2)}.`;
+    }
+});
+
+registry.register({
+    name: "memory.query",
+    description: "Consulta memoria semantica usando busca hibrida vetorial + grafo.",
+    parameters: {
+        type: "object",
+        properties: {
+            query: { type: "string", description: "Pergunta ou termo de busca." },
+            limit: { type: "number", description: "Quantidade maxima de memorias no retorno." }
+        },
+        required: ["query"]
+    }
+}, {
+    execute: async (args: any) => {
+        const limit = Number(args?.limit || 5);
+        const memories = await memoryLifecycle.queryMemory(String(args?.query || ''), { limit });
+        if (!memories.length) {
+            return 'Nenhuma memoria relevante encontrada.';
+        }
+
+        const lines = memories.map((memoryItem, index) =>
+            `${index + 1}. [${memoryItem.type}] score=${memoryItem.finalScore.toFixed(3)} :: ${memoryItem.content.slice(0, 220)}`
+        );
+        return `Memorias encontradas (${memories.length}):\n${lines.join('\n')}`;
+    }
+});
+
 registry.register({
     name: "reload_skills",
     description: "Recarrega as skills do disco após uma nova instalação. Use após write_skill_file e run_skill_auditor para ativar a skill sem reiniciar o agente.",
@@ -303,7 +374,8 @@ const controller = new AgentController(
     loop,
     inputHandler,
     outputHandler,
-    skillResolver
+    skillResolver,
+    memoryLifecycle
 );
 
 bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
