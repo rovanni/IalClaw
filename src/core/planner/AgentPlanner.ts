@@ -314,11 +314,13 @@ ${sessionPrompt}
 REGRAS DE OURO:
 1. Retorne APENAS um JSON valido. Nenhuma palavra a mais.
 2. Nao invente ferramentas.
-3. Se for um novo projeto para gerar arquivos, o passo 1 DEVE ser "workspace_create_project". Se for continuacao, nao crie de novo.
-4. OMITA o campo "project_id" nas chamadas "workspace_save_artifact", o sistema injeta em runtime.
-5. Forneca o codigo funcional completo no campo "content" ao salvar artefatos.
-6. CRITICAL: Return ONLY valid JSON. Do NOT use markdown. Do NOT wrap in code fences.
-7. When calling "workspace_create_project", ALWAYS include "name", "type" and "prompt" as strings.
+3. ANTES de criar um projeto novo, use "workspace_list_projects" para verificar se um projeto equivalente ja existe. Se existir, reutilize-o (use o project_id existente) em vez de criar um duplicado.
+4. Se for um novo projeto para gerar arquivos e nenhum equivalente existir, o passo seguinte DEVE ser "workspace_create_project". Se for continuacao, nao crie de novo.
+5. Para inspecionar arquivos de um projeto existente antes de modificar, use "workspace_list_files" e "workspace_read_artifact".
+6. OMITA o campo "project_id" nas chamadas "workspace_save_artifact", o sistema injeta em runtime.
+7. Forneca o codigo funcional completo no campo "content" ao salvar artefatos.
+8. CRITICAL: Return ONLY valid JSON. Do NOT use markdown. Do NOT wrap in code fences.
+9. When calling "workspace_create_project", ALWAYS include "name", "type" and "prompt" as strings.
 
 FORMATO JSON ESPERADO:
 {

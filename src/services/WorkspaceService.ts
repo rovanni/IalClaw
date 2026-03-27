@@ -200,6 +200,80 @@ export class WorkspaceService {
 
         return fs.readFileSync(outputPath, 'utf8');
     }
+
+    public listProjects(): Array<ProjectMetadata & { project_id: string; files_count: number }> {
+        const projectsRoot = path.join(this.basePath, 'projects');
+        if (!fs.existsSync(projectsRoot)) {
+            return [];
+        }
+
+        const entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
+        const results: Array<ProjectMetadata & { project_id: string; files_count: number }> = [];
+
+        for (const entry of entries) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+
+            const projectId = entry.name;
+            const metaFile = path.join(projectsRoot, projectId, 'project.json');
+
+            if (!fs.existsSync(metaFile)) {
+                continue;
+            }
+
+            try {
+                const metadata = JSON.parse(fs.readFileSync(metaFile, 'utf8')) as ProjectMetadata;
+                const outputPath = path.join(projectsRoot, projectId, 'output');
+                const filesCount = fs.existsSync(outputPath)
+                    ? this.countFiles(outputPath)
+                    : 0;
+
+                results.push({ ...metadata, project_id: projectId, files_count: filesCount });
+            } catch {
+                // Skip malformed project entries.
+            }
+        }
+
+        results.sort((a, b) => b.created_at - a.created_at);
+        return results;
+    }
+
+    public listProjectFiles(projectId: string): string[] {
+        const outputPath = path.join(this.basePath, 'projects', projectId, 'output');
+        if (!fs.existsSync(outputPath)) {
+            return [];
+        }
+
+        return this.walkRelative(outputPath, outputPath);
+    }
+
+    private countFiles(dir: string): number {
+        let count = 0;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                count += this.countFiles(path.join(dir, entry.name));
+            } else {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private walkRelative(dir: string, root: string): string[] {
+        let results: string[] = [];
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                results = results.concat(this.walkRelative(fullPath, root));
+            } else {
+                results.push(path.relative(root, fullPath).replace(/\\/g, '/'));
+            }
+        }
+        return results;
+    }
 }
 
 export const workspaceService = new WorkspaceService();

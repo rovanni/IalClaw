@@ -17,6 +17,9 @@ export function sanitizeStep(step: PlanStep): PlanStep {
 
 export function getRequiredCapabilitiesForStep(step: PlanStep): Capability[] {
     switch (step.tool) {
+        case 'workspace_list_projects':
+        case 'workspace_list_files':
+        case 'workspace_read_artifact':
         case 'workspace_create_project':
         case 'workspace_save_artifact':
         case 'workspace_apply_diff':
