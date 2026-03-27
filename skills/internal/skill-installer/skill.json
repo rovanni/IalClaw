@@ -45,7 +45,9 @@
     "read_audit_log",
     "run_skill_auditor",
     "reload_skills",
-    "web_search"
+    "web_search",
+    "read_local_file",
+    "list_local_dir"
   ],
   "pipeline": [
     "search",

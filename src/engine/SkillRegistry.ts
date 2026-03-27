@@ -59,6 +59,40 @@ export class SkillRegistry {
         });
 
         this.register({
+            name: "list_local_dir",
+            description: "Lista os arquivos e subdiretórios de um diretório local. Retorna nome, tipo (file/dir) e tamanho de cada entrada. Use quando precisar explorar a estrutura de um diretório no computador.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho absoluto do diretório a listar." }
+                },
+                required: ["path"]
+            }
+        }, {
+            execute: async (args: any) => {
+                try {
+                    const entries = fs.readdirSync(args.path, { withFileTypes: true });
+                    const result = entries.map(e => {
+                        const type = e.isDirectory() ? 'dir' : 'file';
+                        let size = '';
+                        if (!e.isDirectory()) {
+                            try {
+                                const stat = fs.statSync(path.join(args.path, e.name));
+                                size = ` (${stat.size} bytes)`;
+                            } catch (statErr: any) {
+                                size = ` (tamanho indisponível: ${statErr.message})`;
+                            }
+                        }
+                        return `[${type}] ${e.name}${size}`;
+                    });
+                    return result.length > 0 ? result.join('\n') : '(diretório vazio)';
+                } catch (e: any) {
+                    return "Erro ao listar diretório: " + e.message;
+                }
+            }
+        });
+
+        this.register({
             name: "web_search",
             description: "Pesquisa na web por informações atualizadas simulando uma busca simples.",
             parameters: {
@@ -322,6 +356,25 @@ export class SkillRegistry {
                 ].join('\n');
 
                 return report;
+            }
+        });
+
+        /**
+         * reload_skills: registrado com implementação real em src/index.ts usando
+         * skillLoader.load() e auditLog.reload(). Esta entrada serve apenas como
+         * fallback para contextos em que o index.ts não foi inicializado (ex: testes).
+         */
+        this.register({
+            name: "reload_skills",
+            description: "Recarrega as skills do disco em tempo de execução (hot-reload), ativando novas skills aprovadas sem reiniciar o agente.",
+            parameters: {
+                type: "object",
+                properties: {},
+                required: []
+            }
+        }, {
+            execute: async () => {
+                return 'Hot-reload não disponível neste contexto. Reinicie o agente para carregar novas skills.';
             }
         });
     }
