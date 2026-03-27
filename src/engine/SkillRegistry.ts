@@ -324,5 +324,224 @@ export class SkillRegistry {
                 return report;
             }
         });
+
+        // ─── Ferramentas Gerais de File System ────────────────────────────────
+
+        /**
+         * write_file: escreve conteúdo em qualquer arquivo dentro do workspace.
+         * Sanitiza path para prevenir path traversal fora do workspace.
+         */
+        this.register({
+            name: "write_file",
+            description: "Escreve conteúdo em um arquivo dentro do workspace IalClaw. Cria diretórios automaticamente se necessário. Use caminhos relativos ao workspace.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho relativo ao workspace (ex: src/newfile.ts ou data/config.json)" },
+                    content: { type: "string", description: "Conteúdo completo do arquivo" }
+                },
+                required: ["path", "content"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const workspaceRoot = process.cwd();
+                const targetPath = path.resolve(workspaceRoot, args.path);
+                
+                // Segurança: garantir que o path está dentro do workspace
+                if (!targetPath.startsWith(workspaceRoot)) {
+                    return `Erro: path fora do workspace. Use caminhos relativos ao workspace.`;
+                }
+                
+                try {
+                    const dir = path.dirname(targetPath);
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true });
+                    }
+                    fs.writeFileSync(targetPath, String(args.content), 'utf8');
+                    return `Arquivo salvo com sucesso: ${path.relative(workspaceRoot, targetPath)}`;
+                } catch (e: any) {
+                    return `Erro ao escrever arquivo: ${e.message}`;
+                }
+            }
+        });
+
+        /**
+         * create_directory: cria um diretório dentro do workspace.
+         */
+        this.register({
+            name: "create_directory",
+            description: "Cria um diretório (e seus pais, se necessário) dentro do workspace IalClaw. Use caminhos relativos.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho relativo do diretório a criar (ex: data/exports ou temp/processing)" }
+                },
+                required: ["path"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const workspaceRoot = process.cwd();
+                const targetPath = path.resolve(workspaceRoot, args.path);
+                
+                if (!targetPath.startsWith(workspaceRoot)) {
+                    return `Erro: path fora do workspace.`;
+                }
+                
+                try {
+                    if (fs.existsSync(targetPath)) {
+                        return `Diretório já existe: ${path.relative(workspaceRoot, targetPath)}`;
+                    }
+                    fs.mkdirSync(targetPath, { recursive: true });
+                    return `Diretório criado: ${path.relative(workspaceRoot, targetPath)}`;
+                } catch (e: any) {
+                    return `Erro ao criar diretório: ${e.message}`;
+                }
+            }
+        });
+
+        /**
+         * delete_file: remove um arquivo ou diretório dentro do workspace.
+         */
+        this.register({
+            name: "delete_file",
+            description: "Remove um arquivo ou diretório dentro do workspace IalClaw. Use com cuidado! Para diretórios, remove recursivamente.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho relativo do arquivo/diretório a remover" }
+                },
+                required: ["path"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const workspaceRoot = process.cwd();
+                const targetPath = path.resolve(workspaceRoot, args.path);
+                
+                if (!targetPath.startsWith(workspaceRoot)) {
+                    return `Erro: path fora do workspace.`;
+                }
+                
+                // Proteção: não permitir deleção de raiz ou pastas críticas
+                const relativePath = path.relative(workspaceRoot, targetPath);
+                const PROTECTED = ['', '.', 'src', 'node_modules', '.git'];
+                if (PROTECTED.includes(relativePath)) {
+                    return `Erro: não é permitido deletar "${relativePath}" (pasta protegida).`;
+                }
+                
+                try {
+                    if (!fs.existsSync(targetPath)) {
+                        return `Arquivo/diretório não encontrado: ${relativePath}`;
+                    }
+                    
+                    const stats = fs.statSync(targetPath);
+                    if (stats.isDirectory()) {
+                        fs.rmSync(targetPath, { recursive: true, force: true });
+                        return `Diretório removido: ${relativePath}`;
+                    } else {
+                        fs.unlinkSync(targetPath);
+                        return `Arquivo removido: ${relativePath}`;
+                    }
+                } catch (e: any) {
+                    return `Erro ao remover: ${e.message}`;
+                }
+            }
+        });
+
+        /**
+         * list_directory: lista conteúdo de um diretório.
+         */
+        this.register({
+            name: "list_directory",
+            description: "Lista arquivos e subdiretórios dentro de um diretório do workspace. Retorna nomes e tipos (file/dir).",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho relativo do diretório (deixe vazio para raiz do workspace)" }
+                },
+                required: []
+            }
+        }, {
+            execute: async (args: any) => {
+                const workspaceRoot = process.cwd();
+                const targetPath = args.path ? path.resolve(workspaceRoot, args.path) : workspaceRoot;
+                
+                if (!targetPath.startsWith(workspaceRoot)) {
+                    return `Erro: path fora do workspace.`;
+                }
+                
+                try {
+                    if (!fs.existsSync(targetPath)) {
+                        return `Diretório não encontrado: ${path.relative(workspaceRoot, targetPath) || '(raiz)'}`;
+                    }
+                    
+                    const stats = fs.statSync(targetPath);
+                    if (!stats.isDirectory()) {
+                        return `Erro: "${args.path}" não é um diretório.`;
+                    }
+                    
+                    const entries = fs.readdirSync(targetPath);
+                    if (entries.length === 0) {
+                        return `Diretório vazio.`;
+                    }
+                    
+                    const items = entries.map(entry => {
+                        const fullPath = path.join(targetPath, entry);
+                        const isDir = fs.statSync(fullPath).isDirectory();
+                        return `${isDir ? '📁' : '📄'} ${entry}${isDir ? '/' : ''}`;
+                    });
+                    
+                    return `Conteúdo de ${path.relative(workspaceRoot, targetPath) || '(raiz)'}:\n${items.join('\n')}`;
+                } catch (e: any) {
+                    return `Erro ao listar diretório: ${e.message}`;
+                }
+            }
+        });
+
+        /**
+         * move_file: move ou renomeia um arquivo/diretório.
+         */
+        this.register({
+            name: "move_file",
+            description: "Move ou renomeia um arquivo/diretório dentro do workspace. Ambos os paths devem estar no workspace.",
+            parameters: {
+                type: "object",
+                properties: {
+                    from: { type: "string", description: "Caminho relativo de origem" },
+                    to: { type: "string", description: "Caminho relativo de destino" }
+                },
+                required: ["from", "to"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const workspaceRoot = process.cwd();
+                const fromPath = path.resolve(workspaceRoot, args.from);
+                const toPath = path.resolve(workspaceRoot, args.to);
+                
+                if (!fromPath.startsWith(workspaceRoot) || !toPath.startsWith(workspaceRoot)) {
+                    return `Erro: ambos os paths devem estar dentro do workspace.`;
+                }
+                
+                try {
+                    if (!fs.existsSync(fromPath)) {
+                        return `Erro: origem não encontrada: ${path.relative(workspaceRoot, fromPath)}`;
+                    }
+                    
+                    if (fs.existsSync(toPath)) {
+                        return `Erro: destino já existe: ${path.relative(workspaceRoot, toPath)}`;
+                    }
+                    
+                    // Criar diretório de destino se necessário
+                    const toDir = path.dirname(toPath);
+                    if (!fs.existsSync(toDir)) {
+                        fs.mkdirSync(toDir, { recursive: true });
+                    }
+                    
+                    fs.renameSync(fromPath, toPath);
+                    return `Movido: ${path.relative(workspaceRoot, fromPath)} → ${path.relative(workspaceRoot, toPath)}`;
+                } catch (e: any) {
+                    return `Erro ao mover: ${e.message}`;
+                }
+            }
+        });
     }
 }
