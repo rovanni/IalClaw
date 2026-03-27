@@ -5,6 +5,14 @@ export interface ConversationMessage {
     content: string;
 }
 
+export interface PendingAction {
+    id: string;
+    type: 'install_skill';
+    payload: { skillName: string };
+    timestamp: number;
+    expires_at: number;
+}
+
 const STM_MAX_MESSAGES = 10; // 5 exchanges
 
 export interface SessionContext {
@@ -22,6 +30,7 @@ export interface SessionContext {
     last_artifacts: string[];
     last_action?: string;
     conversation_history: ConversationMessage[];
+    pending_actions: PendingAction[];
 }
 
 export type Session = SessionContext;
@@ -35,7 +44,8 @@ export class SessionManager {
             sessionStore.set(conversationId, {
                 conversation_id: conversationId,
                 last_artifacts: [],
-                conversation_history: []
+                conversation_history: [],
+                pending_actions: []
             });
         }
         return sessionStore.get(conversationId)!;
@@ -66,6 +76,7 @@ export class SessionManager {
         session.last_error_fingerprint = undefined;
         session._tool_input_attempts = 0;
         session._input_history = [];
+        session.pending_actions = [];
         return session;
     }
 }

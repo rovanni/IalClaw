@@ -14,6 +14,14 @@ import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
 import { decisionGate } from './agent/decisionGate';
 import { emitDebug } from '../shared/DebugBus';
+import {
+    clearPendingAction,
+    getPendingAction,
+    isConfirmation,
+    isDecline,
+    setPendingAction,
+    shouldDropPendingActionOnTopicShift
+} from './agent/PendingActionTracker';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -280,6 +288,7 @@ export class AgentController {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
+        let effectiveUserQuery = userQuery;
 
         // ── Roteamento de comandos (antes do LLM) ──────────────────────────
         const commandResponse = this.handleCommand(userQuery, sessionId);
@@ -293,27 +302,56 @@ export class AgentController {
             return commandResponse;
         }
 
+        // ── Pending action: confirmação explícita dispara ação pendente ─────
+        if (session) {
+            const pending = getPendingAction(session);
+            if (pending) {
+                if (isDecline(userQuery)) {
+                    clearPendingAction(session, pending.id);
+                    const declined = 'Perfeito, cancelei a acao pendente.';
+                    this.memory.saveMessage(sessionId, 'user', userQuery);
+                    this.memory.saveMessage(sessionId, 'assistant', declined);
+                    return declined;
+                }
+
+                if (isConfirmation(userQuery)) {
+                    effectiveUserQuery = this.buildPendingActionQuery(pending);
+                    clearPendingAction(session, pending.id);
+                    logger.info('pending_action_confirmed', 'Confirmacao vinculada a acao pendente.', {
+                        action_type: pending.type,
+                        payload: pending.payload
+                    });
+                } else if (shouldDropPendingActionOnTopicShift(userQuery)) {
+                    clearPendingAction(session, pending.id);
+                    logger.info('pending_action_dropped', 'Acao pendente descartada por mudanca de contexto.', {
+                        action_type: pending.type
+                    });
+                }
+            }
+        }
+
         this.memory.saveMessage(sessionId, 'user', userQuery);
         logger.info('conversation_started', 'Processando nova interacao do usuario.', {
             cognitive_stage: 'start',
             summary: 'MESSAGE_RECEIVED',
             route: 'conversation',
             query_length: userQuery.length,
+            effective_query_length: effectiveUserQuery.length,
             has_current_project: Boolean(session?.current_project_id)
         });
 
         // ── Resolução de skill ──────────────────────────────────────────────
         if (this.skillResolver) {
-            const resolved = this.skillResolver.resolve(userQuery);
+            const resolved = this.skillResolver.resolve(effectiveUserQuery);
             if (resolved) {
                 logger.info('skill_resolved', 'Mensagem roteada para uma skill dedicada.', {
                     skill_name: resolved.skill.name
                 });
-                return this.runWithSkill(sessionId, userQuery, resolved.query, resolved.skill, onProgress, shouldStop);
+                return this.runWithSkill(sessionId, effectiveUserQuery, resolved.query, resolved.skill, onProgress, shouldStop);
             }
         }
 
-        const sessionDirectiveReply = await this.handleSessionDirective(userQuery, session);
+        const sessionDirectiveReply = await this.handleSessionDirective(effectiveUserQuery, session);
         if (sessionDirectiveReply) {
             this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
             logger.info('session_directive_handled', 'Diretiva de sessao processada sem acionar o pipeline principal.', {
@@ -332,12 +370,12 @@ export class AgentController {
 
         // Memória: embedding → retrieval → identidade → contexto
         const provider = this.loop.getProvider();
-        const queryEmbedding = await provider.embed(userQuery);
+        const queryEmbedding = await provider.embed(effectiveUserQuery);
 
         // ── Indexar projetos do workspace na memória cognitiva ─────────────
         await this.indexProjectsInMemory();
 
-        const memoryNodes = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
+        const memoryNodes = await this.memory.retrieveWithTraversal(effectiveUserQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
         let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
 
@@ -400,7 +438,7 @@ export class AgentController {
                 messages.push({ role: msg.role, content: msg.content });
             }
         }
-        messages.push({ role: 'user', content: userQuery });
+        messages.push({ role: 'user', content: effectiveUserQuery });
 
         const policy = {
             limits: {
@@ -429,6 +467,7 @@ export class AgentController {
         }
 
         await this.indexCodeArtifactsFromMessages(result.newMessages, session?.current_project_id);
+        this.updatePendingActionFromResponse(sessionId, effectiveUserQuery, result.answer);
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
@@ -450,7 +489,7 @@ export class AgentController {
         }
 
         await this.memory.learn({
-            query: userQuery,
+            query: effectiveUserQuery,
             nodes_used: memoryNodes,
             success: true,
             response: result.answer
@@ -536,6 +575,7 @@ export class AgentController {
         };
 
         const result = await this.loop.run(messages, skillPolicy);
+        this.updatePendingActionFromResponse(sessionId, originalQuery, result.answer, skill.name);
 
         SessionManager.addToHistory(sessionId, 'user', originalQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
@@ -554,6 +594,84 @@ export class AgentController {
         });
 
         return result.answer;
+    }
+
+    private updatePendingActionFromResponse(
+        sessionId: string,
+        userInput: string,
+        assistantAnswer: string,
+        activeSkillName?: string
+    ): void {
+        const session = SessionManager.getCurrentSession();
+        if (!session) return;
+
+        const pendingSkill = this.extractPendingInstallSkillName(userInput, assistantAnswer, activeSkillName);
+        if (!pendingSkill) return;
+
+        const pending = setPendingAction(session, {
+            type: 'install_skill',
+            payload: { skillName: pendingSkill }
+        });
+
+        this.logger.info('pending_action_set', 'Acao pendente registrada em STM.', {
+            conversation_id: sessionId,
+            action_type: pending.type,
+            skill_name: pending.payload.skillName,
+            expires_at: pending.expires_at
+        });
+    }
+
+    private extractPendingInstallSkillName(
+        userInput: string,
+        assistantAnswer: string,
+        activeSkillName?: string
+    ): string | null {
+        const asksForConfirmation = /\b(confirma|confirmar|confirmacao|confirmac[aã]o|deseja\s+instalar|posso\s+instalar|instalo\?)\b/i.test(assistantAnswer)
+            && /\b(instalar|instalacao|instala[çc][aã]o|skill|habilidade)\b/i.test(assistantAnswer);
+
+        if (!asksForConfirmation) {
+            return null;
+        }
+
+        const fromAnswer = this.extractSkillNameCandidate(assistantAnswer);
+        if (fromAnswer) return fromAnswer;
+
+        const fromUser = this.extractSkillNameCandidate(userInput);
+        if (fromUser) return fromUser;
+
+        // Em skill-installer, preservar o último token útil como fallback
+        if (activeSkillName === 'skill-installer') {
+            const token = userInput.trim().split(/\s+/).pop() || '';
+            if (/^[a-z0-9][a-z0-9\-_]{1,80}$/i.test(token)) {
+                return token.toLowerCase();
+            }
+        }
+
+        return null;
+    }
+
+    private extractSkillNameCandidate(text: string): string | null {
+        const patterns: RegExp[] = [
+            /(?:\/skill-install|\/install-skill)\s+([a-z0-9][a-z0-9\-_]{1,80})/i,
+            /(?:instalar|instale|instalacao\s+da|instala[çc][aã]o\s+da)\s+(?:skill|habilidade)?\s*["'`]?([a-z0-9][a-z0-9\-_]{1,80})["'`]?/i,
+            /(?:skill|habilidade)\s*["'`]?([a-z0-9][a-z0-9\-_]{1,80})["'`]?/i
+        ];
+
+        for (const pattern of patterns) {
+            const match = text.match(pattern);
+            if (match?.[1]) {
+                return match[1].toLowerCase();
+            }
+        }
+
+        return null;
+    }
+
+    private buildPendingActionQuery(action: { type: 'install_skill'; payload: { skillName: string } }): string {
+        if (action.type === 'install_skill') {
+            return `instalar skill ${action.payload.skillName}`;
+        }
+        return 'continuar';
     }
 
     private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {

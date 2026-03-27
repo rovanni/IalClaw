@@ -11,6 +11,7 @@ import { computeConfidence, evaluateSessionConsistency } from '../core/planner/p
 import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/planner/templates/planTemplates';
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
 import { decideExecutionPath } from '../core/runtime/decisionGate';
+import { getPendingAction, isConfirmation, setPendingAction } from '../core/agent/PendingActionTracker';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
 import { ExecutionPlan } from '../core/planner/types';
@@ -418,6 +419,76 @@ async function run() {
         assert.match(session.conversation_history[1]?.content || '', /Confirma a instalacao/i);
     });
 
+    await SessionManager.runWithSession('pending-action-unit-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        const pending = setPendingAction(session, {
+            type: 'install_skill',
+            payload: { skillName: 'pptx' }
+        });
+
+        assert.equal(pending.type, 'install_skill');
+        assert.equal(pending.payload.skillName, 'pptx');
+        assert.equal(isConfirmation('yes, install'), true);
+        assert.equal(isConfirmation('ok pode instalar'), true);
+        assert.equal(isConfirmation('qual o status?'), false);
+
+        const readBack = getPendingAction(session);
+        assert.equal(readBack?.payload.skillName, 'pptx');
+    });
+
+    await SessionManager.runWithSession('pending-action-controller-test', async () => {
+        let capturedLoopUserMessage = '';
+
+        const fakeMemory = {
+            saveMessage: () => undefined,
+            learn: async () => undefined,
+            retrieveWithTraversal: async () => [],
+            getIdentityNodes: async () => [],
+            getProjectNodes: () => [],
+            getConversationHistory: () => [],
+            saveProjectNode: async () => undefined,
+            indexCodeNode: async () => undefined,
+            setActiveCodeFiles: () => undefined,
+            saveExecutionFix: () => undefined,
+            searchByContent: () => []
+        } as any;
+
+        const fakeLoop = {
+            run: async (messages: MessagePayload[]) => {
+                let userMsg: MessagePayload | undefined;
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    if (messages[i]?.role === 'user') {
+                        userMsg = messages[i];
+                        break;
+                    }
+                }
+                capturedLoopUserMessage = userMsg?.content || '';
+                return { answer: 'Executando instalacao.', newMessages: [] };
+            },
+            getProvider: () => ({ embed: async () => [] })
+        } as any;
+
+        const controller = new AgentController(
+            fakeMemory,
+            { build: () => '' } as any,
+            fakeLoop,
+            {} as any,
+            {} as any
+        );
+
+        const session = SessionManager.getCurrentSession()!;
+        setPendingAction(session, {
+            type: 'install_skill',
+            payload: { skillName: 'pptx' }
+        });
+
+        const answer = await controller.handleWebMessage('pending-action-controller-test', 'yes, install');
+
+        assert.equal(answer, 'Executando instalacao.');
+        assert.match(capturedLoopUserMessage, /instalar skill pptx/i);
+        assert.equal(getPendingAction(session), null);
+    });
+
     const directRuntime = new AgentRuntime({} as CognitiveMemory) as any;
     const originalSafeMode = agentConfig.isSafeModeEnabled();
     const originalDirect = directRuntime.executor.executeDirect;
@@ -481,7 +552,8 @@ async function run() {
         conversation_id: 'c1',
         current_project_id: 'demo-123',
         last_artifacts: [],
-        conversation_history: []
+        conversation_history: [],
+        pending_actions: []
     });
     assert.equal(repairedActivePlan.success, true);
     assert.ok(repairedActivePlan.repairActions.includes('remove_workspace_create_project_for_active_session'));
@@ -501,7 +573,8 @@ async function run() {
         conversation_id: 'c2',
         current_goal: 'criar app novo',
         last_artifacts: [],
-        conversation_history: []
+        conversation_history: [],
+        pending_actions: []
     });
     assert.equal(repairedInactivePlan.success, true);
     assert.ok(repairedInactivePlan.repairActions.includes('inject_workspace_create_project'));
