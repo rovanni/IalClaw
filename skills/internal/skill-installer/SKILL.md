@@ -7,7 +7,7 @@ description: >
   reprovada. Use esta skill sempre que o usuário quiser instalar, descobrir ou avaliar uma
   skill pública.
 compatibility:
-  tools: [fetch_url, write_skill_file, delete_skill_public, read_audit_log, run_skill_auditor, reload_skills, web_search, read_local_file]
+  tools: [fetch_url, write_skill_file, delete_skill_public, read_audit_log, run_skill_auditor, reload_skills, web_search, read_local_file, list_local_dir]
   context: IalClaw Cognitive System v3.0
 metadata:
   kind: internal
