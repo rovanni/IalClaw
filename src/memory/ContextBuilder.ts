@@ -1,10 +1,11 @@
 import { NodeResult } from './CognitiveMemory';
 
 export class ContextBuilder {
-    public build(context: { identity: NodeResult[], memory: NodeResult[], policy?: any }): string {
+    public build(context: { identity: NodeResult[], memory: NodeResult[], codeNodes?: NodeResult[], policy?: any }): string {
         const identityBlock = this.buildIdentity(this.filterIdentity(context.identity));
         const memoryBlock = this.buildMemory(context.memory);
         const policyBlock = this.injectPolicyHints(context.policy);
+        const codeBlock = this.buildCodeContext(context.codeNodes || []);
 
         return `
 [IDENTIDADE DO AGENTE]
@@ -40,7 +41,7 @@ REGRAS:
 
 MEMORIA:
 ${memoryBlock}
-`;
+${codeBlock}`;
     }
 
     private injectPolicyHints(policy: any): string {
@@ -97,6 +98,29 @@ ${memoryBlock}
         if (grouped.agent.length) result += `[AGENTS]\n${joinNodes(grouped.agent)}\n\n`;
 
         return result.trim();
+    }
+
+    private buildCodeContext(nodes: NodeResult[]): string {
+        if (nodes.length === 0) return '';
+
+        const lines = nodes.map(n => {
+            let meta = '';
+            try {
+                const tags = JSON.parse((n as any).tags || '{}');
+                if (tags.fileType && tags.fileType !== 'other') meta = ` [${tags.fileType}]`;
+            } catch { /* ignore */ }
+            const desc = n.content || n.content_preview || '';
+            const summary = desc.replace(/^Arquivo [^:]+:\s*/, '').slice(0, 120);
+            return `- ${n.name}${meta} → ${summary}`;
+        });
+
+        return `
+[ARQUIVOS RELEVANTES DO PROJETO]
+Use essas informacoes para entender o projeto sem abrir arquivos.
+Abra um arquivo com workspace_read_artifact APENAS se precisar do conteudo completo.
+
+${lines.join('\n')}
+`;
     }
 
     private buildMemory(nodes: NodeResult[]): string {

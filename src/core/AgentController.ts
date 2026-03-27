@@ -2,6 +2,7 @@ import { Context } from 'grammy';
 import { AgentLoop } from '../engine/AgentLoop';
 import { CognitiveMemory } from '../memory/CognitiveMemory';
 import { ContextBuilder } from '../memory/ContextBuilder';
+import { CodeIndexer } from '../memory/CodeIndexer';
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
@@ -21,6 +22,9 @@ export class AgentController {
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
+    private _codeIndexer?: CodeIndexer;
+    private _codeNodesCache = new Map<string, { nodes: import('../memory/CognitiveMemory').NodeResult[]; ts: number }>();
+    private readonly CODE_CACHE_TTL_MS = 60_000;
     private logger = createLogger('AgentController');
 
     constructor(
@@ -37,6 +41,13 @@ export class AgentController {
         this.inputHandler = inputHandler;
         this.outputHandler = outputHandler;
         this.skillResolver = skillResolver;
+    }
+
+    private get codeIndexer(): CodeIndexer {
+        if (!this._codeIndexer) {
+            this._codeIndexer = new CodeIndexer(this.memory, this.loop.getProvider());
+        }
+        return this._codeIndexer;
     }
 
     public async handleMessage(ctx: Context) {
@@ -231,7 +242,12 @@ export class AgentController {
         const queryEmbedding = await provider.embed(userQuery);
         const memoryNodes = await this.memory.retrieveWithTraversal(userQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
-        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+
+        // ── Recuperar nós de código do projeto ativo ───────────────────────
+        const projectId = session?.current_project_id;
+        const codeNodes = projectId ? this.getCachedCodeNodes(projectId) : [];
+
+        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, codeNodes, policy: {} });
 
         // ── Injetar nome do usuário no contexto ────────────────────────────
         const userName = this.getUserName();
@@ -290,6 +306,9 @@ export class AgentController {
                 newMessage.tool_args ? JSON.stringify(newMessage.tool_args) : undefined
             );
         }
+
+        // ── Indexar arquivos salvos durante o loop ─────────────────────────
+        this.indexSavedArtifacts(result.newMessages).catch(() => {/* non-blocking */});
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
@@ -393,6 +412,34 @@ export class AgentController {
         });
 
         return result.answer;
+    }
+
+    private getCachedCodeNodes(projectId: string): import('../memory/CognitiveMemory').NodeResult[] {
+        const cached = this._codeNodesCache.get(projectId);
+        if (cached && Date.now() - cached.ts < this.CODE_CACHE_TTL_MS) {
+            return cached.nodes;
+        }
+        const nodes = this.memory.getCodeNodesByProject(projectId);
+        this._codeNodesCache.set(projectId, { nodes, ts: Date.now() });
+        return nodes;
+    }
+
+    private async indexSavedArtifacts(messages: MessagePayload[]): Promise<void> {
+        for (const msg of messages) {
+            if (msg.tool_name !== 'workspace_save_artifact') continue;
+            const args = msg.tool_args;
+            if (!args?.project_id || !args?.filename || !args?.content) continue;
+            try {
+                await this.codeIndexer.indexFile(args.project_id, args.filename, args.content);
+                this._codeNodesCache.delete(args.project_id);
+                this.logger.debug('code_indexed', 'Arquivo indexado na memoria de codigo.', {
+                    project_id: args.project_id,
+                    filename: args.filename
+                });
+            } catch {
+                // non-critical — skip silently
+            }
+        }
     }
 
     private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {

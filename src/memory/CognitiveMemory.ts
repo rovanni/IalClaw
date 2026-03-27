@@ -354,6 +354,83 @@ export class CognitiveMemory {
         transaction();
     }
 
+    public async saveCodeNode(input: {
+        projectId: string;
+        filePath: string;
+        language: string;
+        summary: string;
+        fileType: 'controller' | 'service' | 'model' | 'config' | 'view' | 'other';
+        tokensEstimate?: number;
+    }): Promise<string> {
+        const nodeId = `code:${this.hash(`${input.projectId}:${input.filePath}`)}`;
+        const fullContent = `Arquivo ${input.filePath}: ${input.summary}`;
+        const embedding = await this.provider.embed(fullContent);
+        const preview = fullContent.slice(0, 280);
+        const tags = JSON.stringify({
+            projectId: input.projectId,
+            filePath: input.filePath,
+            language: input.language,
+            fileType: input.fileType,
+            tokensEstimate: input.tokensEstimate || 0,
+            access_count: 0,
+            last_accessed: null
+        });
+        const createdAt = new Date().toISOString();
+
+        this.db.prepare(`
+            INSERT OR REPLACE INTO nodes
+            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            nodeId,
+            'code',
+            input.fileType,
+            input.filePath,
+            fullContent,
+            preview,
+            JSON.stringify(embedding),
+            input.language,
+            tags,
+            0.7,
+            0.5,
+            1.0,
+            1,
+            createdAt,
+            createdAt
+        );
+
+        return nodeId;
+    }
+
+    public updateNodeMetadata(nodeId: string, update: { access_count?: number; last_accessed?: number }): void {
+        const row = this.db.prepare(`SELECT tags FROM nodes WHERE id = ?`).get(nodeId) as { tags: string } | undefined;
+        if (!row) return;
+
+        let tags: any = {};
+        try { tags = JSON.parse(row.tags || '{}'); } catch { tags = {}; }
+
+        if (update.access_count !== undefined) tags.access_count = update.access_count;
+        if (update.last_accessed !== undefined) tags.last_accessed = update.last_accessed;
+
+        this.db.prepare(`UPDATE nodes SET tags = ?, modified = ? WHERE id = ?`)
+            .run(JSON.stringify(tags), new Date().toISOString(), nodeId);
+    }
+
+    public getCodeNodesByProject(projectId: string): NodeResult[] {
+        const nodes = this.db.prepare(`
+            SELECT id, type, subtype, name, content, content_preview, tags
+            FROM nodes
+            WHERE type = 'code'
+        `).all() as (NodeResult & { tags: string })[];
+
+        return nodes.filter(n => {
+            try {
+                const tags = JSON.parse(n.tags || '{}');
+                return tags.projectId === projectId;
+            } catch { return false; }
+        });
+    }
+
     public async saveExecutionFix(input: {
         content: string;
         project_id?: string;
