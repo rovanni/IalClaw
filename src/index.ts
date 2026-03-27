@@ -92,19 +92,37 @@ const skillResolver = new SkillResolver(skillLoader);
 // Tool que o LLM pode chamar quando o usuário perguntar sobre skills disponíveis
 registry.register({
     name: "list_installed_skills",
-    description: "Lista todas as skills (habilidades/capacidades) instaladas e disponíveis no agente. Use quando o usuário perguntar quais skills, capacidades ou habilidades estão disponíveis.",
+    description: "Lista apenas skills instaladas via SkillLoader (internas/públicas). Nao lista tools nativas do sistema. Use quando o usuario perguntar especificamente sobre skills.",
     parameters: { type: "object", properties: {}, required: [] }
 }, {
     execute: async () => {
         const skills = skillLoader.getAll();
         if (skills.length === 0) {
-            return "Nenhuma skill instalada no momento.";
+            return "Nenhuma skill instalada no momento. Observacao: tools nativas do sistema sao listadas pela tool list_available_tools.";
         }
         const lines = skills.map(s => {
             const origin = s.origin === 'internal' ? 'interna' : 'pública';
             return `• ${s.name} (${origin}) — ${s.description || 'sem descrição'}`;
         });
-        return `Skills instaladas (${skills.length}):\n${lines.join('\n')}`;
+        return `Skills instaladas (${skills.length}):\n${lines.join('\n')}\n\nObservacao: esta listagem mostra skills carregadas. Tools nativas (ex.: read_local_file, list_directory, write_file) sao listadas em list_available_tools.`;
+    }
+});
+
+// Tool para listar todas as tools disponíveis no registry (inclui nativas e registradas em runtime)
+registry.register({
+    name: "list_available_tools",
+    description: "Lista todas as tools disponiveis para chamada do LLM no momento atual, incluindo tools nativas e tools registradas em runtime.",
+    parameters: { type: "object", properties: {}, required: [] }
+}, {
+    execute: async () => {
+        const defs = registry.getDefinitions();
+        if (!defs.length) {
+            return "Nenhuma tool disponivel no registry.";
+        }
+        const lines = defs
+            .map(d => `• ${d.name} — ${d.description || 'sem descricao'}`)
+            .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        return `Tools disponiveis (${defs.length}):\n${lines.join('\n')}`;
     }
 });
 
