@@ -68,7 +68,7 @@ export class AgentController {
     private assertLoopHasProvider(loop: AgentLoop): void {
         const maybeLoop = loop as any;
         if (typeof maybeLoop?.getProvider !== 'function') {
-            throw new Error('[IALCLAW] Invalid AgentLoop: getProvider() missing');
+            throw new Error(t('error.agent.invalid_loop_provider'));
         }
     }
 
@@ -79,14 +79,14 @@ export class AgentController {
         return runWithTrace(async () => {
             const startedAt = Date.now();
             const logger = this.logger.child({ conversation_id: conversationId, channel: 'telegram' });
-            logger.info('message_flow_started', 'Iniciando processamento de mensagem do Telegram.', {
+            logger.info('message_flow_started', t('log.agent.message_flow_started'), {
                 telegram_user_id: ctx.from?.id,
                 update_id: ctx.update.update_id
             });
 
             const payload: CognitiveInputPayload | null = await this.inputHandler.processUpdate(ctx);
             if (!payload) {
-                logger.warn('message_ignored', 'Mensagem ignorada antes do pipeline cognitivo.', {
+                logger.warn('message_ignored', t('log.agent.message_ignored'), {
                     duration_ms: Date.now() - startedAt
                 });
                 return;
@@ -101,38 +101,38 @@ export class AgentController {
                     await progress.complete();
                 } catch (error: any) {
                     await progress.fail(error);
-                    logger.error('conversation_execution_failed', error, 'Falha ao executar conversação.', {
+                    logger.error('conversation_execution_failed', error, t('log.agent.conversation_execution_failed'), {
                         duration_ms: Date.now() - startedAt,
                         source_type: payload.source_type
                     });
-                    answer = `Ocorreu um erro no pipeline cognitivo:\n${error.message}`;
+                    answer = t('agent.error.pipeline', { message: error.message });
                 }
                 
                 // GARANTIA DE ENTREGA: Sempre tentar enviar resposta, mesmo se houve erro
                 if (answer) {
                     try {
                         await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
-                        logger.info('message_flow_completed', 'Resposta enviada ao Telegram com sucesso.', {
+                        logger.info('message_flow_completed', t('log.agent.message_flow_completed'), {
                             duration_ms: Date.now() - startedAt,
                             response_length: answer.length,
                             requires_audio_reply: payload.requires_audio_reply
                         });
                     } catch (sendError: any) {
                         // CRÍTICO: sendResponse falhou completamente (incluindo todos os retries e fallbacks)
-                        logger.error('send_response_critical_failure', sendError, '[IALCLAW] FALHA CRÍTICA: Impossível enviar resposta ao usuário.', {
+                        logger.error('send_response_critical_failure', sendError, t('log.agent.send_response_critical_failure'), {
                             duration_ms: Date.now() - startedAt,
                             response_length: answer.length,
                             error_message: sendError.message
                         });
                         
-                        console.error(`\n[IALCLAW] ⚠️  FALHA CRÍTICA DE ENTREGA`);
-                        console.error(`[IALCLAW] 📱 Chat ID: ${conversationId}`);
-                        console.error(`[IALCLAW] ❌ Erro: ${sendError.message}`);
-                        console.error(`[IALCLAW] 📝 Resposta não entregue (${answer.length} caracteres)\n`);
+                        console.error(t('agent.error.delivery_critical_header'));
+                        console.error(t('agent.error.delivery_critical_chat', { chatId: conversationId }));
+                        console.error(t('agent.error.delivery_critical_error', { message: sendError.message }));
+                        console.error(t('agent.error.delivery_critical_response', { length: answer.length }));
                         
                         // Última tentativa: mensagem de erro mínima sem retry
                         try {
-                            await ctx.reply('❌ Erro ao enviar resposta. Verifique os logs do sistema.');
+                            await ctx.reply(t('agent.error.delivery'));
                         } catch {
                             // Ignorar - já logamos tudo que podíamos
                         }
@@ -154,7 +154,7 @@ export class AgentController {
         return runWithTrace(async () => {
             const startedAt = Date.now();
             const logger = this.logger.child({ conversation_id: sessionId, channel: 'web' });
-            logger.info('web_flow_started', 'Iniciando processamento da mensagem web.', {
+            logger.info('web_flow_started', t('log.agent.web_flow_started'), {
                 query_length: userQuery.length
             });
 
@@ -183,14 +183,14 @@ export class AgentController {
                 return withLanguage(lang, async () => {
                     try {
                         const answer = await this.runConversation(sessionId, userQuery, emitWebProgress, options?.shouldStop);
-                        logger.info('web_flow_completed', 'Mensagem web processada com sucesso.', {
+                        logger.info('web_flow_completed', t('log.agent.web_flow_completed'), {
                             duration_ms: Date.now() - startedAt,
                             response_length: answer.length
                         });
                         return answer;
                     } catch (error: any) {
                         await emitWebProgress({ stage: 'failed' });
-                        logger.error('web_flow_failed', error, 'Falha ao processar mensagem web.', {
+                        logger.error('web_flow_failed', error, t('log.agent.web_flow_failed'), {
                             duration_ms: Date.now() - startedAt
                         });
                         throw error;
@@ -257,7 +257,7 @@ export class AgentController {
             error_type: 'user_identity',
             fingerprint: `user_name_${cleaned.toLowerCase()}`
         });
-        this.logger.info('user_name_captured', 'Nome do usuario capturado.', { name: cleaned });
+        this.logger.info('user_name_captured', t('log.agent.user_name_captured'), { name: cleaned });
     }
 
     private getUserName(): string | null {
@@ -281,11 +281,11 @@ export class AgentController {
                         description: metadata.prompt,
                         files_count
                     });
-                    this.logger.info('project_indexed', 'Projeto indexado na memória cognitiva.', { project_id: id, name: metadata.name });
+                    this.logger.info('project_indexed', t('log.agent.project_indexed'), { project_id: id, name: metadata.name });
                 }
             }
         } catch (err: any) {
-            this.logger.warn('project_index_failed', 'Falha ao indexar projetos na memória.', { error: err.message });
+            this.logger.warn('project_index_failed', t('log.agent.project_index_failed'), { error: err.message });
         }
     }
 
@@ -306,7 +306,7 @@ export class AgentController {
         if (commandResponse) {
             this.memory.saveMessage(sessionId, 'user', userQuery);
             this.memory.saveMessage(sessionId, 'assistant', commandResponse);
-            logger.info('command_handled', 'Comando processado sem acionar LLM.', {
+            logger.info('command_handled', t('log.agent.command_handled'), {
                 command: userQuery.split(' ')[0],
                 duration_ms: Date.now() - startedAt
             });
@@ -328,13 +328,13 @@ export class AgentController {
                 if (isConfirmation(userQuery)) {
                     effectiveUserQuery = this.buildPendingActionQuery(pending);
                     clearPendingAction(session, pending.id);
-                    logger.info('pending_action_confirmed', 'Confirmacao vinculada a acao pendente.', {
+                    logger.info('pending_action_confirmed', t('log.agent.pending_action_confirmed'), {
                         action_type: pending.type,
                         payload: pending.payload
                     });
                 } else if (shouldDropPendingActionOnTopicShift(userQuery)) {
                     clearPendingAction(session, pending.id);
-                    logger.info('pending_action_dropped', 'Acao pendente descartada por mudanca de contexto.', {
+                    logger.info('pending_action_dropped', t('log.agent.pending_action_dropped'), {
                         action_type: pending.type
                     });
                 }
@@ -349,7 +349,7 @@ export class AgentController {
             projectId: session?.current_project_id,
             recentMessages: session?.conversation_history.map((item) => item.content).slice(-5)
         });
-        logger.info('conversation_started', 'Processando nova interacao do usuario.', {
+        logger.info('conversation_started', t('log.agent.conversation_started'), {
             cognitive_stage: 'start',
             summary: 'MESSAGE_RECEIVED',
             route: 'conversation',
@@ -362,7 +362,7 @@ export class AgentController {
         if (this.skillResolver) {
             const resolved = this.skillResolver.resolve(effectiveUserQuery);
             if (resolved) {
-                logger.info('skill_resolved', 'Mensagem roteada para uma skill dedicada.', {
+                logger.info('skill_resolved', t('log.agent.skill_resolved'), {
                     skill_name: resolved.skill.name
                 });
                 return this.runWithSkill(sessionId, effectiveUserQuery, resolved.query, resolved.skill, onProgress, shouldStop);
@@ -372,15 +372,15 @@ export class AgentController {
         const sessionDirectiveReply = await this.handleSessionDirective(effectiveUserQuery, session);
         if (sessionDirectiveReply) {
             this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
-            logger.info('session_directive_handled', 'Diretiva de sessao processada sem acionar o pipeline principal.', {
+            logger.info('session_directive_handled', t('log.agent.session_directive_handled'), {
                 duration_ms: Date.now() - startedAt
             });
             return sessionDirectiveReply;
         }
 
         // ── Fluxo unificado: LLM decide usar tools ou responder direto ──
-        console.log('[IALCLAW] Unified flow - LLM decides');
-        logger.info('unified_flow_started', 'Fluxo unificado. LLM decide se usa tools.', {
+        console.log(t('log.agent.unified_flow_console'));
+        logger.info('unified_flow_started', t('log.agent.unified_flow_started'), {
             cognitive_stage: 'decision',
             decision: 'UNIFIED',
             has_project: Boolean(session?.current_project_id)
@@ -420,7 +420,7 @@ export class AgentController {
                 const resolvedId = projectFromMemory.id.replace(/^project:/, '');
                 if (workspaceService.projectExists(resolvedId)) {
                     session.current_project_id = resolvedId;
-                    logger.info('project_auto_resolved', 'Projeto ativo resolvido via memória cognitiva.', { project_id: resolvedId });
+                    logger.info('project_auto_resolved', t('log.agent.project_auto_resolved'), { project_id: resolvedId });
                 }
             }
         }
@@ -503,7 +503,7 @@ export class AgentController {
                 error_type: 'user_identity',
                 fingerprint: `user_name_${directNameMatch[1].trim().toLowerCase()}`
             });
-            logger.info('user_name_captured', 'Nome capturado via frase direta.', { name: directNameMatch[1].trim() });
+            logger.info('user_name_captured', t('log.agent.user_name_captured_direct'), { name: directNameMatch[1].trim() });
         }
 
         await this.captureLifecycleMemory(result.answer, {
@@ -521,7 +521,7 @@ export class AgentController {
             response: result.answer
         });
 
-        logger.info('unified_flow_completed', 'Pipeline unificado concluido.', {
+        logger.info('unified_flow_completed', t('log.agent.unified_flow_completed'), {
             cognitive_stage: 'result',
             result: 'SUCCESS',
             duration_ms: Date.now() - startedAt,
@@ -547,7 +547,7 @@ export class AgentController {
         const logger = this.logger.child({ conversation_id: sessionId, skill_name: skill.name });
 
         if (typeof (this.loop as any)?.getProvider !== 'function') {
-            throw new Error('[IALCLAW] Invalid AgentLoop: getProvider() missing');
+            throw new Error(t('error.agent.invalid_loop_provider'));
         }
 
         // Memória: embedding → retrieval → contexto
@@ -621,7 +621,7 @@ export class AgentController {
             response: result.answer
         });
 
-        logger.info('skill_completed', 'Skill executada com sucesso.', {
+        logger.info('skill_completed', t('log.agent.skill_completed'), {
             response_length: result.answer.length
         });
 
@@ -636,7 +636,7 @@ export class AgentController {
         try {
             await this.memoryLifecycle.processInput(input, context);
         } catch (error: any) {
-            this.logger.debug('memory_lifecycle_capture_failed', 'Falha no capture do lifecycle de memoria.', {
+            this.logger.debug('memory_lifecycle_capture_failed', t('log.agent.memory_lifecycle_capture_failed'), {
                 conversation_id: context.sessionId,
                 reason: String(error?.message || error)
             });
@@ -665,7 +665,7 @@ export class AgentController {
             payload: { skillName: pendingSkill }
         });
 
-        this.logger.info('pending_action_set', 'Acao pendente registrada em STM.', {
+        this.logger.info('pending_action_set', t('log.agent.pending_action_set'), {
             conversation_id: sessionId,
             action_type: pending.type,
             skill_name: pending.payload.skillName,
@@ -723,7 +723,7 @@ export class AgentController {
         if (action.type === 'install_skill') {
             return `instalar skill ${action.payload.skillName}`;
         }
-        return 'continuar';
+        return t('agent.directive.continue');
     }
 
     private async handleSessionDirective(userQuery: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Promise<string | null> {
@@ -965,7 +965,7 @@ export class AgentController {
                 });
                 this.memory.setActiveCodeFiles(projectId, [relativePath]);
             } catch (error: any) {
-                this.logger.debug('code_indexing_skipped', 'Falha ao indexar arquivo de codigo para memoria.', {
+                this.logger.debug('code_indexing_skipped', t('log.agent.code_indexing_skipped'), {
                     project_id: projectId,
                     relative_path: relativePath,
                     reason: String(error?.message || error)

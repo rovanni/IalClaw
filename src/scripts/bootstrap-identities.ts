@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
 import { DatabaseManager } from '../db/DatabaseManager';
 import { ProviderFactory } from '../engine/ProviderFactory';
+import { t } from '../i18n';
 
 dotenv.config();
 
@@ -128,7 +129,11 @@ export async function bootstrapGatewayIdentities() {
             WHERE type = 'identity' AND subtype = 'agent'
         `).get() as { total: number };
 
-        console.log(`[Bootstrap] Identidades do gateway prontas. Inseridas: ${inserted}, atualizadas: ${updated}, total de agentes: ${totalAgents.total}.`);
+        console.log(t('script.bootstrap.identities.ready', {
+            inserted,
+            updated,
+            total: totalAgents.total
+        }));
         return { inserted, updated, totalAgents: totalAgents.total };
     } finally {
         dbManager.close();
@@ -136,6 +141,6 @@ export async function bootstrapGatewayIdentities() {
 }
 
 bootstrapGatewayIdentities().catch((error) => {
-    console.error('[Bootstrap] Falha ao semear identidades do gateway:', error);
+    console.error(t('script.bootstrap.identities.failed'), error);
     process.exit(1);
 });

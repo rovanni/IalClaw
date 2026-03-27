@@ -93,7 +93,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
 const dbManager = new DatabaseManager('db.sqlite');
-logger.info('database_initialized', 'Banco de dados inicializado com sucesso.');
+logger.info('database_initialized', t('log.index.database_initialized'));
 startTraceRecorder();
 
 // Iniciar Sonho/Consolidação
@@ -295,10 +295,10 @@ registry.register({
         const lifecycleStatus = String(lastEntry.lifecycle_status || '').toLowerCase();
         if (lifecycleStatus === 'blocked' || lifecycleStatus === 'review') {
             fs.rmSync(tempDir, { recursive: true, force: true });
-            return `Instalacao abortada para "${safeName}": status de auditoria ${lifecycleStatus}. Staging removido.`;
+            return t('index.skill.install_aborted', { name: safeName, status: lifecycleStatus });
         }
         if (lifecycleStatus === 'warning' && args.allow_warning !== true) {
-            return `Auditoria de "${safeName}" retornou WARNING. Para prosseguir conscientemente, execute finalize_public_skill_install com allow_warning=true.`;
+            return t('index.skill.warning_requires_allow', { name: safeName });
         }
 
         if (fs.existsSync(publicDir)) {
@@ -332,8 +332,8 @@ registry.register({
 
         const active = loaded.some(s => s.name.toLowerCase() === safeName);
         return active
-            ? `Skill ${safeName} instalada com sucesso em skills/public/${safeName} e indexada na memoria cognitiva.`
-            : `Skill ${safeName} promovida para skills/public/${safeName}, mas ainda nao esta ativa (verifique auditoria/log).`;
+            ? t('index.skill.install_success', { name: safeName })
+            : t('index.skill.promoted_not_active', { name: safeName });
     }
 });
 
@@ -370,7 +370,7 @@ registry.register({
         auditLog.reload();
         skillLoader.load();
 
-        return `Skill ${safeName} removida completamente do sistema. Orfaos limpos: ${removedOrphans}.`;
+        return t('index.skill.uninstalled', { name: safeName, count: removedOrphans });
     }
 });
 
@@ -389,7 +389,7 @@ const controller = new AgentController(
 );
 
 bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
-    logger.error('capabilities_bootstrap_failed', error, 'Falha ao fazer bootstrap de capabilities.');
+    logger.error('capabilities_bootstrap_failed', error, t('log.index.capabilities_bootstrap_failed'));
 });
 
 dashboard.setController(controller);
@@ -410,7 +410,7 @@ if (hasTelegramBotToken) {
     });
 
     bot.catch((err) => {
-        logger.error('telegram_update_failed', err.error, 'Erro ao processar update do Telegram.', {
+        logger.error('telegram_update_failed', err.error, t('log.index.telegram_update_failed'), {
             update_id: err.ctx.update.update_id
         });
     });
@@ -422,13 +422,13 @@ if (hasTelegramBotToken) {
         { command: 'status', description: 'Ver estado da sessão atual' },
         { command: 'start', description: 'Mensagem de boas-vindas' },
     ]).catch((err) => {
-        logger.warn('set_commands_failed', 'Falha ao registrar comandos no Telegram.', { error: String(err) });
+        logger.warn('set_commands_failed', t('log.index.set_commands_failed'), { error: String(err) });
     });
 
-    logger.info('bot_starting', 'Iniciando IalClaw Cognitive Agent (Polling).');
+    logger.info('bot_starting', t('log.index.bot_starting'));
     bot.start();
 } else {
-    logger.warn('telegram_disabled', 'TELEGRAM_BOT_TOKEN ausente. Iniciando em modo local via dashboard/web chat.', {
+    logger.warn('telegram_disabled', t('log.index.telegram_disabled'), {
         dashboard_url: 'http://localhost:3000',
         web_chat_enabled: true
     });

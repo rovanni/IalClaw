@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import { ToolDefinition } from '../core/tools/types';
 import { getContext } from '../shared/TraceContext';
 import { debugBus } from '../shared/DebugBus';
+import { t } from '../i18n';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,9 +69,9 @@ async function runNodeProject(projectPath: string): Promise<RunProjectResult> {
             return fail(stderr);
         }
 
-        return ok(stdout || 'Node executed successfully');
+        return ok(stdout || t('tool.run.node_success'));
     } catch (err: any) {
-        return fail(err.stderr || err.message || 'Node execution failed');
+        return fail(err.stderr || err.message || t('tool.run.node_failed'));
     }
 }
 
@@ -78,7 +79,7 @@ function loadPuppeteer(): PuppeteerLike {
     try {
         return require('puppeteer') as PuppeteerLike;
     } catch {
-        throw new Error('Puppeteer is not installed. Install it to execute HTML projects.');
+        throw new Error(t('tool.run.puppeteer_not_installed'));
     }
 }
 
@@ -118,10 +119,10 @@ async function runHtmlProject(projectPath: string): Promise<RunProjectResult> {
             return fail(runtimeErrors.join('\n'));
         }
 
-        return ok('HTML executed successfully');
+        return ok(t('tool.run.html_success'));
     } catch (err: any) {
         await browser.close();
-        return fail(err.message || 'HTML execution failed');
+        return fail(err.message || t('tool.run.html_failed'));
     }
 }
 
@@ -129,7 +130,7 @@ async function runProject(projectId: string): Promise<RunProjectResult> {
     const projectPath = getOutputPath(projectId);
 
     if (!fs.existsSync(projectPath)) {
-        return fail('Project output path not found');
+        return fail(t('tool.run.output_path_not_found'));
     }
 
     const files = fs.readdirSync(projectPath);
@@ -142,7 +143,7 @@ async function runProject(projectId: string): Promise<RunProjectResult> {
         return runHtmlProject(projectPath);
     }
 
-    return fail('No runnable entry point found');
+    return fail(t('tool.run.no_runnable_entry'));
 }
 
 export const workspaceRunProjectTool: ToolDefinition = {
@@ -175,7 +176,7 @@ export const workspaceRunProjectTool: ToolDefinition = {
 
             return {
                 success: false,
-                error: result.stderr || 'Project execution failed',
+                error: result.stderr || t('tool.run.project_execution_failed'),
                 data: result
             };
         }

@@ -1,5 +1,6 @@
 import { Ollama } from 'ollama';
 import { createLogger } from '../shared/AppLogger';
+import { t } from '../i18n';
 
 export interface MessagePayload {
     role: 'system' | 'user' | 'assistant' | 'tool';
@@ -69,7 +70,7 @@ class OllamaProvider implements LLMProvider {
             fetch: fetchParams ? (input, init) => fetch(input, { ...init, ...fetchParams }) : undefined
         });
 
-        this.logger.info('provider_initialized', 'Provider Ollama inicializado.', {
+        this.logger.info('provider_initialized', t('log.provider.initialized'), {
             host,
             uses_api_key: Boolean(apiKey)
         });
@@ -96,7 +97,7 @@ class OllamaProvider implements LLMProvider {
             : undefined;
 
         try {
-            this.logger.info('chat_request_started', 'Enviando requisicao de chat ao Ollama.', {
+            this.logger.info('chat_request_started', t('log.provider.chat_started'), {
                 cognitive_stage: 'execution',
                 execution: 'LLM_CHAT',
                 route: 'provider',
@@ -110,7 +111,7 @@ class OllamaProvider implements LLMProvider {
                 tools: ollamaTools
             });
 
-            this.logger.info('chat_request_completed', 'Resposta recebida do Ollama.', {
+            this.logger.info('chat_request_completed', t('log.provider.chat_completed'), {
                 cognitive_stage: 'execution',
                 execution: 'LLM_CHAT_COMPLETED',
                 route: 'provider',
@@ -131,7 +132,7 @@ class OllamaProvider implements LLMProvider {
             }
 
             return {
-                final_answer: response.message?.content || 'Sem resposta do Ollama.'
+                final_answer: response.message?.content || t('provider.no_response')
             };
         } catch (error: any) {
             const diagnostic = this.describeProviderError(error, 'chat', ollamaModel);
@@ -168,7 +169,7 @@ class OllamaProvider implements LLMProvider {
                 });
 
                 if (Array.isArray(response?.embeddings) && Array.isArray(response.embeddings[0])) {
-                    this.logger.debug('embedding_request_completed', 'Embedding retornado pela API /embed.', {
+                    this.logger.debug('embedding_request_completed', t('log.provider.embedding_embed_completed'), {
                         model: ollamaModel,
                         duration_ms: Date.now() - startedAt,
                         embedding_dimensions: response.embeddings[0].length
@@ -177,7 +178,7 @@ class OllamaProvider implements LLMProvider {
                 }
 
                 if (Array.isArray(response?.embedding)) {
-                    this.logger.debug('embedding_request_completed', 'Embedding retornado pela API /embed.', {
+                    this.logger.debug('embedding_request_completed', t('log.provider.embedding_embed_completed'), {
                         model: ollamaModel,
                         duration_ms: Date.now() - startedAt,
                         embedding_dimensions: response.embedding.length
@@ -193,7 +194,7 @@ class OllamaProvider implements LLMProvider {
                 });
 
                 if (Array.isArray(response?.embedding)) {
-                    this.logger.debug('embedding_request_completed', 'Embedding retornado pela API /embeddings.', {
+                    this.logger.debug('embedding_request_completed', t('log.provider.embedding_embeddings_completed'), {
                         model: ollamaModel,
                         duration_ms: Date.now() - startedAt,
                         embedding_dimensions: response.embedding.length
@@ -242,39 +243,39 @@ class OllamaProvider implements LLMProvider {
         if (message.includes('fetch failed') || causeCode === 'ECONNREFUSED' || causeCode === 'ENOTFOUND') {
             return {
                 code: 'ollama_unreachable',
-                log_message: `Falha de rede ao chamar o Ollama (${operation}). Verifique conectividade com ${this.host}.`,
-                user_message: `O IalClaw nao conseguiu falar com o Ollama em ${this.host}. Verifique se o servico esta ativo, acessivel e se o modelo ${model} esta disponivel.`
+                log_message: t('provider.error.unreachable.log', { operation, host: this.host }),
+                user_message: t('provider.error.unreachable.user', { host: this.host, model })
             };
         }
 
         if (message.includes('timeout') || error?.name === 'AbortError') {
             return {
                 code: 'ollama_timeout',
-                log_message: `Timeout ao chamar o Ollama (${operation}).`,
-                user_message: `O Ollama demorou demais para responder durante ${operation}. Verifique carga da maquina, disponibilidade do modelo ${model} e latencia do host ${this.host}.`
+                log_message: t('provider.error.timeout.log', { operation }),
+                user_message: t('provider.error.timeout.user', { operation, model, host: this.host })
             };
         }
 
         if (statusCode === 404 || message.includes('model') && message.includes('not found')) {
             return {
                 code: 'ollama_model_not_found',
-                log_message: `Modelo Ollama nao encontrado para ${operation}.`,
-                user_message: `O modelo ${model} nao foi encontrado no Ollama configurado. Ajuste OLLAMA_MODEL/MODEL ou faca o pull do modelo antes de tentar novamente.`
+                log_message: t('provider.error.model_not_found.log', { operation }),
+                user_message: t('provider.error.model_not_found.user', { model })
             };
         }
 
         if (statusCode === 401 || statusCode === 403 || message.includes('unauthorized')) {
             return {
                 code: 'ollama_unauthorized',
-                log_message: `Acesso negado ao Ollama durante ${operation}.`,
-                user_message: 'O provedor Ollama recusou autenticacao. Verifique OLLAMA_API_KEY e as permissoes do endpoint configurado.'
+                log_message: t('provider.error.unauthorized.log', { operation }),
+                user_message: t('provider.error.unauthorized.user')
             };
         }
 
         return {
             code: 'ollama_unknown_error',
-            log_message: `Falha inesperada ao chamar o Ollama durante ${operation}.`,
-            user_message: 'Ocorreu um erro inesperado de comunicacao com o Ollama. Consulte os logs estruturados para detalhes do host, operacao e stack.'
+            log_message: t('provider.error.unknown.log', { operation }),
+            user_message: t('provider.error.unknown.user')
         };
     }
 
@@ -284,7 +285,7 @@ class OllamaProvider implements LLMProvider {
         }
 
         this.warnedEmbeddingsUnavailable = true;
-        this.logger.warn('embedding_disabled', 'Embeddings indisponiveis; seguindo sem embeddings.', {
+        this.logger.warn('embedding_disabled', t('log.provider.embedding_disabled'), {
             host: this.host,
             model,
             duration_ms: durationMs,
@@ -297,11 +298,11 @@ class DummyProvider implements LLMProvider {
     async generate(messages: MessagePayload[], tools?: any[]): Promise<ProviderResponse> {
         const lastUserMsg = messages.filter(message => message.role === 'user').pop();
         if (lastUserMsg && lastUserMsg.content.includes('ajuda')) {
-            return { final_answer: 'Como posso ajudar voce usando o meu sistema cognitivo local?' };
+            return { final_answer: t('provider.dummy.help') };
         }
 
         return {
-            final_answer: 'Eu sou o IalClaw. Recebi sua mensagem: ' + (lastUserMsg?.content || 'Vazio')
+            final_answer: t('provider.dummy.echo', { content: lastUserMsg?.content || t('provider.dummy.empty') })
         };
     }
 

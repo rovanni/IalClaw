@@ -5,6 +5,7 @@ import { getTraceId } from '../shared/TraceContext';
 import { emitDebug } from '../shared/DebugBus';
 import { sanitizePath } from '../shared/sanitizePath';
 import { SessionManager } from '../shared/SessionManager';
+import { t } from '../i18n';
 
 export type ProjectType = 'code' | 'slides' | 'game' | 'document' | 'automation';
 
@@ -84,17 +85,17 @@ export class WorkspaceService {
 
     public createProject(name: string, type: ProjectType, agent: string, prompt: string): string {
         if (typeof name !== 'string' || !name.trim()) {
-            throw new Error('Invalid project name');
+            throw new Error(t('workspace.error.invalid_project_name'));
         }
 
         if (typeof prompt !== 'string' || !prompt.trim()) {
-            throw new Error('Invalid project prompt');
+            throw new Error(t('workspace.error.invalid_project_prompt'));
         }
 
         const session = SessionManager.getCurrentSession();
         if (session?.current_project_id && this.projectExists(session.current_project_id)) {
             session.current_goal = prompt;
-            session.last_action = `Reused project: ${session.current_project_id}`;
+            session.last_action = t('workspace.action.reused_project', { projectId: session.current_project_id });
             emitDebug('tool', {
                 name: 'workspace_create',
                 status: 'reused',
@@ -109,7 +110,7 @@ export class WorkspaceService {
         const projectPath = this.getProjectPath(projectId);
 
         if (fs.existsSync(projectPath)) {
-            throw new Error(`Projeto ${projectId} ja existe.`);
+            throw new Error(t('workspace.error.project_exists', { projectId }));
         }
 
         fs.mkdirSync(projectPath, { recursive: true });
@@ -134,7 +135,7 @@ export class WorkspaceService {
             session.current_project_id = projectId;
             session.current_goal = prompt;
             session.last_artifacts = [];
-            session.last_action = `Created project: ${name}`;
+            session.last_action = t('workspace.action.created_project', { name });
         }
 
         emitDebug('tool', { name: 'workspace_create', status: 'success', project_id: projectId });
@@ -144,7 +145,7 @@ export class WorkspaceService {
     public updateStatus(projectId: string, status: ProjectMetadata['status']) {
         const file = resolvePath(`/workspace/projects/${projectId}/project.json`);
         if (!fs.existsSync(file)) {
-            throw new Error(`Metadados do projeto ${projectId} nao encontrados.`);
+            throw new Error(t('workspace.error.metadata_not_found', { projectId }));
         }
 
         const data = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -164,7 +165,7 @@ export class WorkspaceService {
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
         const projectPath = resolvePath(`/workspace/projects/${projectId}`);
         if (!fs.existsSync(projectPath)) {
-            throw new Error(`Projeto ${projectId} nao encontrado.`);
+            throw new Error(t('workspace.error.project_not_found', { projectId }));
         }
 
         const safePath = sanitizePath(filename);
@@ -179,7 +180,7 @@ export class WorkspaceService {
         const session = SessionManager.getCurrentSession();
         if (session && !session.last_artifacts.includes(filename)) {
             session.last_artifacts.push(filename);
-            session.last_action = `Saved artifact: ${filename}`;
+            session.last_action = t('workspace.action.saved_artifact', { filename });
         }
 
         emitDebug('tool', { name: 'workspace_save', project_id: projectId, file: filename, status: 'success' });
@@ -189,7 +190,7 @@ export class WorkspaceService {
     public readArtifact(projectId: string, filename: string): string | null {
         const projectPath = resolvePath(`/workspace/projects/${projectId}`);
         if (!fs.existsSync(projectPath)) {
-            throw new Error(`Projeto ${projectId} nao encontrado.`);
+            throw new Error(t('workspace.error.project_not_found', { projectId }));
         }
 
         const safePath = sanitizePath(filename);

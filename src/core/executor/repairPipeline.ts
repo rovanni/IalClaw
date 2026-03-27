@@ -3,6 +3,7 @@ import { buildPlannerFallbackPlan } from '../planner/planningRecovery';
 import { ExecutionPlan } from '../planner/types';
 import { sanitizeStep } from '../../capabilities/stepCapabilities';
 import { toolRegistry } from '../tools/ToolRegistry';
+import { t } from '../../i18n';
 
 export type RepairResult = {
     repairedPlan: ExecutionPlan | null;
@@ -57,7 +58,7 @@ export function repairPlanStructure(plan: ExecutionPlan, session: Session): Repa
                     repairedPlan: null,
                     repairActions,
                     success: false,
-                    error: 'Repair pipeline nao conseguiu criar bootstrap de workspace.'
+                    error: t('error.repair.bootstrap_failed')
                 };
             }
 
@@ -79,30 +80,30 @@ export function repairPlanStructure(plan: ExecutionPlan, session: Session): Repa
             repairedPlan: null,
             repairActions,
             success: false,
-            error: error?.message || 'Repair pipeline falhou na validacao.'
+            error: error?.message || t('error.repair.validation_failed')
         };
     }
 }
 
 function validateRepairCandidate(plan: ExecutionPlan, session: Session): void {
     if (!plan || !Array.isArray(plan.steps) || plan.steps.length === 0) {
-        throw new Error('Plano invalido ou vazio.');
+        throw new Error(t('error.plan.invalid_or_empty'));
     }
 
     const usesWorkspace = plan.steps.some(step => step.tool.startsWith('workspace_'));
     const hasActiveProject = Boolean(session.current_project_id);
 
     if (usesWorkspace && !hasActiveProject && plan.steps[0].tool !== 'workspace_create_project') {
-        throw new Error("Validacao falhou: o plano deve iniciar com 'workspace_create_project' quando nao houver projeto ativo.");
+        throw new Error(t('error.plan.workspace_requires_create_first'));
     }
 
     if (hasActiveProject && plan.steps.some(step => step.tool === 'workspace_create_project')) {
-        throw new Error("Validacao falhou: nao recrie projeto quando ja existir projeto ativo na sessao.");
+        throw new Error(t('error.plan.recreate_active_project'));
     }
 
     for (const step of plan.steps) {
         if (!toolRegistry.get(step.tool)) {
-            throw new Error(`Validacao falhou: tool alucinada detectada no plano -> ${step.tool}`);
+            throw new Error(t('error.plan.hallucinated_tool', { tool: step.tool }));
         }
     }
 }

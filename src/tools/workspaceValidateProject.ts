@@ -3,6 +3,7 @@ import path from 'path';
 import { ToolDefinition } from '../core/tools/types';
 import { getContext } from '../shared/TraceContext';
 import { debugBus } from '../shared/DebugBus';
+import { t } from '../i18n';
 
 function walk(dir: string): string[] {
     let results: string[] = [];
@@ -29,18 +30,18 @@ function runValidationRules(files: string[]) {
     const hasFrontendAssets = files.some(file => file.endsWith('.css') || file.endsWith('.js'));
 
     if (!hasHTML && hasFrontendAssets) {
-        errors.push('Nenhum arquivo HTML encontrado');
+        errors.push(t('tool.validate.no_html_found'));
     }
 
     files.forEach(file => {
         const content = fs.readFileSync(file, 'utf-8');
 
-        if (content.trim().length < 20) {
-            errors.push(`Arquivo muito pequeno: ${path.basename(file)}`);
+            if (content.trim().length < 20) {
+            errors.push(t('tool.validate.file_too_small', { file: path.basename(file) }));
         }
 
         if (file.endsWith('.html') && !content.toLowerCase().includes('<html')) {
-            errors.push(`HTML invalido em ${path.basename(file)}`);
+            errors.push(t('tool.validate.invalid_html', { file: path.basename(file) }));
         }
 
         if (file.endsWith('.js')) {
@@ -51,7 +52,7 @@ function runValidationRules(files: string[]) {
                 || content.includes('let ');
 
             if (!hasJsStructure) {
-                errors.push(`JS suspeito ou vazio em ${path.basename(file)}`);
+                errors.push(t('tool.validate.suspicious_js', { file: path.basename(file) }));
             }
         }
     });
@@ -85,19 +86,19 @@ export const workspaceValidateProjectTool: ToolDefinition = {
 
         try {
             if (!fs.existsSync(basePath)) {
-                throw new Error('Projeto nao existe');
+                throw new Error(t('workspace.error.project_not_exists'));
             }
 
             const outputPath = path.join(basePath, 'output');
 
             if (!fs.existsSync(outputPath)) {
-                throw new Error('Pasta output nao encontrada');
+                throw new Error(t('workspace.error.output_folder_not_found'));
             }
 
             const files = walk(outputPath);
 
             if (files.length === 0) {
-                throw new Error('Nenhum arquivo gerado');
+                throw new Error(t('workspace.error.no_files_generated'));
             }
 
             const validation = runValidationRules(files);

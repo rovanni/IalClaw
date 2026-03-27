@@ -7,6 +7,7 @@ import {
     MemoryQueryResult,
     MemoryType
 } from './MemoryTypes';
+import { t } from '../i18n';
 
 type InputAnalysis = {
     explicitRequest: boolean;
@@ -80,7 +81,7 @@ export class MemoryLifecycleManager {
             }
         });
 
-        this.logger.info('memory_processed', 'Memoria processada no ciclo de vida.', {
+        this.logger.info('memory_processed', t('log.memory.lifecycle_processed'), {
             session_id: context.sessionId,
             memory_id: upsert.memoryId,
             action: upsert.action,

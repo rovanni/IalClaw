@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 export interface LlmJsonParseMeta {
     extractedFromMarkdownFence: boolean;
     extractedFromTextEnvelope: boolean;
@@ -39,7 +41,7 @@ export function parseLlmJson<T = any>(raw: string): T {
 
 export function parseLlmJsonWithRecovery<T = any>(raw: string): LlmJsonParseResult<T> {
     if (!raw || !raw.trim()) {
-        throw new Error('Empty LLM response');
+        throw new Error(t('error.parse_llm_json.empty_response'));
     }
 
     const extracted = extractJsonCandidate(raw);
@@ -67,7 +69,7 @@ export function parseLlmJsonWithRecovery<T = any>(raw: string): LlmJsonParseResu
                 meta: buildMeta(extracted, attempts, repaired.value, repaired)
             };
         } catch {
-            throw new Error(`Failed to parse LLM JSON after recovery attempts:\n${repaired.value.slice(0, 500)}`);
+            throw new Error(t('error.parse_llm_json.recovery_failed', { preview: repaired.value.slice(0, 500) }));
         }
     }
 }

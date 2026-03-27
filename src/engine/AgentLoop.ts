@@ -2,6 +2,7 @@ import { LLMProvider, MessagePayload } from './ProviderFactory';
 import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
+import { t } from '../i18n';
 
 export type AgentProgressEvent = {
     stage:
@@ -123,15 +124,15 @@ export class AgentLoop {
                 return false;
             }
 
-            const stoppedAnswer = 'Execucao interrompida pelo usuario.';
+            const stoppedAnswer = t('loop.stopped_by_user');
             const finalMsg: MessagePayload = { role: 'assistant', content: stoppedAnswer };
             newMessages.push(finalMsg);
             await emitProgress({ stage: 'stopped' });
-            this.logger.warn('loop_stopped_by_user', 'Execucao interrompida por solicitacao do usuario.');
+            this.logger.warn('loop_stopped_by_user', t('log.loop.stopped_by_user'));
             return true;
         };
 
-        this.logger.info('loop_started', 'AgentLoop iniciado.', {
+        this.logger.info('loop_started', t('log.loop.started'), {
             initial_messages: initialMessages.length,
             max_iterations: maxIter,
             max_tools: maxTools,
@@ -140,25 +141,25 @@ export class AgentLoop {
         await emitProgress({ stage: 'loop_started' });
 
         if (await stopIfRequested()) {
-            return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+            return { answer: t('loop.stopped_by_user'), newMessages };
         }
 
         for (let i = 0; i < maxIter; i++) {
             if (await stopIfRequested()) {
-                return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+                return { answer: t('loop.stopped_by_user'), newMessages };
             }
 
             // Verificar timeout global
             const elapsedTime = Date.now() - startedAt;
             if (elapsedTime > timeoutMs) {
-                this.logger.warn('loop_timeout', 'AgentLoop atingiu timeout global.', {
+                this.logger.warn('loop_timeout', t('log.loop.timeout'), {
                     elapsed_ms: elapsedTime,
                     timeout_ms: timeoutMs
                 });
                 break;
             }
 
-            this.logger.debug('iteration_started', 'Nova iteracao do AgentLoop.', {
+            this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                 iteration: i + 1,
                 message_count: messages.length,
                 tool_calls_count: toolCallsCount
@@ -169,7 +170,7 @@ export class AgentLoop {
             await emitProgress({ stage: 'llm_completed', iteration: i + 1 });
 
             if (await stopIfRequested()) {
-                return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+                return { answer: t('loop.stopped_by_user'), newMessages };
             }
 
             if (response.tool_call) {
@@ -177,13 +178,13 @@ export class AgentLoop {
                 if (lastToolName === response.tool_call.name) {
                     toolRepeatCount++;
                     if (toolRepeatCount >= 2) {
-                        this.logger.warn('tool_loop_detected', 'Loop de ferramenta detectado.', {
+                        this.logger.warn('tool_loop_detected', t('log.loop.tool_loop_detected'), {
                             tool_name: response.tool_call.name,
                             repeat_count: toolRepeatCount
                         });
                         const loopMsg: MessagePayload = {
                             role: 'system',
-                            content: `Voce esta repetindo a mesma ferramenta "${response.tool_call.name}" multiplas vezes. Pare de usar tools e responda diretamente ao usuario.`
+                            content: t('loop.system.repeated_tool', { tool: response.tool_call.name })
                         };
                         messages.push(loopMsg);
                         continue;
@@ -198,7 +199,7 @@ export class AgentLoop {
                     const assistBlock: MessagePayload = { role: 'assistant', content: `[Tentei executar ${response.tool_call.name} mas fui bloqueado pela Policy de limites]` };
                     messages.push(assistBlock, blockMsg);
                     newMessages.push(assistBlock, blockMsg);
-                    this.logger.warn('tool_call_blocked', 'Tool call bloqueada pela policy de limite.', {
+                    this.logger.warn('tool_call_blocked', t('log.loop.tool_call_blocked'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name,
                         max_tools: maxTools
@@ -208,7 +209,7 @@ export class AgentLoop {
 
                 toolCallsCount++;
                 try {
-                    this.logger.info('tool_call_started', 'Executando tool chamada pelo modelo.', {
+                    this.logger.info('tool_call_started', t('log.loop.tool_call_started'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name,
                         tool_calls_count: toolCallsCount
@@ -229,7 +230,7 @@ export class AgentLoop {
                     messages.push(assistantMsg, toolMsg);
                     newMessages.push(assistantMsg, toolMsg);
 
-                    this.logger.info('tool_call_completed', 'Tool executada com sucesso.', {
+                    this.logger.info('tool_call_completed', t('log.loop.tool_call_completed'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name,
                         result_length: result.length
@@ -237,17 +238,17 @@ export class AgentLoop {
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: response.tool_call.name });
 
                     if (await stopIfRequested()) {
-                        return { answer: 'Execucao interrompida pelo usuario.', newMessages };
+                        return { answer: t('loop.stopped_by_user'), newMessages };
                     }
 
                     continue;
                 } catch (error: any) {
-                    this.logger.error('tool_call_failed', error, 'Falha ao executar tool.', {
+                    this.logger.error('tool_call_failed', error, t('log.loop.tool_call_failed'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name
                     });
                     await emitProgress({ stage: 'tool_failed', iteration: i + 1, tool_name: response.tool_call.name });
-                    const errMsg: MessagePayload = { role: 'tool', content: `Erro ao executar tool: ${error.message}` };
+                    const errMsg: MessagePayload = { role: 'tool', content: t('loop.tool_execution_error', { message: error.message }) };
                     messages.push(errMsg);
                     newMessages.push(errMsg);
                     consecutiveToolFailures++;
@@ -255,7 +256,7 @@ export class AgentLoop {
                     if (consecutiveToolFailures >= 2) {
                         const fallbackHint: MessagePayload = {
                             role: 'system',
-                            content: 'Voce ja falhou multiplas vezes tentando usar tools. Pare de tentar usar tools e responda diretamente ao usuario com uma explicacao util de como ele pode realizar a tarefa.'
+                            content: t('loop.system.multiple_tool_failures')
                         };
                         messages.push(fallbackHint);
                     }
@@ -271,7 +272,7 @@ export class AgentLoop {
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
                 const duration = Date.now() - startedAt;
-                this.logger.info('loop_completed', 'AgentLoop finalizado com resposta final.', {
+                this.logger.info('loop_completed', t('log.loop.completed'), {
                     duration_ms: duration,
                     iterations_used: i + 1,
                     tool_calls_count: toolCallsCount,
@@ -284,7 +285,7 @@ export class AgentLoop {
             // Parada inteligente: se já há conteúdo suficiente acumulado
             totalResponseLength += (response.final_answer || '').length;
             if (totalResponseLength > 500 && toolCallsCount > 0) {
-                this.logger.info('loop_smart_stop', 'Parando loop: conteudo suficiente acumulado.', {
+                this.logger.info('loop_smart_stop', t('log.loop.smart_stop'), {
                     total_response_length: totalResponseLength,
                     tool_calls: toolCallsCount
                 });
@@ -293,7 +294,7 @@ export class AgentLoop {
         }
 
         // Graceful fallback: pedir ao LLM uma resposta final sem tools
-        this.logger.warn('loop_max_iterations_fallback', 'AgentLoop atingiu limite de iteracoes. Solicitando resposta final.', {
+        this.logger.warn('loop_max_iterations_fallback', t('log.loop.max_iterations_fallback'), {
             duration_ms: Date.now() - startedAt,
             max_iterations: maxIter,
             tool_calls_count: toolCallsCount
@@ -301,29 +302,29 @@ export class AgentLoop {
 
         messages.push({
             role: 'system',
-            content: 'Voce atingiu o limite de iteracoes. NAO use tools. Responda de forma OBJETIVA e DIRETA ao usuario (maximo 3 linhas) com o resultado ou proximos passos.'
+            content: t('loop.system.max_iterations')
         });
 
         try {
             await emitProgress({ stage: 'finalizing' });
             const fallbackResponse = await this.llm.generate(messages, []);
-            const fallbackAnswer = fallbackResponse.final_answer || 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.';
+            const fallbackAnswer = fallbackResponse.final_answer || t('loop.fallback.default_answer');
             const sanitized = this.sanitizeUserFacingAnswer(fallbackAnswer);
             const finalMsg: MessagePayload = { role: 'assistant', content: sanitized };
             newMessages.push(finalMsg);
             const duration = Date.now() - startedAt;
-            this.logger.info('loop_completed_via_fallback', 'AgentLoop finalizado via fallback.', {
+            this.logger.info('loop_completed_via_fallback', t('log.loop.completed_fallback'), {
                 duration_ms: duration,
                 answer_length: sanitized.length
             });
             await emitProgress({ stage: 'completed', duration_ms: duration });
             return { answer: sanitized, newMessages };
         } catch (fallbackError: any) {
-            this.logger.error('loop_fallback_failed', fallbackError, 'Fallback tambem falhou.', {
+            this.logger.error('loop_fallback_failed', fallbackError, t('log.loop.fallback_failed'), {
                 duration_ms: Date.now() - startedAt
             });
             await emitProgress({ stage: 'failed' });
-            return { answer: 'Desculpe, nao consegui concluir a tarefa. Tente reformular o pedido.', newMessages };
+            return { answer: t('loop.fallback.default_answer'), newMessages };
         }
     }
 
@@ -360,7 +361,7 @@ export class AgentLoop {
     }
 
     private injectRealityCheck(answer: string): string {
-        const suffix = '\n\nNota: nao executei esses comandos aqui. Se quiser, eu te passo os passos para rodar localmente.';
+        const suffix = t('loop.reality_check_suffix');
         return `${answer.trimEnd()}${suffix}`;
     }
 
@@ -375,7 +376,7 @@ export class AgentLoop {
         cleaned = cleaned.trim();
 
         if (!cleaned) {
-            return 'Consegui processar sua solicitacao e posso continuar com o proximo passo.';
+            return t('loop.empty_sanitized_answer');
         }
 
         return cleaned;

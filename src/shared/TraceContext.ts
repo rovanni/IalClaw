@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
+import { t } from '../i18n';
 
 export interface TraceStore {
     trace_id: string;
@@ -24,7 +25,7 @@ export function runWithTrace<T>(callback: () => T, agent_id: string = 'system_co
 
 export function getContext(): TraceStore {
     const store = traceStorage.getStore();
-    if (!store?.trace_id) throw new Error('trace_id ausente no contexto assíncrono');
+    if (!store?.trace_id) throw new Error(t('error.trace.missing_trace_id'));
     return store;
 }
 

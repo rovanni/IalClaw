@@ -2,6 +2,7 @@ import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../shared/AppLogger';
+import { t } from '../i18n';
 
 export type CognitiveInputPayload = {
     text: string;
@@ -16,7 +17,7 @@ export class TelegramInputHandler {
     constructor() {
         const ids = process.env.TELEGRAM_ALLOWED_USER_IDS || '';
         this.allowedUsers = new Set(ids.split(',').map(id => parseInt(id.trim())));
-        this.logger.info('configured', 'Whitelist de usuarios do Telegram carregada.', {
+        this.logger.info('configured', t('log.telegram.input.configured'), {
             allowed_users_count: Array.from(this.allowedUsers).filter((id) => !Number.isNaN(id)).length
         });
     }
@@ -31,7 +32,7 @@ export class TelegramInputHandler {
         const chatId = ctx.chat?.id;
 
         if (!this.isUserAllowed(ctx)) {
-            this.logger.warn('unauthorized_user', 'Tentativa de acesso nao autorizada no Telegram.', {
+            this.logger.warn('unauthorized_user', t('log.telegram.input.unauthorized_user'), {
                 telegram_user_id: userId,
                 telegram_chat_id: chatId
             });
@@ -40,7 +41,7 @@ export class TelegramInputHandler {
 
         // Handing text messages
         if (ctx.message?.text) {
-            this.logger.info('text_message_received', 'Mensagem de texto recebida do Telegram.', {
+            this.logger.info('text_message_received', t('log.telegram.input.text_received'), {
                 telegram_user_id: userId,
                 telegram_chat_id: chatId,
                 text_length: ctx.message.text.length
@@ -58,17 +59,17 @@ export class TelegramInputHandler {
         // Simplifying for this foundational spec:
         if (ctx.message?.document) {
             const doc = ctx.message.document;
-            this.logger.info('document_received', 'Documento recebido do Telegram.', {
+            this.logger.info('document_received', t('log.telegram.input.document_received'), {
                 telegram_user_id: userId,
                 telegram_chat_id: chatId,
                 file_name: doc.file_name,
                 mime_type: doc.mime_type,
                 file_size: doc.file_size
             });
-            await ctx.reply("Documento recebido. O IalClaw em breve irá indexá-lo na memória semântica.");
+            await ctx.reply(t('telegram.input.document_received_reply'));
 
             return {
-                text: `Process please document: ${doc.file_name}`,
+                text: t('telegram.input.process_document', { filename: doc.file_name }),
                 source_type: 'document',
                 requires_audio_reply: false
             };
@@ -76,20 +77,20 @@ export class TelegramInputHandler {
 
         // Handling audio/voice
         if (ctx.message?.voice || ctx.message?.audio) {
-            this.logger.info('audio_received', 'Mensagem de audio recebida do Telegram.', {
+            this.logger.info('audio_received', t('log.telegram.input.audio_received'), {
                 telegram_user_id: userId,
                 telegram_chat_id: chatId,
                 kind: ctx.message.voice ? 'voice' : 'audio'
             });
             await ctx.replyWithChatAction('record_voice');
             return {
-                text: "Process please user voice message (transcription placeholder)",
+                text: t('telegram.input.process_voice_placeholder'),
                 source_type: 'audio',
                 requires_audio_reply: true
             };
         }
 
-        this.logger.warn('unsupported_message', 'Formato de mensagem nao suportado no Telegram.', {
+        this.logger.warn('unsupported_message', t('log.telegram.input.unsupported_message'), {
             telegram_user_id: userId,
             telegram_chat_id: chatId,
             has_text: Boolean(ctx.message?.text),
@@ -97,7 +98,7 @@ export class TelegramInputHandler {
             has_voice: Boolean(ctx.message?.voice),
             has_audio: Boolean(ctx.message?.audio)
         });
-        await ctx.reply("Formato não suportado.");
+        await ctx.reply(t('telegram.input.unsupported_reply'));
         return null;
     }
 }

@@ -4,6 +4,7 @@ import { Context, InputFile } from 'grammy';
 import { SessionManager } from '../shared/SessionManager';
 import { workspaceService } from '../services/WorkspaceService';
 import { createLogger } from '../shared/AppLogger';
+import { t } from '../i18n';
 
 export class TelegramOutputHandler {
     private logger = createLogger('TelegramOutputHandler');
@@ -14,13 +15,13 @@ export class TelegramOutputHandler {
         if (requiresAudio) {
             // Logic for Edge-TTS generation could go here. 
             // Fallback to text:
-            await this.sendTextChunks(ctx, `[Áudio Fallback]\n${response}`);
+            await this.sendTextChunks(ctx, `${t('telegram.output.audio_fallback_prefix')}\n${response}`);
             return;
         }
 
         const attachment = this.resolveArtifactAttachment();
         const finalResponse = attachment
-            ? `${response}\n\nArquivo gerado anexado nesta conversa: ${attachment.filename}`
+            ? `${response}\n\n${t('telegram.output.attachment_notice', { filename: attachment.filename })}`
             : response;
 
         // Detecting huge Markdown outputs to send as files
@@ -54,7 +55,7 @@ export class TelegramOutputHandler {
                         ctx.reply(chunk, { parse_mode: 'Markdown' }),
                         this.createTimeoutPromise(this.REPLY_TIMEOUT_MS)
                     ]);
-                    this.logger.debug('chunk_sent', 'Chunk enviado com sucesso.', {
+                    this.logger.debug('chunk_sent', t('log.telegram.output.chunk_sent'), {
                         chunk_index: chunkIndex,
                         chunk_size: chunk.length,
                         attempt: attempt + 1
@@ -62,7 +63,7 @@ export class TelegramOutputHandler {
                     break; // Sucesso, sair do retry loop
                 } catch (err: any) {
                     lastError = err;
-                    this.logger.warn('chunk_send_retry', 'Falha ao enviar chunk, tentando novamente.', {
+                    this.logger.warn('chunk_send_retry', t('log.telegram.output.chunk_retry'), {
                         chunk_index: chunkIndex,
                         attempt: attempt + 1,
                         max_retries: this.MAX_RETRIES,
@@ -71,7 +72,7 @@ export class TelegramOutputHandler {
                     
                     if (attempt === this.MAX_RETRIES - 1) {
                         // Última tentativa falhou
-                        this.logger.error('chunk_send_failed', err, '[IALCLAW] ERRO CRÍTICO: Falha ao enviar chunk após todas as tentativas.', {
+                        this.logger.error('chunk_send_failed', err, t('log.telegram.output.chunk_failed'), {
                             chunk_index: chunkIndex,
                             chunk_preview: chunk.substring(0, 100),
                             total_attempts: this.MAX_RETRIES
@@ -83,13 +84,13 @@ export class TelegramOutputHandler {
                                 ctx.reply(chunk),
                                 this.createTimeoutPromise(this.REPLY_TIMEOUT_MS)
                             ]);
-                            this.logger.info('chunk_sent_fallback', 'Chunk enviado via fallback (sem Markdown).');
+                            this.logger.info('chunk_sent_fallback', t('log.telegram.output.chunk_fallback_sent'));
                             break;
                         } catch (fallbackErr: any) {
-                            this.logger.error('chunk_fallback_failed', fallbackErr, '[IALCLAW] FALHA CRÍTICA: Impossível enviar chunk mesmo via fallback.');
+                            this.logger.error('chunk_fallback_failed', fallbackErr, t('log.telegram.output.chunk_fallback_failed'));
                             // Salvar em arquivo como último recurso
                             await this.saveResponseToFallbackFile(chunk, ctx.chat?.id.toString());
-                            throw new Error(`Falha crítica ao enviar mensagem: ${lastError?.message}`);
+                            throw new Error(t('telegram.output.error.critical_send_failed', { message: lastError?.message }));
                         }
                     }
                     
@@ -137,18 +138,18 @@ export class TelegramOutputHandler {
             try {
                 await Promise.race([
                     (ctx as any).replyWithDocument(new InputFile(filePath, filename), {
-                        caption: `Artefato gerado: ${filename}`
+                        caption: t('telegram.output.attachment_caption', { filename })
                     }),
                     this.createTimeoutPromise(this.REPLY_TIMEOUT_MS * 2) // Dobro do timeout para arquivos
                 ]);
-                this.logger.info('attachment_sent', 'Anexo enviado com sucesso.', {
+                this.logger.info('attachment_sent', t('log.telegram.output.attachment_sent'), {
                     filename,
                     attempt: attempt + 1
                 });
                 return; // Sucesso
             } catch (err: any) {
                 lastError = err;
-                this.logger.warn('attachment_send_retry', 'Falha ao enviar anexo, tentando novamente.', {
+                this.logger.warn('attachment_send_retry', t('log.telegram.output.attachment_retry'), {
                     filename,
                     attempt: attempt + 1,
                     max_retries: this.MAX_RETRIES,
@@ -156,7 +157,7 @@ export class TelegramOutputHandler {
                 });
                 
                 if (attempt === this.MAX_RETRIES - 1) {
-                    this.logger.error('attachment_send_failed', err, '[IALCLAW] ERRO CRÍTICO: Falha ao enviar anexo após todas as tentativas.', {
+                    this.logger.error('attachment_send_failed', err, t('log.telegram.output.attachment_failed'), {
                         filename,
                         total_attempts: this.MAX_RETRIES
                     });
@@ -172,7 +173,7 @@ export class TelegramOutputHandler {
 
     private createTimeoutPromise(ms: number): Promise<never> {
         return new Promise((_, reject) => {
-            setTimeout(() => reject(new Error(`Timeout de ${ms}ms excedido`)), ms);
+            setTimeout(() => reject(new Error(t('telegram.output.error.timeout_exceeded', { ms }))), ms);
         });
     }
 
@@ -195,7 +196,7 @@ export class TelegramOutputHandler {
             
             fs.writeFileSync(filepath, content, 'utf-8');
             
-            this.logger.error('response_saved_to_file', null, '[IALCLAW] Resposta salva em arquivo de fallback.', {
+            this.logger.error('response_saved_to_file', null, t('log.telegram.output.response_saved_to_file'), {
                 filepath,
                 chat_id: chatId,
                 response_length: response.length
@@ -205,8 +206,8 @@ export class TelegramOutputHandler {
             console.error(`[IALCLAW] 💾 Resposta salva em: ${filepath}`);
             console.error(`[IALCLAW] 📝 Comprimento: ${response.length} caracteres\n`);
         } catch (err: any) {
-            this.logger.error('fallback_file_save_failed', err, '[IALCLAW] Falha ao salvar resposta em arquivo de fallback.');
-            console.error('[IALCLAW] FALHA CATASTRÓFICA: Não foi possível nem salvar a resposta em arquivo.');
+            this.logger.error('fallback_file_save_failed', err, t('log.telegram.output.fallback_file_save_failed'));
+            console.error(t('telegram.output.error.catastrophic_save_failed'));
         }
     }
 }

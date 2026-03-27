@@ -14,6 +14,7 @@ import { formatTargetFileBlock, rankFiles, selectWithConfidence } from './fileTa
 import { createLogger } from '../../shared/AppLogger';
 import { buildPlannerFallbackPlan } from './planningRecovery';
 import { computeConfidence, evaluateSessionConsistency } from './plannerDiagnostics';
+import { t } from '../../i18n';
 
 export class AgentPlanner {
     private logger = createLogger('AgentPlanner');
@@ -24,7 +25,7 @@ export class AgentPlanner {
         const output = await this.createPlanWithDiagnostics(userInput);
 
         if (!output.plan) {
-            throw new Error('Planner nao conseguiu produzir um plano utilizavel.');
+            throw new Error(t('error.planner.plan_not_generated'));
         }
 
         return output.plan;
@@ -38,7 +39,7 @@ export class AgentPlanner {
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Consultando o Grafo Cognitivo por projetos e padroes passados...' });
 
         if (!this.memory || typeof this.memory.retrieveWithTraversal !== 'function') {
-            throw new Error('MemoryProvider not configured correctly');
+            throw new Error(t('error.planner.memory_provider_invalid'));
         }
 
         const provider = ProviderFactory.getProvider();

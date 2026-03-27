@@ -10,6 +10,7 @@ import { decideExecutionPath, RuntimeDecision } from './runtime/decisionGate';
 import { ExecutionPlan, PlannerOutput } from './planner/types';
 import { workspaceService } from '../services/WorkspaceService';
 import { ExecutionPolicy } from './ExecutionPolicy';
+import { t } from '../i18n';
 
 export class AgentRuntime {
     private planner: AgentPlanner;
@@ -25,7 +26,7 @@ export class AgentRuntime {
             emitDebug('gateway', { route: mode, query: userInput, timestamp: Date.now() });
 
             if (mode !== 'planner') {
-                return 'Fluxo ReAct legado acionado (adicione a logica do AgentLoop aqui, se necessario).';
+                return t('runtime.react_legacy');
             }
 
             try {
@@ -45,14 +46,14 @@ export class AgentRuntime {
                     const direct = await this.executor.executeDirect(userInput, session, 1);
 
                     if (!direct.success) {
-                        return `Falha na execucao direta: ${direct.error}`;
+                        return t('runtime.direct_failed', { error: direct.error });
                     }
 
-                    return direct.answer || 'Execucao direta concluida sem resposta textual.';
+                    return direct.answer || t('runtime.direct_no_answer');
                 }
 
                 if (!session) {
-                    throw new Error('Sessao ativa nao encontrada para executar o plano.');
+                    throw new Error(t('runtime.session_not_found'));
                 }
 
                 let plannerOutput = await this.planner.createPlanWithDiagnostics(userInput);
@@ -63,7 +64,7 @@ export class AgentRuntime {
 
                 if (decision === 'REPLAN') {
                     plannerOutput = await this.planner.createPlanWithDiagnostics(userInput, {
-                        supplementalInstruction: 'Replaneje em modo conservador. Prefira no maximo 3 steps. Retorne apenas o essencial para destravar a execucao.'
+                        supplementalInstruction: t('runtime.replan_instruction')
                     });
                     selectedMode = resolveExecutionMode(agentConfig.getExecutionMode(), plannerOutput.diagnostics.confidenceScore);
                     decision = decideExecutionPath(plannerOutput, selectedMode);
@@ -79,15 +80,15 @@ export class AgentRuntime {
                     const direct = await this.executor.executeDirect(userInput, session, plannerOutput.diagnostics.confidenceScore);
 
                     if (!direct.success) {
-                        return `Falha na execucao direta: ${direct.error}`;
+                        return t('runtime.direct_failed', { error: direct.error });
                     }
 
-                    return direct.answer || 'Execucao direta concluida sem resposta textual.';
+                    return direct.answer || t('runtime.direct_no_answer');
                 }
 
                 const plan = plannerOutput.plan;
                 if (!plan) {
-                    return 'Falha na execucao: nenhuma estrategia de planejamento gerou um plano utilizavel.';
+                    return t('runtime.plan_missing');
                 }
 
                 emitDebug('plan_generated', {
@@ -103,27 +104,19 @@ export class AgentRuntime {
 
                 if (!result.success) {
                     if (result.error_type === 'missing_capability' && result.capability === 'browser_execution') {
-                        return result.error || `O ambiente atual nao oferece a capacidade obrigatoria: ${result.capability}.`;
+                        return result.error || t('runtime.missing_capability', { capability: result.capability });
                     }
 
                     if (result.error_type === 'environment_dependency' && result.dependency === 'puppeteer') {
-                        return `O projeto foi gerado, mas falta um componente do ambiente para testar HTML automaticamente: puppeteer.
-
-Voce pode seguir de duas formas:
-1. instalar o componente manualmente
-2. autorizar o agente a tentar instalar para voce
-
-Se quiser, me responda:
-"pode instalar o puppeteer"
-e eu tento fazer isso para voce.`;
+                        return t('runtime.puppeteer_missing');
                     }
 
-                    return `Falha na execucao do plano: ${result.error}`;
+                    return t('runtime.plan_failed', { error: result.error });
                 }
 
                 return this.buildExecutionSuccessMessage(plan, session, result.answer);
             } catch (error: any) {
-                return `Falha na execucao do plano: ${error.message}`;
+                return t('runtime.plan_failed', { error: error.message });
             }
         }, 'runtime_core');
     }
@@ -137,7 +130,7 @@ e eu tento fazer isso para voce.`;
         const artifacts = session.last_artifacts || [];
 
         if (!projectId) {
-            return `Execucao concluida com sucesso.\nPassos executados: ${plan.steps.length}`;
+            return t('runtime.success.no_project', { steps: plan.steps.length });
         }
 
         const metadata = workspaceService.readProjectMetadata(projectId);
@@ -149,20 +142,20 @@ e eu tento fazer isso para voce.`;
 
         if (projectType === 'slides') {
             return [
-                'Slides gerados com sucesso.',
-                `Projeto: ${projectId}`,
-                'Arquivos gerados:',
+                t('runtime.success.slides.title'),
+                t('runtime.success.project', { projectId }),
+                t('runtime.success.files'),
                 ...artifactLines,
-                'Abra o arquivo HTML no output para visualizar a apresentacao.'
+                t('runtime.success.slides.open_html')
             ].join('\n');
         }
 
         return [
-            'Execucao concluida com sucesso.',
-            `Projeto: ${projectId}`,
-            'Arquivos gerados:',
+            t('runtime.success.title'),
+            t('runtime.success.project', { projectId }),
+            t('runtime.success.files'),
             ...artifactLines,
-            `Passos executados: ${plan.steps.length}`
+            t('runtime.success.steps', { steps: plan.steps.length })
         ].join('\n');
     }
 

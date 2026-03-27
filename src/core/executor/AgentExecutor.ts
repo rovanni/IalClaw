@@ -33,6 +33,7 @@ import {
 import { cloneExecutionPlan, RepairResult, repairPlanStructure } from './repairPipeline';
 import { hashLearningInput, pushLearningRecord } from './operationalLearning';
 import { RuntimeDecision } from '../runtime/decisionGate';
+import { t } from '../../i18n';
 
 const MAX_RETRIES = 5;
 const MAX_TOOL_INPUT_RETRIES = 2;
@@ -820,7 +821,7 @@ Novo ExecutionPlan JSON`
         const rawPlan = response.final_answer;
 
         if (!rawPlan) {
-            throw new Error('LLM nao retornou um plano de correcao.');
+            throw new Error(t('error.executor.repair_plan_missing'));
         }
 
         const repairedPlan = this.parsePlan(rawPlan);
@@ -876,7 +877,7 @@ JSON valido`
         const raw = response.final_answer;
 
         if (!raw) {
-            throw new Error('LLM nao retornou correcao de tool_input.');
+            throw new Error(t('error.executor.tool_input_correction_missing'));
         }
 
         debugBus.emit('repair:tool_input:raw', {
@@ -1310,7 +1311,7 @@ Se quiser autorizar, responda:
             };
         }
 
-        throw new Error('Resposta invalida para correcao de tool_input.');
+        throw new Error(t('error.executor.tool_input_correction_invalid'));
     }
 
     private safeParseErrorPayload(raw?: string): any | null {
@@ -1444,7 +1445,7 @@ Each step.tool must be one of: [${strictToolEnum}]`;
 
         const recreatesProject = plan.steps.some(step => step.tool === 'workspace_create_project');
         if (recreatesProject) {
-            throw new Error('Validacao falhou: replan tentou recriar projeto ativo.');
+            throw new Error(t('error.plan.recreate_active_project'));
         }
     }
 }
