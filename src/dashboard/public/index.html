@@ -312,6 +312,8 @@
     #action-btn:hover { background: var(--accent-hover); }
     #action-btn:disabled { background: var(--text-soft); color: rgba(255, 255, 255, 0.76); cursor: not-allowed; }
     #action-btn.is-stop { background: #c2410c; }
+    #speech-btn.recording { background: #ef4444; color: #fff; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
     .drawer-backdrop {
       position: fixed;
@@ -521,6 +523,7 @@
 
       <div class="input-area">
         <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off">
+        <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz">🎤</button>
         <button id="action-btn" type="button">Enviar</button>
       </div>
     </section>
@@ -542,6 +545,25 @@
     let historyCursor = -1;
     let activeDrawer = null;
     const dashboardI18n = window.IalclawDashboardI18n;
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme");
+      document.documentElement.setAttribute(
+        "data-theme",
+        current === "dark" ? "light" : "dark"
+      );
+    }
+
+    function changeZoom(delta) {
+      const html = document.documentElement;
+      const current = parseFloat(getComputedStyle(html).fontSize);
+      const newSize = current + delta * 16;
+      html.style.fontSize = newSize + "px";
+      const zoomLevel = document.getElementById("zoom-level");
+      if (zoomLevel) {
+        zoomLevel.textContent = Math.round((newSize / 16) * 100) + "%";
+      }
+    }
     const tf = (key, params, fallback) => dashboardI18n?.t?.(key, params, fallback) || fallback || key;
 
     const chatInput = document.getElementById('chat-input');
@@ -566,6 +588,56 @@
     const drawerBackdrop = document.getElementById('drawer-backdrop');
     const menuDrawer = document.getElementById('menu-drawer');
     const logsDrawer = document.getElementById('logs-drawer');
+    const speechBtn = document.getElementById('speech-btn');
+
+    let recognition = null;
+    let isRecording = false;
+
+    function handleSpeechInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        appendStatus(tf('dashboard.error.speech_not_supported', undefined, 'Web Speech API nao suportada neste navegador.'));
+        speechBtn.disabled = true;
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.lang = dashboardI18n?.getLanguage?.() || 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        speechBtn.classList.add('recording');
+        appendStatus(tf('dashboard.voice.started', undefined, 'Captura de voz iniciada.'));
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) return;
+        chatInput.value = transcript;
+        chatInput.focus();
+        appendStatus(tf('dashboard.voice.captured', { transcript }, `Voz capturada: ${transcript}`));
+      };
+
+      recognition.onerror = (event) => {
+        appendStatus(tf('dashboard.error.speech_failed', { error: event.error || 'unknown' }, `Falha no reconhecimento de voz: ${event.error || 'unknown'}`));
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        speechBtn.classList.remove('recording');
+      };
+
+      speechBtn.addEventListener('click', () => {
+        if (!recognition) return;
+        if (isRecording) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      });
+    }
 
     const EVENT_LABELS = {
       user: 'Voce',
@@ -1234,10 +1306,11 @@
     });
     async function bootstrapSimpleDashboard() {
       await dashboardI18n?.init?.();
-applyStaticTranslations();
+      applyStaticTranslations();
       applyTheme(currentTheme);
       setTtsState(ttsEnabled);
       updateChatActionButtons();
+      handleSpeechInput();
       connectSSE();
       loadExecutionConfig();
       resetConversationView();
@@ -1254,35 +1327,7 @@ applyStaticTranslations();
       }
     });
   </script>
-  <!-- Funções globais para evitar quebra dos botões -->
-  <script>
-    function toggleTheme() {
-      const current = document.documentElement.getAttribute("data-theme");
-      document.documentElement.setAttribute(
-        "data-theme",
-        current === "dark" ? "light" : "dark"
-      );
-    }
-    function changeZoom(delta) {
-      const html = document.documentElement;
-      const current = parseFloat(getComputedStyle(html).fontSize);
-      const newSize = current + delta * 16;
-      html.style.fontSize = newSize + "px";
-      const zoomLevel = document.getElementById("zoom-level");
-      if (zoomLevel) {
-        zoomLevel.textContent = Math.round((newSize / 16) * 100) + "%";
-      }
-    }
-    // Exemplo de binding i18n para um label
-    document.addEventListener("DOMContentLoaded", () => {
-      const t = window.IalclawDashboardI18n?.t;
-      if (!t) return;
-      const memoryLabel = document.getElementById("memory-btn-label");
-      if (memoryLabel) {
-        memoryLabel.textContent = t('dashboard.button.memory', 'Memória');
-      }
-    });
-  </script>
+
 </body>
 
 </html>
