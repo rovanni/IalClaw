@@ -287,6 +287,8 @@ function tailLog(follow) {
 }
 
 function start() {
+    console.clear();
+    
     const existingPid = readPID();
     if (isRunning(existingPid)) {
         console.log(`${YELLOW}!${RESET} ${t('cli.start.already_running', { pid: existingPid })}`);
