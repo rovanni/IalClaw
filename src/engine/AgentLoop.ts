@@ -346,12 +346,12 @@ export class AgentLoop {
         // SHORT-CIRCUIT para content_generation (independente de failSafe)
         if (this.currentTaskType === 'content_generation') {
             // Verificar se tem contexto suficiente
-            if (this.needsUserContext && this.contextQuestion) {
+            if (this.needsUserContext) {
                 this.logger.info('short_circuit_needs_context', '[SHORT-CIRCUIT] content_generation precisa de contexto', {
                     has_context: false
                 });
                 return {
-                    answer: this.contextQuestion,
+                    answer: t('content.ask_for_source'),
                     newMessages: []
                 };
             }
@@ -2094,7 +2094,7 @@ FORMATO DE SAÍDA:
                     response_length: response.final_answer?.length || 0
                 });
                 return {
-                    answer: 'Não consegui gerar o conteúdo corretamente. Pode reformular sua solicitação ou fornecer mais detalhes?',
+                    answer: t('content.generation_failed'),
                     newMessages: messages
                 };
             }
@@ -2130,7 +2130,7 @@ FORMATO DE SAÍDA:
                 error_message: error.message
             });
             return {
-                answer: `Erro ao gerar conteúdo: ${error.message}. Tente novamente com mais detalhes.`,
+                answer: t('content.generation_error', { error: error.message }),
                 newMessages: messages
             };
         }

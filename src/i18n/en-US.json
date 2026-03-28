@@ -268,5 +268,8 @@
   "cli.help.lang_set": "  ialclaw lang pt-BR            Persists language in config.json",
   "cli.help.lang_flag": "  --lang=pt-BR                  Overrides language for the current command only",
   "script.bootstrap.identities.ready": "[Bootstrap] Gateway identities ready. Inserted: {inserted}, updated: {updated}, total agents: {total}.",
-  "script.bootstrap.identities.failed": "[Bootstrap] Failed to seed gateway identities:"
+  "script.bootstrap.identities.failed": "[Bootstrap] Failed to seed gateway identities:",
+  "content.ask_for_source": "What content do you want to use?\n\nYou can:\n• Paste the text here\n• Provide a file path\n• Describe the content you want",
+  "content.generation_failed": "I couldn't generate the content correctly. Can you rephrase your request or provide more details?",
+  "content.generation_error": "Error generating content: {error}. Please try again with more details."
 }

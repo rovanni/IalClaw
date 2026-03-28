@@ -268,5 +268,8 @@
   "cli.help.lang_set": "  ialclaw lang pt-BR            Salva idioma no config.json",
   "cli.help.lang_flag": "  --lang=pt-BR                  Sobrescreve idioma apenas no comando atual",
   "script.bootstrap.identities.ready": "[Bootstrap] Identidades do gateway prontas. Inseridas: {inserted}, atualizadas: {updated}, total de agentes: {total}.",
-  "script.bootstrap.identities.failed": "[Bootstrap] Falha ao semear identidades do gateway:"
+  "script.bootstrap.identities.failed": "[Bootstrap] Falha ao semear identidades do gateway:",
+  "content.ask_for_source": "Qual conteúdo você deseja usar?\n\nVocê pode:\n• Colar o texto aqui\n• Informar o caminho de um arquivo\n• Descrever o conteúdo que deseja",
+  "content.generation_failed": "Não consegui gerar o conteúdo corretamente. Pode reformular sua solicitação ou fornecer mais detalhes?",
+  "content.generation_error": "Erro ao gerar conteúdo: {error}. Tente novamente com mais detalhes."
 }
