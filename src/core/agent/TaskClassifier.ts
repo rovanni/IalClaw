@@ -70,37 +70,51 @@ const TASK_RULES: TaskRule[] = [
     {
         type: 'system_operation',
         patterns: [
-            /\b(executar|rodar|instalar|run|install|execute)\b/i,
+            /\b(executar|rodar|run|execute)\b/i,
             /\b(iniciar|start|stop|parar)\b/i,
             /\brun\b.*\b(npm|yarn|pnpm|python|node)\b/i,
-            /\binstall\b.*\b(npm|yarn|pnpm|pip)\b/i,
-            /\bapt\b/i,
-            /\b(sudo|chmod|chown)\b/i,
-            /\b(instale|instalando|instalado)\b/i,
-            /\b(pip install|npm install|yarn add)\b/i,
-            /\b(apt install|apt-get install)\b/i,
-            /\bconfigure\b/i,
-            /\bsetup\b/i
+            /\b(instale|instalar)\s+(o|a)?\s*\w+/i,  // "instale o pandoc"
+            /\b(apt|apt-get)\s+(install|update|upgrade)/i,  // "apt install"
+            /\b(pip|npm|yarn)\s+(install|add)/i,  // "pip install"
+            /\b(sudo)\b/i,
+            /\b(chmod|chown)\b/i,
+            /\b(configure|setup)\b/i,
+            /\bsenha\b/i  // "senha" indica comando sudo
         ],
-        confidence: 0.85
+        confidence: 0.90
     },
     {
         type: 'skill_installation',
         patterns: [
-            /\b(instalar|instale|instalacao|instalação|instalar uma|instalar uma skill)\b/i,
-            /\b(install\s+skill|skill\s+install|instalar skill)\b/i,
-            /\b(adicione|adicionar)\s+(?:uma\s+)?skill\b/i,
-            /\b(buscar|procurar)\s+(?:uma\s+)?skill\b/i,
+            /\b(instalar|instale)\s+(uma\s+)?skill\b/i,  // "instalar skill"
+            /\b(install\s+skill|skill\s+install)\b/i,
+            /\b(adicione|adicionar)\s+(uma\s+)?skill\b/i,
+            /\b(buscar|procurar)\s+(uma\s+)?skill\b/i,
             /\bfind\s+skill\b/i,
-            /\b(encontre|busque)\s+(?:uma\s+)?skill\b/i
+            /\b(encontre|busque)\s+(uma\s+)?skill\b/i,
+            /\bskill\b.*\b(instalar|instale)\b/i  // "skill para instalar"
         ],
-        confidence: 0.9
+        confidence: 0.95
     }
 ];
 
 export function classifyTask(text: string): TaskClassification {
     const normalized = text.toLowerCase().trim();
     let bestMatch: TaskClassification = { type: 'unknown', confidence: 0 };
+
+    // VERIFICAÇÕES ESPECIAIS ANTES DOS PADRÕES
+    
+    // 1. Se menciona "senha" ou "sudo" ou pacotes do sistema, é system_operation
+    if (/\b(senha|sudo)\b/.test(normalized) || 
+        /\b(apt|apt-get|pip|npm|yarn)\s+(install|add|update)/.test(normalized) ||
+        /\b(instale|instalar)\s+(o|a|os|as)\s+\w+/.test(normalized)) {  // "instale o pandoc"
+        return { type: 'system_operation', confidence: 0.95 };
+    }
+    
+    // 2. Se menciona "skill" explicitamente, é skill_installation
+    if (/\bskill\b/.test(normalized) && /\b(instalar|instale|buscar|procurar|encontre)\b/.test(normalized)) {
+        return { type: 'skill_installation', confidence: 0.95 };
+    }
 
     // Verificar se menciona caminho de arquivo específico
     const hasFilePath = /\/[\w\-\.\/]+\.(md|html|pptx|pdf|txt|json)/i.test(text) ||

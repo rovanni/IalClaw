@@ -614,9 +614,17 @@ export class AgentController {
             throw new Error(t('error.agent.invalid_loop_provider'));
         }
 
-        // Forçar tipo de task para skill_installation quando for instalação
-        const isInstallIntent = /(?:instala|instalar|instale)\b/i.test(originalQuery);
-        if (isInstallIntent) {
+        // Forçar tipo de task para skill_installation APENAS se for instalação de skill
+        // NÃO forçar se for instalação de pacote do sistema (apt, pip, npm, etc.)
+        const isSkillInstallIntent = /(?:instala|instalar|instale)\s+(?:uma\s+)?skill\b/i.test(originalQuery) ||
+                                      /skill\b.*\b(?:instala|instalar|instale)\b/i.test(originalQuery) ||
+                                      /(?:buscar|procurar|encontre)\s+(?:uma\s+)?skill\b/i.test(originalQuery);
+        
+        // NÃO forçar se mencionar pacotes do sistema
+        const isSystemPackage = /(?:apt|apt-get|pip|npm|yarn|pacote|package)\b/i.test(originalQuery) ||
+                                 /(?:instala|instalar|instale)\s+(?:o|a|os|as)\s+\w+\b/i.test(originalQuery) && !/\bskill\b/i.test(originalQuery);
+        
+        if (isSkillInstallIntent && !isSystemPackage) {
             (this.loop as any).forceTaskType('skill_installation', 1.0);
             logger.info('skill_installation_forced', '[FORCE] Tipo de task forçado para skill_installation');
         }
