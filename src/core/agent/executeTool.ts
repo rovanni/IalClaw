@@ -8,9 +8,80 @@ function extractIssuesFromMessage(msg: string) {
     return [{ path: '', message: msg, expected: null, received: null }];
 }
 
+function sanitizeInput(input: any, toolName: string): any {
+    if (!input || typeof input !== 'object') {
+        return {};
+    }
+    
+    const sanitized: any = { ...input };
+    
+    if (sanitized.path && typeof sanitized.path === 'string') {
+        sanitized.path = sanitized.path.replace(/[<>:"|?*]/g, '_');
+        
+        if (sanitized.path.includes('..')) {
+            sanitized.path = sanitized.path.replace(/\.\./g, '_');
+        }
+    }
+    
+    if (sanitized.content && typeof sanitized.content === 'string') {
+        const maxContentSize = 500000;
+        if (sanitized.content.length > maxContentSize) {
+            sanitized.content = sanitized.content.slice(0, maxContentSize) + '\n[... conteúdo truncado]';
+        }
+    }
+    
+    return sanitized;
+}
+
+function validatePermissions(toolName: string, input: any): void {
+    const dangerousTools = ['system.exec', 'run_command', 'shell_exec'];
+    
+    if (dangerousTools.includes(toolName)) {
+        if (input?.command) {
+            const cmdLower = input.command.toLowerCase();
+            const blocked = ['rm -rf', 'del /', 'format', 'mkfs', 'dd if='];
+            for (const block of blocked) {
+                if (cmdLower.includes(block)) {
+                    throw new Error(`Permissão negada: comando perigoso detectado`);
+                }
+            }
+        }
+    }
+}
+
+function restrictPaths(toolName: string, input: any): any {
+    if (!input?.path) {
+        return input;
+    }
+    
+    const restrictedPatterns = [
+        /^\/etc\/passwd/i,
+        /^\/etc\/shadow/i,
+        /^[A-Z]:\\windows\\system32/i,
+        /^[A-Z]:\\boot/i,
+    ];
+    
+    for (const pattern of restrictedPatterns) {
+        if (pattern.test(input.path)) {
+            throw new Error(`Acesso negado: caminho restrito`);
+        }
+    }
+    
+    return input;
+}
+
 export async function executeToolCall(toolName: string, input: any) {
-    const tool = toolRegistry.get(toolName);
     const ctx = getContext();
+    
+    let safeInput = input && typeof input === 'object' ? input : {};
+    
+    safeInput = sanitizeInput(safeInput, toolName);
+    
+    restrictPaths(toolName, safeInput);
+    
+    validatePermissions(toolName, safeInput);
+    
+    const tool = toolRegistry.get(toolName);
 
     if (!tool) {
         emitDebug('agent:error', { trace_id: ctx.trace_id, error: `Tool ${toolName} nao encontrada` });
@@ -18,7 +89,6 @@ export async function executeToolCall(toolName: string, input: any) {
     }
 
     const session = SessionManager.getCurrentSession();
-    const safeInput = input && typeof input === 'object' ? input : {};
 
     if (toolName === 'workspace_save_artifact' && !safeInput.project_id && session?.current_project_id) {
         safeInput.project_id = session.current_project_id;

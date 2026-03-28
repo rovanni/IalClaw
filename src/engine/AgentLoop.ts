@@ -124,6 +124,16 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
     'verificar skill': ['read_audit_log'],
 };
 
+export type AgentMode = 'THINKING' | 'EXECUTION';
+
+export const TASK_TOOL_MAP: Record<string, string[]> = {
+    'file_conversion': ['list_directory', 'read_local_file', 'file.convert'],
+    'file_search': ['list_directory', 'search_file', 'read_local_file'],
+    'content_generation': ['workspace_create_project', 'workspace_save_artifact'],
+    'system_operation': ['system.exec', 'run_command'],
+    'web_search': ['web_search', 'fetch_url'],
+};
+
 export class AgentLoop {
     private llm: LLMProvider;
     private registry: SkillRegistry;
@@ -139,6 +149,7 @@ export class AgentLoop {
     private readonly MAX_MEMORY_ENTRIES = 50;
     private originalInput: string = '';
     private currentTaskType: TaskType | null = null;
+    private currentTaskConfidence: number = 0;
     private stepValidations: number[] = [];
     private reclassificationAttempts: number = 0;
     private readonly MAX_RECLASSIFY_ATTEMPTS = 1;
@@ -147,6 +158,11 @@ export class AgentLoop {
     private readonly GLOBAL_CONFIDENCE_THRESHOLD = 0.8;
     private readonly MAX_STEPS_BEFORE_OVEREXECUTION_CHECK = 4;
     private lastStepResult: string = '';
+    private mode: AgentMode = 'THINKING';
+    private disableFollowUpQuestions: boolean = false;
+    private actionTaken: boolean = false;
+    
+    private readonly MODE_TRANSITION_CONFIDENCE = 0.75;
     
     // Delta detection for marginal improvement
     private previousConfidence: number | null = null;
@@ -161,6 +177,67 @@ export class AgentLoop {
 
     public getProvider(): LLMProvider {
         return this.llm;
+    }
+
+    private evaluateModeTransition(): void {
+        if (this.mode === 'EXECUTION') return;
+        
+        const confidence = this.currentTaskConfidence;
+        const classified = this.currentTaskType !== null && this.currentTaskType !== 'unknown';
+        
+        if (confidence >= this.MODE_TRANSITION_CONFIDENCE && classified) {
+            this.mode = 'EXECUTION';
+            this.disableFollowUpQuestions = true;
+            this.logger.info('mode_transition', `[MODE] Transicionando para EXECUTION: confidence=${confidence.toFixed(2)}, type=${this.currentTaskType}`);
+        }
+    }
+
+    private ensureMinimalPlan(): void {
+        if (this.executionContext.currentPlan && this.executionContext.currentPlan.steps.length > 0) return;
+        
+        if (!this.currentTaskType || this.currentTaskType === 'unknown') {
+            this.executionContext.currentPlan = {
+                goal: this.originalInput,
+                steps: [{ id: 1, description: 'processar entrada do usuário', completed: false, failed: false }],
+                currentStepIndex: 0,
+                createdAt: Date.now(),
+                triedPaths: [],
+                failedTools: new Map()
+            };
+            return;
+        }
+        
+        const forcedPlan = getForcedPlanForTaskType(this.currentTaskType);
+        if (forcedPlan) {
+            const steps = forcedPlan.map((desc, idx) => ({
+                id: idx + 1,
+                description: desc,
+                completed: false,
+                failed: false
+            }));
+            
+            this.executionContext.currentPlan = {
+                goal: this.originalInput,
+                steps,
+                currentStepIndex: 0,
+                createdAt: Date.now(),
+                triedPaths: [],
+                failedTools: new Map()
+            };
+            
+            this.logger.info('minimal_plan_created', `[PLAN] Plano mínimo criado para: ${this.currentTaskType}`);
+        }
+    }
+
+    private executeNextStep(plan: ExecutionPlan): void {
+        if (plan.currentStepIndex >= plan.steps.length) return;
+        
+        const step = plan.steps[plan.currentStepIndex];
+        if (!step.tool) {
+            step.tool = this.mapStepToTool(step.description);
+        }
+        
+        this.logger.info('forced_step_execution', `[EXECUTE] Forçando execução do step: ${step.description} (tool: ${step.tool || 'none'})`);
     }
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
@@ -205,6 +282,18 @@ export class AgentLoop {
         
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
         this.setOriginalInput(userInput);
+        
+        this.evaluateModeTransition();
+        
+        this.ensureMinimalPlan();
+        
+        if (this.currentTaskType && ['file_conversion', 'file_search', 'content_generation'].includes(this.currentTaskType)) {
+            const workspaceHint: MessagePayload = {
+                role: 'system',
+                content: `[WORKSPACE] Tarefa de arquivo detectada (${this.currentTaskType}). Prepare o workspace automaticamente se necessário.`
+            };
+            messages.push(workspaceHint);
+        }
         
         messages = this.addPlanningGuidanceToMessages(messages, policy);
         
@@ -295,7 +384,6 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
             }
 
             if (response.tool_call) {
-                // Detectar loop de ferramenta repetida
                 if (lastToolName === response.tool_call.name) {
                     toolRepeatCount++;
                     if (toolRepeatCount >= 2) {
@@ -303,12 +391,24 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             tool_name: response.tool_call.name,
                             repeat_count: toolRepeatCount
                         });
+                        
+                        const fallbackTool = this.executionContext.currentPlan?.steps[this.executionContext.currentPlan.currentStepIndex - 1]?.tool 
+                            ? this.getFallbackToolForStep(this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex - 1])
+                            : undefined;
+                        if (fallbackTool && this.executionContext.currentPlan) {
+                            const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex - 1];
+                            if (currentStep) {
+                                currentStep.tool = fallbackTool;
+                                this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${fallbackTool}`);
+                            }
+                        }
+                        
                         const loopMsg: MessagePayload = {
                             role: 'system',
-                            content: t('loop.system.repeated_tool', { tool: response.tool_call.name })
+                            content: `MUDANÇA FORÇADA:_tool=${response.tool_call.name}_repetida_2x._Tente_ferramenta_diferente_ou_mude_estratégia._Plano_atual=${this.executionContext.currentPlan?.goal}`
                         };
                         messages.push(loopMsg);
-                        continue;
+                        toolRepeatCount = 0;
                     }
                 } else {
                     lastToolName = response.tool_call.name;
@@ -364,13 +464,14 @@ toolCallsCount++;
                         this.logValidation(currentStep, validation);
                         
                         this.stepValidations.push(validation.confidence);
-                        
-                        if (this.shouldReclassify(consecutiveToolFailures)) {
-                            messages = this.reclassifyAndAdjustPlan(messages);
-                        }
+                        this.actionTaken = true;
                         
                         if (!validation.success) {
                             this.markCurrentStepFailed(validation.reason);
+                            
+                            if (this.shouldReclassify(consecutiveToolFailures)) {
+                                messages = this.reclassifyAndAdjustPlan(messages);
+                            }
                             
                             if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
                                 const llmCheck: MessagePayload = {
@@ -400,18 +501,34 @@ toolCallsCount++;
 
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
                     const lastSuccessful = !result.toLowerCase().includes('erro') && !result.toLowerCase().includes('error') && !result.toLowerCase().includes('failed');
-                    const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
+                    const globalConf = this.getGlobalConfidence(this.stepValidations);
                     
-                    if (stopDecision.shouldStop) {
-                        this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${this.getGlobalConfidence(this.stepValidations).toFixed(2)}`);
-                        break;
+                    if (this.mode === 'EXECUTION' && !lastSuccessful && globalConf < this.GLOBAL_CONFIDENCE_THRESHOLD) {
+                        const fallbackHint: MessagePayload = {
+                            role: 'system',
+                            content: `[CONFIANÇA BAIXA] Tentativa não bem-sucedida. Tente FERRAMENTA ALTERNATIVA ou mude de estratégia. Não pare.`
+                        };
+                        messages.push(fallbackHint);
+                        this.logger.info('low_confidence_action', `[ACTION] Confiança baixa=${globalConf.toFixed(2)}. Forçando tentativa alternativa.`);
+                    } else if (lastSuccessful) {
+                        const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
+                        if (stopDecision.shouldStop) {
+                            this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
+                            break;
+                        }
                     }
 
-                    // Delta detection for marginal improvement
                     const deltaStopDecision = this.checkDeltaAndStop(stepCount);
-                    if (deltaStopDecision.shouldStop) {
-                        this.logger.info('execution_stopped_delta', `[STOP] ${deltaStopDecision.reason} global_confidence=${this.getGlobalConfidence(this.stepValidations).toFixed(2)}`);
+                    if (deltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
+                        this.logger.info('execution_stopped_delta', `[STOP] ${deltaStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                         break;
+                    } else if (deltaStopDecision.shouldStop && this.mode === 'EXECUTION') {
+                        const forceMsg: MessagePayload = {
+                            role: 'system',
+                            content: `[MODO EXECUTION] Melhoria marginal detectada. Continue executando com a melhor ferramenta disponível.`
+                        };
+                        messages.push(forceMsg);
+                        this.logger.info('delta_forced_continue', `[EXECUTION] Forçando continuidade após delta stop.`);
                     }
 
                     if (await stopIfRequested()) {
@@ -858,7 +975,13 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         this.originalInput = input;
         const classification = classifyTask(input);
         this.currentTaskType = classification.type;
-        if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+        this.currentTaskConfidence = classification.confidence;
+        
+        if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown') {
+            this.mode = 'EXECUTION';
+            this.disableFollowUpQuestions = true;
+            this.logger.info('execution_mode_ready', `[MODE] Modo EXECUTION ativado: type=${this.currentTaskType}, confidence=${classification.confidence.toFixed(2)}`);
+        } else if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
             this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
         }
     }
