@@ -168,6 +168,16 @@ export class TaskClassifier {
         // CAMADA 1: Heurística Rápida (resolve ~60%)
         // ═══════════════════════════════════════════════════════════════
         const heuristicResult = this.heuristicClassify(normalized);
+        
+        // CORREÇÃO 1: Tipos de alto risco NUNCA vão para LLM
+        if (heuristicResult && this.isHighRiskType(heuristicResult.type) && heuristicResult.confidence >= 0.70) {
+            this.logger.info('classification_heuristic', 'Classificação por heurística (alto risco)', {
+                type: heuristicResult.type,
+                confidence: heuristicResult.confidence
+            });
+            return { ...heuristicResult, source: 'heuristic' };
+        }
+        
         if (heuristicResult && heuristicResult.confidence >= 0.85) {
             this.logger.info('classification_heuristic', 'Classificação por heurística', {
                 type: heuristicResult.type,
@@ -179,9 +189,11 @@ export class TaskClassifier {
         // ═══════════════════════════════════════════════════════════════
         // CAMADA 2: LLM Classificador (quando heurística é incerta)
         // ═══════════════════════════════════════════════════════════════
-        if (this.useLlmFallback && this.llm && heuristicResult && heuristicResult.confidence < 0.85) {
+        if (this.useLlmFallback && this.llm && heuristicResult && heuristicResult.confidence < 0.70) {
             const llmResult = await this.llmClassify(input);
-            if (llmResult && llmResult.confidence >= 0.70) {
+            
+            // CORREÇÃO 2: Rejeitar generic_task e unknown do LLM
+            if (llmResult && this.isValidTaskType(llmResult.type) && llmResult.confidence >= 0.70) {
                 this.logger.info('classification_llm', 'Classificação por LLM', {
                     type: llmResult.type,
                     confidence: llmResult.confidence
@@ -199,6 +211,14 @@ export class TaskClassifier {
             confidence: fallbackResult.confidence
         });
         return { ...fallbackResult, source: 'fallback' };
+    }
+
+    /**
+     * Tipos de alto risco que NUNCA devem ser sobrescritos pelo LLM.
+     * system_operation, skill_installation, file_conversion são críticos.
+     */
+    private isHighRiskType(type: TaskType): boolean {
+        return ['system_operation', 'skill_installation', 'file_conversion'].includes(type);
     }
 
     /**
@@ -375,10 +395,16 @@ Responda APENAS JSON válido:
     }
 
     private isValidTaskType(type: string): boolean {
+        // CORREÇÃO 2: Rejeitar generic_task e unknown
+        const invalidTypes = ['generic_task', 'unknown'];
+        if (invalidTypes.includes(type)) {
+            return false;
+        }
+
         const validTypes: TaskType[] = [
             'file_conversion', 'file_search', 'content_generation',
             'system_operation', 'skill_installation', 'information_request',
-            'code_generation', 'data_analysis', 'unknown', 'generic_task'
+            'code_generation', 'data_analysis'
         ];
         return validTypes.includes(type as TaskType);
     }
@@ -402,12 +428,18 @@ Responda APENAS JSON válido:
     }
 
     private smartFallback(normalized: string): TaskClassification {
-        // Se parece comando de terminal
-        if (/\b(npx|npm|yarn|pip|apt|sudo|bash|sh)\b/.test(normalized)) {
+        // CORREÇÃO 3: SEMPRE verificar comandos de terminal PRIMEIRO
+        // "como rodar npm install" contém "como" mas é system_operation, não pergunta
+        if (this.isTerminalCommand(normalized)) {
             return { type: 'system_operation', confidence: 0.75, source: 'fallback' };
         }
 
-        // Se parece pergunta
+        // Se menciona instalar skill
+        if (this.isSkillInstallation(normalized)) {
+            return { type: 'skill_installation', confidence: 0.75, source: 'fallback' };
+        }
+
+        // Depois verificar se parece pergunta
         if (/\b(o que|qual|como|quando|por que|porque|onde)\b/.test(normalized) || /\?\s*$/.test(normalized)) {
             return { type: 'information_request', confidence: 0.70, source: 'fallback' };
         }
