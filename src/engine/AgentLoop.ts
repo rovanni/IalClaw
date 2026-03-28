@@ -147,6 +147,12 @@ export class AgentLoop {
     private readonly GLOBAL_CONFIDENCE_THRESHOLD = 0.8;
     private readonly MAX_STEPS_BEFORE_OVEREXECUTION_CHECK = 4;
     private lastStepResult: string = '';
+    
+    // Delta detection for marginal improvement
+    private previousConfidence: number | null = null;
+    private lowImprovementCount = 0;
+    private readonly MIN_DELTA_THRESHOLD = 0.05;
+    private readonly MAX_LOW_IMPROVEMENTS = 2;
 
     constructor(llm: LLMProvider, registry: SkillRegistry) {
         this.llm = llm;
@@ -398,6 +404,13 @@ toolCallsCount++;
                     
                     if (stopDecision.shouldStop) {
                         this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${this.getGlobalConfidence(this.stepValidations).toFixed(2)}`);
+                        break;
+                    }
+
+                    // Delta detection for marginal improvement
+                    const deltaStopDecision = this.checkDeltaAndStop(stepCount);
+                    if (deltaStopDecision.shouldStop) {
+                        this.logger.info('execution_stopped_delta', `[STOP] ${deltaStopDecision.reason} global_confidence=${this.getGlobalConfidence(this.stepValidations).toFixed(2)}`);
                         break;
                     }
 
@@ -831,6 +844,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         }
 
         this.stepValidations = [];
+        this.resetDeltaDetection();
         
         const hint: MessagePayload = {
             role: 'system',
@@ -886,6 +900,51 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         }
 
         return { shouldStop: false, reason: 'execution_continues' };
+    }
+
+    private checkDeltaAndStop(stepIndex: number): { shouldStop: boolean; reason: string } {
+        if (stepIndex < 2) {
+            return { shouldStop: false, reason: 'insufficient_steps_for_delta' };
+        }
+
+        if (this.stepValidations.length < 2) {
+            return { shouldStop: false, reason: 'insufficient_validations_for_delta' };
+        }
+
+        const currentConfidence = this.stepValidations[this.stepValidations.length - 1];
+
+        if (typeof currentConfidence !== 'number') {
+            return { shouldStop: false, reason: 'invalid_confidence' };
+        }
+
+        if (this.previousConfidence !== null) {
+            const delta = currentConfidence - this.previousConfidence;
+
+            console.log(`[DELTA] current=${currentConfidence.toFixed(2)} prev=${this.previousConfidence.toFixed(2)} delta=${delta.toFixed(3)}`);
+
+            if (delta < this.MIN_DELTA_THRESHOLD) {
+                this.lowImprovementCount++;
+            } else {
+                this.lowImprovementCount = 0;
+            }
+        }
+
+        this.previousConfidence = currentConfidence;
+
+        if (this.lowImprovementCount >= this.MAX_LOW_IMPROVEMENTS) {
+            console.log(`[STOP] low improvement detected (${this.lowImprovementCount} steps)`);
+            return { 
+                shouldStop: true, 
+                reason: `low_improvement_delta_count=${this.lowImprovementCount}` 
+            };
+        }
+
+        return { shouldStop: false, reason: 'delta_check_continues' };
+    }
+
+    private resetDeltaDetection() {
+        this.previousConfidence = null;
+        this.lowImprovementCount = 0;
     }
 
     private shouldUseFallbackStrategy(): boolean {
