@@ -1,11 +1,13 @@
 // ── Task Classifier Híbrido ─────────────────────────────────────────────────
-// Classifica o tipo de tarefa em 3 camadas:
+// Classifica o tipo de tarefa em 4 camadas:
 // 1. Heurística rápida (barata)
-// 2. LLM classificador (quando necessário)
-// 3. Fallback inteligente (elimina generic_task)
+// 2. Memória adaptativa (aprendizado)
+// 3. LLM classificador (quando necessário)
+// 4. Fallback inteligente (elimina generic_task)
 
 import { LLMProvider, ProviderFactory } from '../../engine/ProviderFactory';
 import { createLogger } from '../../shared/AppLogger';
+import { getClassificationMemory } from '../../memory/ClassificationMemory';
 
 export type TaskType = 
     | 'file_conversion' 
@@ -19,7 +21,7 @@ export type TaskType =
     | 'unknown'        // Compatibilidade com código existente
     | 'generic_task';  // Compatibilidade - será convertido no fallback
 
-export type ClassificationSource = 'heuristic' | 'llm' | 'fallback';
+export type ClassificationSource = 'heuristic' | 'memory' | 'llm' | 'fallback';
 
 export interface TaskClassification {
     type: TaskType;
@@ -141,6 +143,7 @@ const HEURISTIC_RULES: HeuristicRule[] = [
 export class TaskClassifier {
     private llm: LLMProvider | null = null;
     private logger = createLogger('TaskClassifier');
+    private memory = getClassificationMemory();
     private useLlmFallback: boolean;
 
     constructor(options?: { useLlmFallback?: boolean }) {
@@ -156,10 +159,11 @@ export class TaskClassifier {
     }
 
     /**
-     * Classifica o tipo de tarefa em 3 camadas:
+     * Classifica o tipo de tarefa em 4 camadas:
      * 1. Heurística rápida (barata)
-     * 2. LLM classificador (quando necessário)
-     * 3. Fallback inteligente (elimina generic_task)
+     * 2. Memória adaptativa (aprendizado)
+     * 3. LLM classificador (quando necessário)
+     * 4. Fallback inteligente (elimina generic_task)
      */
     async classify(input: string): Promise<TaskClassification> {
         const normalized = input.toLowerCase().trim();
@@ -171,6 +175,8 @@ export class TaskClassifier {
         
         // CORREÇÃO 1: Tipos de alto risco NUNCA vão para LLM
         if (heuristicResult && this.isHighRiskType(heuristicResult.type) && heuristicResult.confidence >= 0.70) {
+            // Aprender na memória
+            this.memory.store(input, heuristicResult.type, heuristicResult.confidence);
             this.logger.info('classification_heuristic', 'Classificação por heurística (alto risco)', {
                 type: heuristicResult.type,
                 confidence: heuristicResult.confidence
@@ -179,6 +185,8 @@ export class TaskClassifier {
         }
         
         if (heuristicResult && heuristicResult.confidence >= 0.85) {
+            // Aprender na memória
+            this.memory.store(input, heuristicResult.type, heuristicResult.confidence);
             this.logger.info('classification_heuristic', 'Classificação por heurística', {
                 type: heuristicResult.type,
                 confidence: heuristicResult.confidence
@@ -187,13 +195,31 @@ export class TaskClassifier {
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // CAMADA 2: LLM Classificador (quando heurística é incerta)
+        // CAMADA 2: Memória Adaptativa (aprendizado instantâneo)
+        // ═══════════════════════════════════════════════════════════════
+        const memoryResult = this.memory.find(input);
+        if (memoryResult && memoryResult.confidence >= 0.70) {
+            this.logger.info('classification_memory', 'Classificação via memória adaptativa', {
+                type: memoryResult.type,
+                confidence: memoryResult.confidence
+            });
+            return {
+                type: memoryResult.type as TaskType,
+                confidence: memoryResult.confidence,
+                source: 'memory'
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // CAMADA 3: LLM Classificador (quando heurística é incerta)
         // ═══════════════════════════════════════════════════════════════
         if (this.useLlmFallback && this.llm && heuristicResult && heuristicResult.confidence < 0.70) {
             const llmResult = await this.llmClassify(input);
             
             // CORREÇÃO 2: Rejeitar generic_task e unknown do LLM
             if (llmResult && this.isValidTaskType(llmResult.type) && llmResult.confidence >= 0.70) {
+                // Aprender na memória
+                this.memory.store(input, llmResult.type, llmResult.confidence);
                 this.logger.info('classification_llm', 'Classificação por LLM', {
                     type: llmResult.type,
                     confidence: llmResult.confidence
@@ -203,9 +229,10 @@ export class TaskClassifier {
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // CAMADA 3: Fallback Inteligente (elimina generic_task)
+        // CAMADA 4: Fallback Inteligente (elimina generic_task)
         // ═══════════════════════════════════════════════════════════════
         const fallbackResult = this.fallbackClassify(normalized, heuristicResult);
+        // NÃO aprender fallback - só aprende classificações com alta confiança
         this.logger.info('classification_fallback', 'Classificação por fallback', {
             type: fallbackResult.type,
             confidence: fallbackResult.confidence
