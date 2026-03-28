@@ -1779,13 +1779,44 @@ Considere:
         if (this.decisionMemory && this.currentTaskType) {
             try {
                 const normalizedStep = this.normalizeStep(step.description);
-                await this.decisionMemory.store({
-                    taskType: this.currentTaskType,
-                    step: normalizedStep,
-                    tool,
-                    success,
-                    timestamp: Date.now()
-                });
+                
+                // ═════════════════════════════════════════════════════════════
+                // PROTEÇÃO DA MEMÓRIA: NÃO aprender steps cognitivos com tools
+                // ═══════════════════════════════════════════════════════════════
+                const cognitiveSteps = [
+                    'analisar', 'analis', 'análise', 'analysis',
+                    'formular', 'formul', 'formulation',
+                    'pensar', 'think', 'thinking',
+                    'avaliar', 'avali', 'evaluate',
+                    'decidir', 'decid', 'decide',
+                    'processar entrada', 'process input',
+                    'entender', 'understand', 'compreender',
+                    'verificar', 'verif', 'check',
+                    'identificar', 'identif', 'identify'
+                ];
+                
+                const isCognitiveStep = cognitiveSteps.some(cognitive => 
+                    normalizedStep.toLowerCase().includes(cognitive)
+                );
+                
+                // NÃO aprender se:
+                // 1. Step é cognitivo E uma tool foi usada
+                // 2. Isso polui a memória com decisões ruins
+                if (isCognitiveStep && tool) {
+                    this.logger.warn('memory_protection', 'NÃO aprendendo step cognitivo com tool', {
+                        step: normalizedStep,
+                        tool,
+                        reason: 'Step cognitivo não deve usar tool - poluiria memória'
+                    });
+                } else {
+                    await this.decisionMemory.store({
+                        taskType: this.currentTaskType,
+                        step: normalizedStep,
+                        tool,
+                        success,
+                        timestamp: Date.now()
+                    });
+                }
             } catch (error) {
                 this.logger.warn('decision_memory_store_failed', `Failed to store decision: ${error}`);
             }
