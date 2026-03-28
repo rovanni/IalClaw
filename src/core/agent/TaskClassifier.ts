@@ -27,7 +27,40 @@ export interface TaskClassification {
     type: TaskType;
     confidence: number;
     source: ClassificationSource;
+    needsContext?: boolean;       // Precisa de mais contexto
+    contextQuestion?: string;     // Pergunta para o usuário
+    isContinuation?: boolean;     // É continuação de tarefa anterior
+    lastTaskType?: TaskType;      // Tipo da última tarefa (se continuação)
 }
+
+// ── Detecção de Continuidade ─────────────────────────────────────────────
+
+const CONTINUATION_INDICATORS = [
+    /^e\s+/i,                    // "e para...", "e usar..."
+    /^e\s+para/i,                // "e para utilizar..."
+    /^usar\s+/i,                 // "usar o arquivo..."
+    /^utilizar\s+/i,             // "utilizar o conteúdo..."
+    /^com\s+esse/i,              // "com esse arquivo..."
+    /^agora\s+com/i,             // "agora com..."
+    /^usando\s+/i,               // "usando o arquivo..."
+    /^aplicar\s+/i,              // "aplicar ao..."
+];
+
+// ── Detecção de Intenção Incompleta ───────────────────────────────────────
+
+const CONTENT_GENERATION_NEEDS_SOURCE: TaskType[] = [
+    'content_generation',
+    'file_conversion'
+];
+
+const CONTENT_SOURCE_INDICATORS = [
+    /\/[\w\-\.\/]+\.(md|html|txt|json|pdf|docx|pptx)/i,  // Caminho de arquivo
+    /\bconte[úu]do\b/i,           // "usar o conteúdo"
+    /\btexto\b/i,                  // "usar o texto"
+    /\barquivo\b/i,                // "usar o arquivo"
+    /\bcole\b/i,                   // "cole o texto aqui"
+    /\baqui\b/i,                   // "texto aqui"
+];
 
 // ── Camada 1: Heurística Rápida ─────────────────────────────────────────────
 
@@ -563,6 +596,88 @@ Responda APENAS JSON válido:
         // Default seguro - information_request é sempre útil
         return { type: 'information_request', confidence: 0.50, source: 'fallback' };
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DETECÇÃO DE CONTINUIDADE E INTENÇÃO INCOMPLETA
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Detecta se o input é continuação de uma tarefa anterior.
+     * Exemplo: "e para utilizar o arquivo X" é continuação de "criar slides"
+     */
+    isContinuation(input: string): boolean {
+        const normalized = input.toLowerCase().trim();
+        return CONTINUATION_INDICATORS.some(pattern => pattern.test(normalized));
+    }
+
+    /**
+     * Detecta se o input tem fonte de conteúdo explícita.
+     * Exemplo: "usar o arquivo /home/..." ou "conteúdo: ..."
+     */
+    hasContentSource(input: string): boolean {
+        const normalized = input.toLowerCase();
+        return CONTENT_SOURCE_INDICATORS.some(pattern => pattern.test(normalized));
+    }
+
+    /**
+     * Verifica se o tipo de tarefa precisa de fonte de conteúdo.
+     */
+    requiresContentSource(type: TaskType): boolean {
+        return CONTENT_GENERATION_NEEDS_SOURCE.includes(type);
+    }
+
+    /**
+     * Classifica com detecção de continuidade e intenção incompleta.
+     * Retorna classificação enriquecida com needsContext e isContinuation.
+     */
+    async classifyWithContext(
+        input: string, 
+        lastTaskType?: TaskType
+    ): Promise<TaskClassification> {
+        const normalized = input.toLowerCase().trim();
+        const baseClassification = await this.classify(input);
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // 1. DETECTAR CONTINUIDADE
+        // ═══════════════════════════════════════════════════════════════════
+        const isContinuation = this.isContinuation(input);
+        
+        if (isContinuation && lastTaskType) {
+            // Se é continuação e última tarefa era content_generation,
+            // MANTER o tipo (não virar file_conversion)
+            return {
+                ...baseClassification,
+                type: lastTaskType,
+                isContinuation: true,
+                lastTaskType,
+                confidence: Math.max(baseClassification.confidence, 0.90)
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 2. DETECTAR INTENÇÃO INCOMPLETA
+        // ═══════════════════════════════════════════════════════════════════
+        if (this.requiresContentSource(baseClassification.type)) {
+            const hasSource = this.hasContentSource(input);
+            
+            if (!hasSource) {
+                // Intenção incompleta - precisa de contexto
+                return {
+                    ...baseClassification,
+                    needsContext: true,
+                    contextQuestion: 'Qual conteúdo você deseja usar? Você pode:\n' +
+                        '• Colar o texto aqui\n' +
+                        '• Informar o caminho de um arquivo\n' +
+                        '• Descrever o conteúdo que deseja'
+                };
+            }
+        }
+
+        return {
+            ...baseClassification,
+            isContinuation: false
+        };
+    }
 }
 
 // ── Função de compatibilidade (síncrona) ─────────────────────────────────────
@@ -571,6 +686,31 @@ const defaultClassifier = new TaskClassifier({ useLlmFallback: false });
 
 export function classifyTask(text: string): TaskClassification {
     return defaultClassifier.classifySync(text);
+}
+
+/**
+ * Classifica com detecção de continuidade e intenção incompleta.
+ * Útil para detectar quando precisa de mais contexto.
+ */
+export function classifyTaskWithContext(
+    text: string, 
+    lastTaskType?: TaskType
+): Promise<TaskClassification> {
+    return defaultClassifier.classifyWithContext(text, lastTaskType);
+}
+
+/**
+ * Verifica se o input é continuação de tarefa anterior.
+ */
+export function isTaskContinuation(text: string): boolean {
+    return defaultClassifier.isContinuation(text);
+}
+
+/**
+ * Verifica se o input tem fonte de conteúdo explícita.
+ */
+export function hasContentSourceInput(text: string): boolean {
+    return defaultClassifier.hasContentSource(text);
 }
 
 export function getForcedPlanForTaskType(type: TaskType): string[] | null {
