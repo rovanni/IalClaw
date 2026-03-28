@@ -456,19 +456,38 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             continue;
                         }
                     }
-                    
-                    if (ToolReliability.shouldAvoid(response.tool_call.name)) {
-                        const currentToolName = response.tool_call.name;
+
+                    const toolName = response.tool_call.name;
+                    const contextKey = `${this.currentTaskType || 'unknown'}:${currentStepForValidation?.description || ''}`;
+
+                    if (this.executionContext.toolsFailed.has(toolName)) {
+                        this.logger.warn('tool_loop_prevented', `[LOOP] Tool já falhou: ${toolName}`);
+                        const loopMsg: MessagePayload = { role: 'tool', content: `[LOOP] Tool ${toolName} already failed, selecting alternative` };
+                        messages.push(loopMsg);
+                        
                         const fallbackTool = currentStepForValidation 
                             ? this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
 
-                        if (fallbackTool && fallbackTool !== currentToolName) {
-                            this.logger.info('tool_fallback', `[FALLBACK] Switching ${currentToolName} → ${fallbackTool}`);
+                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
+                            this.logger.info('tool_fallback_loop', `[FALLBACK] ${toolName} → ${fallbackTool}`);
                             response.tool_call.name = fallbackTool;
                         } else {
-                            this.logger.warn('tool_skipped_no_fallback', `[FALLBACK] No alternative tool for ${currentToolName}, skipping step`);
-                            const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${currentToolName} skipped - no fallback available` };
+                            continue;
+                        }
+                    }
+                    
+                    if (ToolReliability.shouldAvoid(toolName, contextKey)) {
+                        const fallbackTool = currentStepForValidation 
+                            ? this.getFallbackToolForStep(currentStepForValidation)
+                            : undefined;
+
+                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
+                            this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${fallbackTool}`);
+                            response.tool_call.name = fallbackTool;
+                        } else {
+                            this.logger.warn('fallback_failed', `[FALLBACK] Nenhuma alternativa válida para ${toolName}`);
+                            const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${toolName} skipped - no fallback available` };
                             messages.push(avoidMsg);
                             continue;
                         }
@@ -488,8 +507,9 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         : undefined;
                     
                     const evaluation = ResultEvaluator.evaluate(result);
+                    const recordContext = `${this.currentTaskType || 'unknown'}:${execStep?.description || ''}`;
                     
-                    ToolReliability.record(response.tool_call.name, evaluation.success);
+                    ToolReliability.record(response.tool_call.name, evaluation.success, recordContext);
                     
                     if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
                         this.refinementUsed = true;
@@ -500,7 +520,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.info('refinement_success', '[REFINE] Active refinement completed successfully');
                             result = refinedResult;
                             const newEvaluation = ResultEvaluator.evaluate(result);
-                            ToolReliability.record(response.tool_call.name, newEvaluation.success);
+                            ToolReliability.record(response.tool_call.name, newEvaluation.success, recordContext);
                         } else {
                             this.logger.warn('refinement_failed', '[REFINE] Active refinement failed, using original result');
                         }
