@@ -156,6 +156,7 @@ export class AgentLoop {
     private originalInput: string = '';
     private currentTaskType: TaskType | null = null;
     private currentTaskConfidence: number = 0;
+    private forcedTaskType: boolean = false;
     private stepValidations: number[] = [];
     private reclassificationAttempts: number = 0;
     private readonly MAX_RECLASSIFY_ATTEMPTS = 1;
@@ -1419,7 +1420,14 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         return [...messages, hint];
     }
 
-    public setOriginalInput(input: string) {
+    public setOriginalInput(input: string, forceTypeOverride: boolean = false) {
+        // Se já temos um tipo forçado e não estamos pedindo para sobrescrever, manter
+        if (!forceTypeOverride && this.forcedTaskType && this.currentTaskType && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
+            this.originalInput = input;
+            this.logger.info('task_type_preserved', `[PRESERVE] Tipo forçado preservado: ${this.currentTaskType}`);
+            return;
+        }
+        
         this.originalInput = input;
         
         const intentClear = this.isUserIntentClear(input);
@@ -1449,6 +1457,16 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
             }
         }
+    }
+
+    public forceTaskType(type: TaskType, confidence: number = 1.0): void {
+        this.currentTaskType = type;
+        this.currentTaskConfidence = confidence;
+        this.forcedTaskType = true;
+        this.mode = 'EXECUTION';
+        this.disableFollowUpQuestions = true;
+        this.failSafe = false;
+        this.logger.info('task_type_forced', `[FORCE] Tipo forçado: ${type} (confidence=${confidence})`);
     }
 
     private getGlobalConfidence(validations: number[]): number {

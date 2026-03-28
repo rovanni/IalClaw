@@ -6,6 +6,7 @@ export type TaskType =
     | 'file_search' 
     | 'content_generation' 
     | 'system_operation' 
+    | 'skill_installation'
     | 'generic_task'
     | 'unknown';
 
@@ -70,6 +71,18 @@ const TASK_RULES: TaskRule[] = [
             /\b(sudo|chmod|chown)\b/i
         ],
         confidence: 0.8
+    },
+    {
+        type: 'skill_installation',
+        patterns: [
+            /\b(instalar|instale|instalacao|instalação|instalar uma|instalar uma skill)\b/i,
+            /\b(install\s+skill|skill\s+install|instalar skill)\b/i,
+            /\b(adicione|adicionar)\s+(?:uma\s+)?skill\b/i,
+            /\b(buscar|procurar)\s+(?:uma\s+)?skill\b/i,
+            /\bfind\s+skill\b/i,
+            /\b(encontre|busque)\s+(?:uma\s+)?skill\b/i
+        ],
+        confidence: 0.9
     }
 ];
 
@@ -127,6 +140,14 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
                 'verificar pré-requisitos',
                 'executar operação',
                 'verificar resultado'
+            ];
+        case 'skill_installation':
+            return [
+                'identificar nome da skill',
+                'verificar se já está instalada',
+                'buscar skill no repositório público',
+                'instalar skill',
+                'verificar instalação'
             ];
         case 'generic_task':
             return [

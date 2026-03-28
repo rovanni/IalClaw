@@ -19,6 +19,7 @@ import { MemoryLifecycleManager } from '../memory/MemoryLifecycleManager';
 import { AgentMemoryContext } from '../memory/MemoryTypes';
 import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
 import { Lang } from '../i18n/types';
+import { TaskType } from './agent/TaskClassifier';
 import {
     clearPendingAction,
     getPendingAction,
@@ -611,6 +612,13 @@ export class AgentController {
 
         if (typeof (this.loop as any)?.getProvider !== 'function') {
             throw new Error(t('error.agent.invalid_loop_provider'));
+        }
+
+        // Forçar tipo de task para skill_installation quando for instalação
+        const isInstallIntent = /(?:instala|instalar|instale)\b/i.test(originalQuery);
+        if (isInstallIntent) {
+            (this.loop as any).forceTaskType('skill_installation', 1.0);
+            logger.info('skill_installation_forced', '[FORCE] Tipo de task forçado para skill_installation');
         }
 
         // Memória: embedding → retrieval → contexto
