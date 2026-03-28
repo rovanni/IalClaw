@@ -4,6 +4,7 @@
 
 import { TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
+import { t } from '../../i18n';
 
 export interface TaskContext {
     type: TaskType;
@@ -14,6 +15,13 @@ export interface TaskContext {
     lastUpdated: number;
     messageCount: number;      // Quantas mensagens na conversa
     isComplete: boolean;
+}
+
+export interface AskResult {
+    type: 'ask';
+    key: string;
+    params?: Record<string, string>;
+    message: string;
 }
 
 export class TaskContextManager {
@@ -235,6 +243,71 @@ export class TaskContextManager {
             messageCount: this.context.messageCount,
             age: Date.now() - this.context.createdAt
         };
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // PERGUNTAS USANDO i18n
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Gera pergunta para fonte de conteúdo usando i18n.
+     * NÃO usa texto hardcoded - delega para t()
+     */
+    askForSource(): AskResult {
+        // Se tem contexto com tipo específico, usar mensagem específica
+        if (this.context?.type === 'content_generation') {
+            return {
+                type: 'ask',
+                key: 'content.ask_for_source',
+                message: t('content.ask_for_source')
+            };
+        }
+        
+        if (this.context?.type === 'file_conversion') {
+            return {
+                type: 'ask',
+                key: 'file.ask_for_source',
+                message: t('file.ask_for_source')
+            };
+        }
+        
+        // Fallback genérico
+        return {
+            type: 'ask',
+            key: 'agent.ask.source_file',
+            message: t('agent.ask.source_file')
+        };
+    }
+    
+    /**
+     * Gera pergunta com exemplo usando i18n.
+     */
+    askForSourceWithExample(example: string): AskResult {
+        return {
+            type: 'ask',
+            key: 'agent.ask.source_file_with_hint',
+            params: { example },
+            message: t('agent.ask.source_file_with_hint', { example })
+        };
+    }
+    
+    /**
+     * Verifica se precisa perguntar sobre fonte.
+     * Retorna pergunta se necessário, null se tem fonte.
+     */
+    checkNeedsSource(): AskResult | null {
+        // Se já tem fonte, não precisa perguntar
+        if (this.context?.source) {
+            return null;
+        }
+        
+        // Se é tarefa que precisa de fonte, perguntar
+        const needsSourceTypes: TaskType[] = ['content_generation', 'file_conversion'];
+        if (this.context && needsSourceTypes.includes(this.context.type)) {
+            return this.askForSource();
+        }
+        
+        return null;
     }
 }
 

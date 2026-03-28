@@ -4,5 +4,6 @@
 export {
     TaskContextManager,
     getTaskContextManager,
-    type TaskContext
+    type TaskContext,
+    type AskResult
 } from './TaskContextManager';

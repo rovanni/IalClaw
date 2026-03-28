@@ -274,6 +274,8 @@
   "content.generation_error": "Erro ao gerar conteúdo: {error}. Tente novamente com mais detalhes.",
   "file.ask_for_source": "Qual arquivo você deseja converter?\n\nInforme o caminho do arquivo de origem.",
   "file.ask_search_query": "O que você deseja procurar?\n\nInforme o nome do arquivo ou diretório.",
+  "agent.ask.source_file": "Qual arquivo você deseja utilizar?\n\nVocê pode informar o caminho ou colar o conteúdo.",
+  "agent.ask.source_file_with_hint": "Qual arquivo você deseja utilizar? Exemplo: {{example}}",
   "autonomy.confirm_action": "⚠️ Esta ação requer confirmação: {action}\n\nTem certeza que deseja continuar?",
   "autonomy.ask_context": "Preciso de mais informações para continuar.",
   "autonomy.execute_confirmed": "Executando ação confirmada."
