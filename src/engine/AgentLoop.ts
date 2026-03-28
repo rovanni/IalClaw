@@ -176,6 +176,7 @@ export class AgentLoop {
     private readonly MIN_DELTA_THRESHOLD = 0.05;
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
+    private failSafe: boolean = false;
 
     constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
         this.llm = llm;
@@ -198,6 +199,34 @@ export class AgentLoop {
             this.disableFollowUpQuestions = true;
             this.logger.info('mode_transition', `[MODE] Transicionando para EXECUTION: confidence=${confidence.toFixed(2)}, type=${this.currentTaskType}`);
         }
+    }
+
+    private isUserIntentClear(input: string): boolean {
+        const text = input.toLowerCase();
+
+        return (
+            text.includes("converter") ||
+            text.includes("criar") ||
+            text.includes("gerar") ||
+            text.includes("buscar") ||
+            text.includes("ler") ||
+            text.includes("salvar")
+        );
+    }
+
+    private getDefaultToolForInput(input: string): string {
+        const text = input.toLowerCase();
+        
+        if (text.includes("converter")) return "file.convert";
+        if (text.includes("criar") || text.includes("gerar")) return "write_file";
+        if (text.includes("buscar") || text.includes("procurar")) return "search_file";
+        if (text.includes("ler")) return "read_local_file";
+        if (text.includes("salvar")) return "write_file";
+        if (text.includes("listar")) return "list_directory";
+        if (text.includes("deletar") || text.includes("remover")) return "delete_file";
+        if (text.includes("web") || text.includes("pesquisar")) return "web_search";
+        
+        return "list_directory";
     }
 
     private ensureMinimalPlan(): void {
@@ -291,6 +320,10 @@ export class AgentLoop {
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
         this.setOriginalInput(userInput);
         
+        if (this.failSafe) {
+            this.logger.warn('fail_safe_mode', '[FAIL-SAFE] Modo de execução garantida ativado');
+        }
+        
         this.evaluateModeTransition();
         
         this.ensureMinimalPlan();
@@ -346,7 +379,9 @@ export class AgentLoop {
             return { answer: t('loop.stopped_by_user'), newMessages };
         }
 
-        for (let i = 0; i < maxIter; i++) {
+        const effectiveMaxIter = this.failSafe ? Math.min(maxIter, 3) : maxIter;
+        
+        for (let i = 0; i < effectiveMaxIter; i++) {
             if (await stopIfRequested()) {
                 return { answer: t('loop.stopped_by_user'), newMessages };
             }
@@ -485,7 +520,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         }
                     }
                     
-                    if (await this.checkMemoryBlock(toolName)) {
+                    if (!this.failSafe && await this.checkMemoryBlock(toolName)) {
                         const fallbackTool = currentStepForValidation 
                             ? await this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
@@ -498,16 +533,24 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         }
                     }
                     
+                    if (this.failSafe && await this.checkMemoryBlock(toolName)) {
+                        this.logger.warn('fail_safe_override', '[FAIL-SAFE] Ignorando bloqueio de memória');
+                    }
+                    
                     if (ToolReliability.shouldAvoid(toolName, contextKey)) {
-                        const fallbackTool = currentStepForValidation 
-                            ? await this.getFallbackToolForStep(currentStepForValidation)
-                            : undefined;
-
-                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
-                            this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${fallbackTool}`);
-                            response.tool_call.name = fallbackTool;
+                        if (this.failSafe) {
+                            this.logger.warn('fail_safe_tool_override', `[FAIL-SAFE] Ignorando bloqueio de tool: ${toolName}`);
                         } else {
-                            this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
+                            const fallbackTool = currentStepForValidation 
+                                ? await this.getFallbackToolForStep(currentStepForValidation)
+                                : undefined;
+
+                            if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
+                                this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${fallbackTool}`);
+                                response.tool_call.name = fallbackTool;
+                            } else {
+                                this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
+                            }
                         }
                     }
                     
@@ -520,12 +563,18 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     
                     const execToolName = response.tool_call.name;
                     if (!execToolName || execToolName.trim() === '') {
-                        this.logger.warn('no_tool_available', 'Executando fallback básico - nenhuma tool_name disponível');
-                        const fallbackResult = "Não consegui executar com ferramentas disponíveis, mas posso tentar ajudar diretamente.";
-                        const fallbackMsg: MessagePayload = { role: 'tool', content: fallbackResult };
-                        messages.push(fallbackMsg);
-                        newMessages.push(fallbackMsg);
-                        continue;
+                        if (this.failSafe) {
+                            this.logger.warn('fail_safe_tool', '[FAIL-SAFE] Selecionando tool padrão');
+                            response.tool_call.name = this.getDefaultToolForInput(userInput);
+                            this.logger.info('fail_safe_tool_selected', `[FAIL-SAFE] Tool selecionada: ${response.tool_call.name}`);
+                        } else {
+                            this.logger.warn('no_tool_available', 'Executando fallback básico - nenhuma tool_name disponível');
+                            const fallbackResult = "Não consegui executar com ferramentas disponíveis, mas posso tentar ajudar diretamente.";
+                            const fallbackMsg: MessagePayload = { role: 'tool', content: fallbackResult };
+                            messages.push(fallbackMsg);
+                            newMessages.push(fallbackMsg);
+                            continue;
+                        }
                     }
 
                     let result = await this.registry.executeTool(execToolName, response.tool_call.args);
@@ -739,8 +788,19 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
         this.logger.warn('loop_max_iterations_fallback', t('log.loop.max_iterations_fallback'), {
             duration_ms: Date.now() - startedAt,
             max_iterations: maxIter,
-            tool_calls_count: toolCallsCount
+            tool_calls_count: toolCallsCount,
+            fail_safe: this.failSafe
         });
+
+        if (this.failSafe && toolCallsCount === 0) {
+            this.logger.warn('fail_safe_final', '[FAIL-SAFE] Resposta direta forçada');
+            const directAnswer = `Vou tentar resolver diretamente: ${userInput}`;
+            const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
+            newMessages.push(finalMsg);
+            const duration = Date.now() - startedAt;
+            await emitProgress({ stage: 'completed', duration_ms: duration });
+            return { answer: directAnswer, newMessages };
+        }
 
         messages.push({
             role: 'system',
@@ -768,6 +828,14 @@ await emitProgress({ stage: 'completed', duration_ms: duration });
             });
             await emitProgress({ stage: 'failed' });
             this.logMemoryStats();
+            
+            if (this.failSafe) {
+                const failSafeAnswer = `Vou tentar resolver diretamente: ${userInput}`;
+                const failSafeMsg: MessagePayload = { role: 'assistant', content: failSafeAnswer };
+                newMessages.push(failSafeMsg);
+                return { answer: failSafeAnswer, newMessages };
+            }
+            
             return { answer: t('loop.fallback.default_answer'), newMessages };
         }
     }
@@ -1282,16 +1350,28 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 
     public setOriginalInput(input: string) {
         this.originalInput = input;
-        const classification = classifyTask(input);
-        this.currentTaskType = classification.type;
-        this.currentTaskConfidence = classification.confidence;
         
-        if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
+        this.failSafe = this.isUserIntentClear(input);
+        
+        const classification = classifyTask(input);
+        
+        if (this.failSafe && (classification.type === 'unknown' || classification.confidence === 0)) {
+            this.logger.warn('fail_safe_classification', '[FAIL-SAFE] Classificação ignorada - definindo como generic_task');
+            this.currentTaskType = 'generic_task';
+            this.currentTaskConfidence = 1.0;
             this.mode = 'EXECUTION';
             this.disableFollowUpQuestions = true;
-            this.logger.info('execution_mode_ready', `[MODE] Modo EXECUTION ativado: type=${this.currentTaskType}, confidence=${classification.confidence.toFixed(2)}`);
-        } else if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
-            this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
+        } else {
+            this.currentTaskType = classification.type;
+            this.currentTaskConfidence = classification.confidence;
+            
+            if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
+                this.mode = 'EXECUTION';
+                this.disableFollowUpQuestions = true;
+                this.logger.info('execution_mode_ready', `[MODE] Modo EXECUTION ativado: type=${this.currentTaskType}, confidence=${classification.confidence.toFixed(2)}`);
+            } else if (classification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+                this.logger.info('uncertain_task', `[CLASSIFIER] Tarefa incerta detectada: ${classification.type} (confidence: ${classification.confidence.toFixed(2)})`);
+            }
         }
     }
 
