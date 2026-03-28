@@ -343,19 +343,25 @@ export class AgentLoop {
         this.evaluateModeTransition();
         this.ensureMinimalPlan();
         
-        // SHORT-CIRCUIT para content_generation
-        if (this.currentTaskType === 'content_generation' && !this.failSafe) {
+        // SHORT-CIRCUIT para content_generation (independente de failSafe)
+        if (this.currentTaskType === 'content_generation') {
             // Verificar se tem contexto suficiente
             if (this.needsUserContext && this.contextQuestion) {
-                this.logger.info('short_circuit_needs_context', '[SHORT-CIRCUIT] content_generation precisa de contexto');
+                this.logger.info('short_circuit_needs_context', '[SHORT-CIRCUIT] content_generation precisa de contexto', {
+                    has_context: false
+                });
                 return {
                     answer: this.contextQuestion,
                     newMessages: []
                 };
             }
             
-            // Executar diretamente, sem loop
-            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)');
+            // Executar diretamente, sem loop (mesmo com failSafe)
+            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)', {
+                mode: 'cognitive_direct',
+                bypass_loop: true,
+                task_type: this.currentTaskType
+            });
             return this.executeContentGenerationDirect(userInput, initialMessages);
         }
 
@@ -2053,7 +2059,11 @@ Considere:
         userInput: string,
         messages: MessagePayload[]
     ): Promise<{ answer: string; newMessages: MessagePayload[] }> {
-        this.logger.info('short_circuit_content_generation', '[SHORT-CIRCUIT] Executando content_generation diretamente (sem loop)');
+        this.logger.info('short_circuit_content_generation', '[SHORT-CIRCUIT] Executando content_generation diretamente (sem loop)', {
+            input_preview: userInput.slice(0, 100),
+            mode: 'cognitive_direct',
+            bypass_loop: true
+        });
 
         // Prompt focado em geração de conteúdo
         const systemPrompt: MessagePayload = {
@@ -2076,27 +2086,51 @@ FORMATO DE SAÍDA:
         try {
             const response = await this.llm.generate(allMessages);
             
-            if (response.final_answer) {
-                this.logger.info('short_circuit_success', '[SHORT-CIRCUIT] Conteúdo gerado com sucesso', {
-                    response_length: response.final_answer.length
+            // ═════════════════════════════════════════════════════════════
+            // GARANTIR OUTPUT MÍNIMO VÁLIDO
+            // ═════════════════════════════════════════════════════════════
+            if (!response.final_answer || response.final_answer.trim().length < 50) {
+                this.logger.warn('short_circuit_empty', '[SHORT-CIRCUIT] LLM retornou resposta vazia ou muito curta', {
+                    response_length: response.final_answer?.length || 0
                 });
-                
                 return {
-                    answer: response.final_answer,
+                    answer: 'Não consegui gerar o conteúdo corretamente. Pode reformular sua solicitação ou fornecer mais detalhes?',
                     newMessages: messages
                 };
             }
-
-            // Se não teve resposta final, retornar erro
-            this.logger.warn('short_circuit_empty', '[SHORT-CIRCUIT] LLM retornou resposta vazia');
+            
+            this.logger.info('short_circuit_success', '[SHORT-CIRCUIT] Conteúdo gerado com sucesso', {
+                response_length: response.final_answer.length,
+                mode: 'cognitive_direct'
+            });
+            
+            // ═════════════════════════════════════════════════════════════
+            // SALVAR NA DECISION_MEMORY (aprendizado)
+            // ═════════════════════════════════════════════════════════════
+            if (this.decisionMemory) {
+                try {
+                    await this.decisionMemory.store({
+                        taskType: 'content_generation',
+                        step: 'direct_generation',
+                        tool: 'llm_direct',
+                        success: true,
+                        timestamp: Date.now()
+                    });
+                } catch (e) {
+                    // Ignora erro de memória - não é crítico
+                }
+            }
+            
             return {
-                answer: 'Não consegui gerar o conteúdo solicitado. Por favor, forneça mais detalhes.',
+                answer: response.final_answer,
                 newMessages: messages
             };
         } catch (error: any) {
-            this.logger.error('short_circuit_error', error, '[SHORT-CIRCUIT] Erro na geração direta');
+            this.logger.error('short_circuit_error', error, '[SHORT-CIRCUIT] Erro na geração direta', {
+                error_message: error.message
+            });
             return {
-                answer: `Erro ao gerar conteúdo: ${error.message}. Tente novamente.`,
+                answer: `Erro ao gerar conteúdo: ${error.message}. Tente novamente com mais detalhes.`,
                 newMessages: messages
             };
         }
