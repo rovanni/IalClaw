@@ -458,10 +458,20 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
                     
                     if (ToolReliability.shouldAvoid(response.tool_call.name)) {
-                        this.logger.warn('tool_avoided', `[RELIABILITY] Avoiding unreliable tool: ${response.tool_call.name}`);
-                        const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${response.tool_call.name} skipped due to low reliability` };
-                        messages.push(avoidMsg);
-                        continue;
+                        const currentToolName = response.tool_call.name;
+                        const fallbackTool = currentStepForValidation 
+                            ? this.getFallbackToolForStep(currentStepForValidation)
+                            : undefined;
+
+                        if (fallbackTool && fallbackTool !== currentToolName) {
+                            this.logger.info('tool_fallback', `[FALLBACK] Switching ${currentToolName} → ${fallbackTool}`);
+                            response.tool_call.name = fallbackTool;
+                        } else {
+                            this.logger.warn('tool_skipped_no_fallback', `[FALLBACK] No alternative tool for ${currentToolName}, skipping step`);
+                            const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${currentToolName} skipped - no fallback available` };
+                            messages.push(avoidMsg);
+                            continue;
+                        }
                     }
                     
                     this.logger.info('tool_call_started', t('log.loop.tool_call_started'), {
@@ -470,21 +480,30 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         tool_calls_count: toolCallsCount
                     });
                     await emitProgress({ stage: 'tool_started', iteration: i + 1, tool_name: response.tool_call.name });
-                    const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
+                    let result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
+                    
+                    const execPlan = this.executionContext.currentPlan;
+                    const execStep = execPlan && execPlan.currentStepIndex < execPlan.steps.length
+                        ? execPlan.steps[execPlan.currentStepIndex]
+                        : undefined;
                     
                     const evaluation = ResultEvaluator.evaluate(result);
                     
                     ToolReliability.record(response.tool_call.name, evaluation.success);
                     
                     if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
-                        this.logger.info('low_quality_detected', `[QUALITY] Low quality detected: ${evaluation.quality.toFixed(2)}. Attempting refinement.`);
                         this.refinementUsed = true;
                         
-                        const refineMsg: MessagePayload = {
-                            role: 'system',
-                            content: `[REFINEMENT] Previous result quality low (${evaluation.quality.toFixed(2)}). Please improve the output with better parameters or approach.`
-                        };
-                        messages.push(refineMsg);
+                        const refinedResult = await this.retryWithBetterParams(execStep, response.tool_call.args);
+                        
+                        if (refinedResult) {
+                            this.logger.info('refinement_success', '[REFINE] Active refinement completed successfully');
+                            result = refinedResult;
+                            const newEvaluation = ResultEvaluator.evaluate(result);
+                            ToolReliability.record(response.tool_call.name, newEvaluation.success);
+                        } else {
+                            this.logger.warn('refinement_failed', '[REFINE] Active refinement failed, using original result');
+                        }
                     }
                     
                     toolEvidence.push(String(result).slice(0, 2000));
@@ -508,13 +527,9 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     });
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: response.tool_call.name });
                     
-                    const p = this.executionContext.currentPlan;
-                    const currentStep = p && p.currentStepIndex < p.steps.length
-                        ? p.steps[p.currentStepIndex]
-                        : undefined;
-                    if (currentStep) {
-                        const validation = this.validateStepResult(currentStep, result, response.tool_call.name);
-                        this.logValidation(currentStep, validation);
+                    if (execStep) {
+                        const validation = this.validateStepResult(execStep, result, response.tool_call.name);
+                        this.logValidation(execStep, validation);
                         
                         this.stepValidations.push(validation.confidence);
                         this.actionTaken = true;
@@ -529,16 +544,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
-                                    content: `[VALIDAÇÃO] O step "${currentStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
+                                    content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
                                 };
                                 messages.push(llmCheck);
                             } else if (!validation.needsLlm) {
-                                messages = this.adjustPlanAfterFailure(messages, currentStep, validation);
+                                messages = this.adjustPlanAfterFailure(messages, execStep, validation);
                             }
                         }
                         
                         this.registerExecutionMemory(
-                            currentStep,
+                            execStep,
                             response.tool_call.name,
                             validation.success,
                             validation.reason
@@ -838,6 +853,44 @@ private sanitizeUserFacingAnswer(answer: string): string {
             }
         }
         return undefined;
+    }
+
+    private adaptArgsForRetry(step: ExecutionStep, originalArgs?: Record<string, any>): Record<string, any> {
+        return {
+            ...originalArgs,
+            improved: true,
+            timestamp: Date.now()
+        };
+    }
+
+    private async retryWithBetterParams(step: ExecutionStep | undefined, originalArgs?: Record<string, any>): Promise<string | null> {
+        if (!step) {
+            return null;
+        }
+
+        const fallbackTool = step.tool ? this.getFallbackToolForStep(step) : undefined;
+
+        if (fallbackTool && fallbackTool !== step.tool) {
+            this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${fallbackTool}`);
+            try {
+                return await this.registry.executeTool(fallbackTool, this.adaptArgsForRetry(step, originalArgs));
+            } catch (error) {
+                this.logger.error('refinement_tool_error', error as Error, '[REFINE] Fallback tool execution failed');
+                return null;
+            }
+        }
+
+        if (step.tool) {
+            this.logger.info('refinement_retry_same', `[REFINE] Retrying same tool ${step.tool} with improved params`);
+            try {
+                return await this.registry.executeTool(step.tool, this.adaptArgsForRetry(step, originalArgs));
+            } catch (error) {
+                this.logger.error('refinement_retry_error', error as Error, '[REFINE] Same tool retry failed');
+                return null;
+            }
+        }
+
+        return null;
     }
 
     private recordPathTried(path: string) {
