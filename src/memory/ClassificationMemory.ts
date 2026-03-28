@@ -1,22 +1,31 @@
-// ── Classification Memory com Decay Temporal + Detecção de Padrões Tóxicos ────
-// Memória adaptativa com controle de qualidade e prevenção de loops de erro.
+// ── Classification Memory com Contexto ────────────────────────────────────────
+// Memória adaptativa separada por contexto para evitar interferência entre domínios.
 
 import { createLogger } from '../shared/AppLogger';
+
+type MemoryContext = 'terminal' | 'coding' | 'chat' | 'analysis';
 
 interface MemoryEntry {
     input: string;
     normalized: string;
     type: string;
+    context: MemoryContext;       // Contexto da entrada
     confidence: number;
     hits: number;
     createdAt: number;
     lastUsed: number;
-    penaltyCount: number;      // Contador de penalizações
-    lastPenalized?: number;    // Última penalização
+    penaltyCount: number;
+    lastPenalized?: number;
 }
 
 interface ScoredEntry extends MemoryEntry {
     score: number;
+}
+
+interface FindResult {
+    type: string;
+    confidence: number;
+    source: 'context' | 'global';  // Encontrado no contexto ou global
 }
 
 export class ClassificationMemory {
@@ -27,44 +36,87 @@ export class ClassificationMemory {
     private readonly MAX_ENTRIES = 200;
     private readonly MIN_SIMILARITY = 0.6;
     private readonly MIN_CONFIDENCE_TO_STORE = 0.80;
-    private readonly HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias em ms
+    private readonly HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000;
     private readonly PENALTY_AMOUNT = 2;
     private readonly MIN_HITS = 1;
     
     // Configuração de toxicidade
-    private readonly TOXIC_PENALTY_THRESHOLD = 3;    // Penalizações para ser tóxico
-    private readonly TOXIC_HIT_RATIO = 2;             // hits < penaltyCount * 2 = tóxico
-    private readonly TOXIC_SCORE_PENALTY = 0.5;       // Redução de score para tóxicos
-    private readonly PENALTY_DECAY_FACTOR = 0.9;      // Decay de penalidade por período
+    private readonly TOXIC_PENALTY_THRESHOLD = 3;
+    private readonly TOXIC_HIT_RATIO = 2;
+    private readonly TOXIC_SCORE_PENALTY = 0.5;
+    private readonly PENALTY_DECAY_FACTOR = 0.9;
+    
+    // Configuração de contexto
+    private readonly GLOBAL_SCORE_PENALTY = 0.1;  // Redução de score para matches globais
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DETECÇÃO DE CONTEXTO
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Verifica se uma entrada é tóxica.
-     * Tóxico = frequentemente penalizada + baixa confiabilidade.
+     * Detecta o contexto de um input.
+     * terminal → comandos (npm, npx, bash)
+     * coding → código (function, class, {})
+     * chat → perguntas (?)
+     * analysis → default
      */
+    private detectContext(input: string): MemoryContext {
+        const normalized = input.toLowerCase();
+
+        // Terminal: comandos de shell
+        if (/\b(npm|npx|yarn|pnpm|pip|apt|brew|git|docker|kubectl|bash|sh|sudo)\b/.test(normalized)) {
+            return 'terminal';
+        }
+        if (/\b(install|run|build|start|stop|exec|execute)\b/.test(normalized)) {
+            return 'terminal';
+        }
+        if (/^\s*\$/.test(normalized) || /^\s*>\s*\w/.test(normalized)) {
+            return 'terminal';
+        }
+
+        // Coding: código fonte
+        if (/\b(function|class|interface|type|const|let|var|def|async|await)\b/.test(normalized)) {
+            return 'coding';
+        }
+        if (/[{}()\[\];]/.test(normalized) && /\b(return|if|else|for|while)\b/.test(normalized)) {
+            return 'coding';
+        }
+        if (/\.(ts|js|py|go|rs|java|cpp|c)\b/.test(normalized)) {
+            return 'coding';
+        }
+
+        // Chat: perguntas
+        if (/\?\s*$/.test(normalized)) {
+            return 'chat';
+        }
+        if (/^(o que|qual|como|quando|onde|por que|porque|what|how|when|where|why)/i.test(normalized)) {
+            return 'chat';
+        }
+
+        // Default: análise geral
+        return 'analysis';
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TOXICIDADE
+    // ═══════════════════════════════════════════════════════════════════════
+
     private isToxic(entry: MemoryEntry): boolean {
-        // Muitas penalizações
         if (entry.penaltyCount < this.TOXIC_PENALTY_THRESHOLD) {
             return false;
         }
-
-        // Hits muito baixos em relação a penalizações
-        const hitRatio = entry.hits / Math.max(1, entry.penaltyCount);
-        
-        // Tóxico se: penalizado >= 3 vezes E hits < penaltyCount * 2
         return entry.penaltyCount >= this.TOXIC_PENALTY_THRESHOLD && 
                entry.hits < entry.penaltyCount * this.TOXIC_HIT_RATIO;
     }
 
-    /**
-     * Normaliza texto para comparação.
-     */
+    // ═══════════════════════════════════════════════════════════════════════
+    // CORE
+    // ═══════════════════════════════════════════════════════════════════════
+
     private normalize(text: string): string {
         return text.toLowerCase().replace(/[^\w\s]/g, '').trim();
     }
 
-    /**
-     * Calcula similaridade Jaccard entre dois textos.
-     */
     private similarity(a: string, b: string): number {
         const aWords = new Set(a.split(/\s+/).filter(w => w.length > 2));
         const bWords = new Set(b.split(/\s+/).filter(w => w.length > 2));
@@ -77,23 +129,15 @@ export class ClassificationMemory {
         return union === 0 ? 0 : intersection / union;
     }
 
-    /**
-     * Calcula o peso de recência (decay temporal).
-     */
     private computeRecencyWeight(lastUsed: number): number {
         const age = Date.now() - lastUsed;
         return Math.exp(-age / this.HALF_LIFE_MS);
     }
 
-    /**
-     * Calcula o score dinâmico de uma entrada.
-     * Combina: similaridade + frequência + recência - toxicidade
-     */
-    private computeScore(entry: MemoryEntry, similarity: number): number {
+    private computeScore(entry: MemoryEntry, similarity: number, isGlobal: boolean = false): number {
         const recencyWeight = this.computeRecencyWeight(entry.lastUsed);
         const frequencyScore = Math.log(entry.hits + 1);
         
-        // Penalização por idade
         const age = Date.now() - entry.createdAt;
         const agePenalty = Math.min(0.2, age / (30 * 24 * 60 * 60 * 1000));
         
@@ -104,6 +148,11 @@ export class ClassificationMemory {
             agePenalty
         );
 
+        // Penalização para matches globais (fora do contexto)
+        if (isGlobal) {
+            score -= this.GLOBAL_SCORE_PENALTY;
+        }
+
         // Penalização adicional para entradas tóxicas
         if (this.isToxic(entry)) {
             score -= this.TOXIC_SCORE_PENALTY;
@@ -112,124 +161,130 @@ export class ClassificationMemory {
         return score;
     }
 
-    /**
-     * Aplica decay às penalidades periodicamente.
-     * Reduz penaltyCount para permitir recuperação.
-     */
     private applyPenaltyDecay(): void {
         const now = Date.now();
-        const decayThreshold = 24 * 60 * 60 * 1000; // 1 dia
+        const decayThreshold = 24 * 60 * 60 * 1000;
 
         for (const entry of this.memory) {
             if (entry.penaltyCount > 0 && entry.lastPenalized) {
                 const timeSincePenalty = now - entry.lastPenalized;
                 
                 if (timeSincePenalty > decayThreshold) {
-                    const oldPenalty = entry.penaltyCount;
                     entry.penaltyCount = Math.floor(entry.penaltyCount * this.PENALTY_DECAY_FACTOR);
-                    
-                    if (entry.penaltyCount < oldPenalty) {
-                        this.logger.debug('penalty_decay', 'Penalidade decaída', {
-                            type: entry.type,
-                            old_penalty: oldPenalty,
-                            new_penalty: entry.penaltyCount,
-                            input_preview: entry.input.slice(0, 30)
-                        });
-                    }
                 }
             }
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIND - BUSCA POR CONTEXTO
+    // ═══════════════════════════════════════════════════════════════════════
+
     /**
-     * Busca classificação similar na memória usando score dinâmico.
-     * Ignora entradas tóxicas.
+     * Busca classificação similar na memória.
+     * Prioriza contexto específico, com fallback global.
      */
-    find(input: string): { type: string; confidence: number } | null {
+    find(input: string): FindResult | null {
         const normalized = this.normalize(input);
+        const context = this.detectContext(input);
         const now = Date.now();
 
-        // Aplicar decay de penalidades periodicamente
         this.applyPenaltyDecay();
 
+        // ═══════════════════════════════════════════════════════════════
+        // PASSO 1: Buscar no contexto específico
+        // ═══════════════════════════════════════════════════════════════
         let best: MemoryEntry | null = null;
         let bestScore = 0;
         let bestSimilarity = 0;
+        let foundInContext = false;
 
         for (const entry of this.memory) {
-            // Ignorar entradas tóxicas
-            if (this.isToxic(entry)) {
-                this.logger.debug('skip_toxic', 'Entrada tóxica ignorada', {
-                    type: entry.type,
-                    penalty_count: entry.penaltyCount,
-                    hits: entry.hits,
-                    input_preview: entry.input.slice(0, 30)
-                });
-                continue;
-            }
+            if (this.isToxic(entry)) continue;
+
+            // Filtrar por contexto
+            if (entry.context !== context) continue;
 
             const sim = this.similarity(normalized, entry.normalized);
-
             if (sim >= this.MIN_SIMILARITY) {
-                const score = this.computeScore(entry, sim);
-
+                const score = this.computeScore(entry, sim, false);
                 if (score > bestScore) {
                     best = entry;
                     bestScore = score;
                     bestSimilarity = sim;
+                    foundInContext = true;
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PASSO 2: Fallback global (se não encontrou no contexto)
+        // ═══════════════════════════════════════════════════════════════
+        if (!foundInContext) {
+            for (const entry of this.memory) {
+                if (this.isToxic(entry)) continue;
+
+                const sim = this.similarity(normalized, entry.normalized);
+                if (sim >= this.MIN_SIMILARITY) {
+                    const score = this.computeScore(entry, sim, true); // isGlobal = true
+                    if (score > bestScore) {
+                        best = entry;
+                        bestScore = score;
+                        bestSimilarity = sim;
+                        foundInContext = false;
+                    }
                 }
             }
         }
 
         if (best) {
-            // Atualizar uso
             best.hits++;
             best.lastUsed = now;
 
-            // Boost de confiança por hits (máximo +0.15)
             const hitBoost = Math.min(0.15, best.hits * 0.03);
-            
-            // Boost de recência
             const recencyBoost = this.computeRecencyWeight(best.lastUsed) * 0.05;
-
             const finalConfidence = Math.min(1, bestSimilarity + 0.2 + hitBoost + recencyBoost);
 
-            this.logger.info('memory_hit', 'Classificação reutilizada da memória', {
+            this.logger.info('memory_hit', 'Classificação reutilizada', {
                 type: best.type,
+                context: best.context,
+                source: foundInContext ? 'context' : 'global',
                 similarity: bestSimilarity.toFixed(2),
                 score: bestScore.toFixed(2),
                 hits: best.hits,
-                penalty_count: best.penaltyCount,
-                age_hours: Math.round((now - best.createdAt) / (60 * 60 * 1000)),
-                confidence: finalConfidence.toFixed(2),
                 input_preview: input.slice(0, 50)
             });
 
             return {
                 type: best.type,
-                confidence: finalConfidence
+                confidence: finalConfidence,
+                source: foundInContext ? 'context' : 'global'
             };
         }
 
         return null;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // STORE
+    // ═══════════════════════════════════════════════════════════════════════
+
     /**
-     * Armazena uma classificação bem-sucedida na memória.
+     * Armazena uma classificação com contexto.
      */
     store(input: string, type: string, confidence: number): void {
-        // Só aprender classificações com alta confiança
         if (confidence < this.MIN_CONFIDENCE_TO_STORE) {
             return;
         }
 
         const normalized = this.normalize(input);
+        const context = this.detectContext(input);
         const now = Date.now();
 
-        // Verificar se já existe entrada similar
+        // Verificar se já existe entrada similar no mesmo contexto
         const existing = this.memory.find(e => 
-            e.normalized === normalized || 
-            this.similarity(normalized, e.normalized) > 0.9
+            e.context === context &&
+            (e.normalized === normalized || this.similarity(normalized, e.normalized) > 0.9)
         );
 
         if (existing) {
@@ -237,25 +292,24 @@ export class ClassificationMemory {
             existing.lastUsed = now;
             existing.confidence = Math.max(existing.confidence, confidence);
             
-            // Recuperar de toxicidade se estava penalizado mas agora está sendo reutilizado
             if (existing.penaltyCount > 0) {
                 existing.penaltyCount = Math.max(0, existing.penaltyCount - 1);
             }
             
             this.logger.debug('memory_update', 'Classificação atualizada', {
                 type,
+                context,
                 hits: existing.hits,
-                penalty_count: existing.penaltyCount,
                 input_preview: input.slice(0, 50)
             });
             return;
         }
 
-        // Nova entrada
         this.memory.push({
             input: input.slice(0, 200),
             normalized,
             type,
+            context,
             confidence,
             hits: 1,
             createdAt: now,
@@ -265,27 +319,29 @@ export class ClassificationMemory {
 
         this.logger.info('memory_store', 'Nova classificação aprendida', {
             type,
+            context,
             confidence: confidence.toFixed(2),
             total_entries: this.memory.length,
             input_preview: input.slice(0, 50)
         });
 
-        // Eviction por score
         if (this.memory.length > this.MAX_ENTRIES) {
             this.evict();
         }
     }
 
-    /**
-     * Penaliza uma entrada quando o LLM discorda.
-     * Detecta padrões tóxicos persistentes.
-     */
+    // ═══════════════════════════════════════════════════════════════════════
+    // PENALIZE
+    // ═══════════════════════════════════════════════════════════════════════
+
     penalize(input: string, type: string): void {
         const normalized = this.normalize(input);
+        const context = this.detectContext(input);
         const now = Date.now();
 
         const entry = this.memory.find(e => 
             e.type === type && 
+            e.context === context &&
             this.similarity(normalized, e.normalized) > 0.8
         );
 
@@ -300,77 +356,65 @@ export class ClassificationMemory {
 
             this.logger.info('memory_penalize', 'Classificação penalizada', {
                 type,
+                context,
                 hits: entry.hits,
                 penalty_count: entry.penaltyCount,
-                is_toxic: isNowToxic,
-                input_preview: input.slice(0, 50)
+                is_toxic: isNowToxic
             });
 
-            // Log especial se acabou de se tornar tóxico
             if (!wasToxic && isNowToxic) {
-                this.logger.warn('memory_toxic_detected', 'Padrão tóxico detectado e neutralizado', {
+                this.logger.warn('memory_toxic_detected', 'Padrão tóxico detectado', {
                     type,
-                    penalty_count: entry.penaltyCount,
-                    hits: entry.hits,
+                    context,
                     input_preview: input.slice(0, 50)
                 });
             }
         }
     }
 
-    /**
-     * Remove entradas com menor score (eviction inteligente).
-     * Prioriza remover: tóxicas, antigas, pouco usadas.
-     */
+    // ═══════════════════════════════════════════════════════════════════════
+    // EVICT
+    // ═══════════════════════════════════════════════════════════════════════
+
     private evict(): void {
-        const now = Date.now();
-        
-        // Aplicar decay antes de eviction
         this.applyPenaltyDecay();
 
-        // Calcular score para todas as entradas
         const scored: ScoredEntry[] = this.memory.map(entry => ({
             ...entry,
-            score: this.computeScore(entry, this.similarity(entry.normalized, entry.normalized))
+            score: this.computeScore(entry, this.similarity(entry.normalized, entry.normalized), false)
         }));
 
-        // Ordenar por score (menor primeiro) - tóxicas têm score menor
         scored.sort((a, b) => a.score - b.score);
 
-        // Remover as 20% com menor score
         const removeCount = Math.floor(this.MAX_ENTRIES * 0.2);
-        const toRemove = scored.slice(0, removeCount);
-        const toxicRemoved = toRemove.filter(e => this.isToxic(e)).length;
-
-        // Filtrar mantendo as de maior score
         this.memory = this.memory.filter(entry => {
-            const score = this.computeScore(entry, this.similarity(entry.normalized, entry.normalized));
+            const score = this.computeScore(entry, this.similarity(entry.normalized, entry.normalized), false);
             return score > scored[removeCount - 1]?.score;
         });
 
-        // Log de estatísticas
         const stats = this.stats();
         this.logger.debug('memory_evict', 'Eviction por score', {
             removed: removeCount,
-            toxic_removed: toxicRemoved,
             remaining: this.memory.length,
-            by_type: stats.byType,
-            toxic_count: stats.toxicCount
+            by_context: stats.byContext
         });
     }
 
-    /**
-     * Retorna estatísticas da memória.
-     */
+    // ═══════════════════════════════════════════════════════════════════════
+    // STATS
+    // ═══════════════════════════════════════════════════════════════════════
+
     stats(): { 
-        entries: number; 
-        byType: Record<string, number>; 
-        avgAge: number; 
+        entries: number;
+        byType: Record<string, number>;
+        byContext: Record<string, number>;
+        avgAge: number;
         avgHits: number;
         toxicCount: number;
         avgPenalty: number;
     } {
         const byType: Record<string, number> = {};
+        const byContext: Record<string, number> = {};
         let totalAge = 0;
         let totalHits = 0;
         let totalPenalty = 0;
@@ -378,6 +422,7 @@ export class ClassificationMemory {
 
         for (const entry of this.memory) {
             byType[entry.type] = (byType[entry.type] || 0) + 1;
+            byContext[entry.context] = (byContext[entry.context] || 0) + 1;
             totalAge += Date.now() - entry.createdAt;
             totalHits += entry.hits;
             totalPenalty += entry.penaltyCount;
@@ -387,6 +432,7 @@ export class ClassificationMemory {
         return {
             entries: this.memory.length,
             byType,
+            byContext,
             avgAge: this.memory.length > 0 ? totalAge / this.memory.length : 0,
             avgHits: this.memory.length > 0 ? totalHits / this.memory.length : 0,
             toxicCount,
@@ -394,30 +440,28 @@ export class ClassificationMemory {
         };
     }
 
-    /**
-     * Limpa a memória (útil para testes).
-     */
     clear(): void {
         this.memory = [];
-        this.logger.info('memory_clear', 'Memória de classificação limpa');
+        this.logger.info('memory_clear', 'Memória limpa');
     }
 
-    /**
-     * Retorna entradas para debug/inspeção.
-     */
     inspect(): MemoryEntry[] {
         return [...this.memory];
     }
 
-    /**
-     * Retorna entradas tóxicas para análise.
-     */
     getToxicEntries(): MemoryEntry[] {
         return this.memory.filter(e => this.isToxic(e));
     }
+
+    /**
+     * Retorna entradas por contexto para debug.
+     */
+    getByContext(context: MemoryContext): MemoryEntry[] {
+        return this.memory.filter(e => e.context === context);
+    }
 }
 
-// Singleton para uso global
+// Singleton
 let classificationMemoryInstance: ClassificationMemory | null = null;
 
 export function getClassificationMemory(): ClassificationMemory {

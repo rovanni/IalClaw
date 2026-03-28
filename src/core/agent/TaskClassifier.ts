@@ -201,7 +201,8 @@ export class TaskClassifier {
         if (memoryResult && memoryResult.confidence >= 0.70) {
             this.logger.info('classification_memory', 'Classificação via memória adaptativa', {
                 type: memoryResult.type,
-                confidence: memoryResult.confidence
+                confidence: memoryResult.confidence,
+                source: memoryResult.source  // 'context' ou 'global'
             });
             return {
                 type: memoryResult.type as TaskType,
