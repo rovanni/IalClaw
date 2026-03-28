@@ -5,6 +5,7 @@ import { emitDebug } from '../shared/DebugBus';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
+import { getTaskContextManager, TaskContext } from '../core/context';
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
@@ -190,24 +191,9 @@ export class AgentLoop {
     private needsUserContext: boolean = false;
     private contextQuestion: string | undefined;
     private isContinuation: boolean = false;  // É continuação de tarefa anterior?
-
-    /**
-     * Detecta se o input é continuação de uma tarefa anterior.
-     */
-    private detectContinuation(input: string): boolean {
-        const continuationIndicators = [
-            /^e\s+/i,
-            /^e\s+para/i,
-            /^usar\s+/i,
-            /^utilizar\s+/i,
-            /^com\s+esse/i,
-            /^agora\s+com/i,
-            /^usando\s+/i
-        ];
-        
-        const normalized = input.toLowerCase().trim();
-        return continuationIndicators.some(p => p.test(normalized));
-    }
+    
+    // Gerenciamento de contexto contínuo
+    private taskContextManager = getTaskContextManager();
 
     /**
      * Verifica se tem todos os parâmetros necessários para o tipo de tarefa.
@@ -399,22 +385,47 @@ export class AgentLoop {
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
         // ═══════════════════════════════════════════════════════════════════
-        // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
-        // "Classificar não é decidir — decidir vem depois."
+        // TASK CONTEXT: Gerenciamento de estado contínuo
+        // "O agente não está pensando em continuidade, está reagindo por mensagem."
         // ═══════════════════════════════════════════════════════════════════
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
         this.setOriginalInput(userInput);
         this.evaluateModeTransition();
         this.ensureMinimalPlan();
         
-        // Detectar continuação
-        this.isContinuation = this.detectContinuation(userInput);
+        // Detectar continuação e gerenciar contexto
+        this.isContinuation = this.taskContextManager.isContinuation(userInput);
+        
+        // Se é continuação, manter tipo anterior e adicionar fonte
+        if (this.isContinuation && this.taskContextManager.hasActiveTask()) {
+            const existingContext = this.taskContextManager.getContext();
+            if (existingContext) {
+                // IMPORTANTE: NÃO mudar o tipo em continuação
+                this.currentTaskType = existingContext.type;
+                this.currentTaskConfidence = 1.0; // Confiança total
+                this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - mantendo tipo', {
+                    type: existingContext.type,
+                    hasSource: !!existingContext.source
+                });
+            }
+        } else {
+            // Nova tarefa: limpar contexto anterior
+            this.taskContextManager.clearContext();
+            this.taskContextManager.startTask(this.currentTaskType || 'unknown', userInput);
+        }
+        
+        // Detectar fonte de conteúdo e adicionar ao contexto
+        const detectedSource = this.taskContextManager.detectSource(userInput);
+        if (detectedSource && this.taskContextManager.hasActiveTask()) {
+            this.taskContextManager.setSource(detectedSource);
+        }
         
         // ═══════════════════════════════════════════════════════════════════
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
         // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
-        const hasAllParams = this.hasRequiredParams(userInput, this.currentTaskType);
+        const taskContext = this.taskContextManager.getContext();
+        const hasAllParams = taskContext?.source ? true : this.hasRequiredParams(userInput, this.currentTaskType);
         const riskLevel = this.detectRiskLevel(this.currentTaskType, userInput);
         
         const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
