@@ -36,11 +36,29 @@ export class ResultEvaluator {
       /permission denied/i,
       /timeout/i,
       /unauthorized/i,
-      /invalid/i
+      /invalid/i,
+      /erro:/i,
+      /erro\b/i,
+      /error\b/i,
+      /falha/i,
+      /failed/i,
+      /não permitido/i,
+      /nao permitido/i,
+      /arquivo não permitido/i,
+      /arquivo nao permitido/i,
+      /proibido/i,
+      /access denied/i,
+      /forbidden/i,
+      /não foi possível/i,
+      /nao foi possivel/i,
+      /impossível/i,
+      /impossivel/i,
+      /não encontrado/i,
+      /nao encontrado/i
     ];
 
     if (errorPatterns.some(pattern => pattern.test(outputStr))) {
-      return { success: false, quality: 0.3, reason: "Output contains error patterns" };
+      return { success: false, quality: 0.1, reason: "Output contains error patterns" };
     }
 
     const successPatterns = [

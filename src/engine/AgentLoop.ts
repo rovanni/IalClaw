@@ -694,36 +694,38 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     });
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: execToolName });
                     
+                    let stepValidation: StepValidation | null = null;
+                    
                     if (execStep) {
-                        const validation = this.validateStepResult(execStep, result, execToolName);
-                        this.logValidation(execStep, validation);
+                        stepValidation = this.validateStepResult(execStep, result, execToolName);
+                        this.logValidation(execStep, stepValidation);
                         
-                        this.stepValidations.push(validation.confidence);
+                        this.stepValidations.push(stepValidation.confidence);
                         this.actionTaken = true;
                         
-                        if (!validation.success) {
-                            this.markCurrentStepFailed(validation.reason);
+                        if (!stepValidation.success) {
+                            this.markCurrentStepFailed(stepValidation.reason);
                             
                             if (this.shouldReclassify(consecutiveToolFailures)) {
                                 messages = this.reclassifyAndAdjustPlan(messages);
                             }
                             
-                            if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
+                            if (this.shouldRetryWithLlm(stepValidation, consecutiveToolFailures)) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
-                                    content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
+                                    content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${stepValidation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
                                 };
                                 messages.push(llmCheck);
-                            } else if (!validation.needsLlm) {
-                                messages = this.adjustPlanAfterFailure(messages, execStep, validation);
+                            } else if (!stepValidation.needsLlm) {
+                                messages = this.adjustPlanAfterFailure(messages, execStep, stepValidation);
                             }
                         }
                         
                         await this.registerExecutionMemory(
                             execStep,
                             execToolName,
-                            validation.success,
-                            validation.reason
+                            stepValidation.success,
+                            stepValidation.reason
                         );
                     }
                     
@@ -732,8 +734,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
                     
                     this.lastStepResult = result;
-                    if (evaluation.success) {
+                    
+                    const stepSuccess = stepValidation ? stepValidation.success : evaluation.success;
+                    if (stepSuccess) {
+                        if (execStep) {
+                            execStep.completed = true;
+                            execStep.result = result.slice(0, 200);
+                        }
                         this.advanceToNextStep();
+                    } else {
+                        this.logger.warn('step_not_advanced', `[STEP] Step falhou, não avançando: ${execStep?.description || 'unknown'}`);
                     }
 
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
