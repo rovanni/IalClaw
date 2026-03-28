@@ -184,6 +184,10 @@ export class AgentLoop {
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
     private failSafe: boolean = false;
+    
+    // Detecção de intenção incompleta
+    private needsUserContext: boolean = false;
+    private contextQuestion: string | undefined;
 
     constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
         this.llm = llm;
@@ -330,6 +334,34 @@ export class AgentLoop {
     }
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
+        // ═══════════════════════════════════════════════════════════════════
+        // SHORT-CIRCUIT: content_generation NÃO precisa de loop
+        // "Se não precisa agir no mundo, não entra no loop."
+        // ═══════════════════════════════════════════════════════════════════
+        const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
+        this.setOriginalInput(userInput);
+        this.evaluateModeTransition();
+        this.ensureMinimalPlan();
+        
+        // SHORT-CIRCUIT para content_generation
+        if (this.currentTaskType === 'content_generation' && !this.failSafe) {
+            // Verificar se tem contexto suficiente
+            if (this.needsUserContext && this.contextQuestion) {
+                this.logger.info('short_circuit_needs_context', '[SHORT-CIRCUIT] content_generation precisa de contexto');
+                return {
+                    answer: this.contextQuestion,
+                    newMessages: []
+                };
+            }
+            
+            // Executar diretamente, sem loop
+            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)');
+            return this.executeContentGenerationDirect(userInput, initialMessages);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // FLUXO NORMAL: Outros tipos de tarefa usam loop
+        // ═══════════════════════════════════════════════════════════════════
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
         const maxTools = policy?.limits?.max_tool_calls || 3;
         const timeoutMs = 30000; // 30 segundos
@@ -368,9 +400,6 @@ export class AgentLoop {
 
         let messages = [...initialMessages];
         const newMessages: MessagePayload[] = [];
-        
-        const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
-        this.setOriginalInput(userInput);
         
         if (this.failSafe) {
             this.logger.warn('fail_safe_mode', '[FAIL-SAFE] Modo de execução garantida ativado');
@@ -2005,5 +2034,71 @@ Considere:
         });
         
         this.logger.debug('memory_stats', msg);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SHORT-CIRCUIT PARA CONTENT_GENERATION
+    // Tarefas de geração de conteúdo são ATÔMICAS, não iterativas.
+    // "Se não precisa agir no mundo, não entra no loop."
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Executa tarefas de content_generation diretamente, sem loop.
+     * Resolve problemas de:
+     * - loop_timeout
+     * - loop_max_iterations_fallback
+     * - steps falsos completos
+     */
+    private async executeContentGenerationDirect(
+        userInput: string,
+        messages: MessagePayload[]
+    ): Promise<{ answer: string; newMessages: MessagePayload[] }> {
+        this.logger.info('short_circuit_content_generation', '[SHORT-CIRCUIT] Executando content_generation diretamente (sem loop)');
+
+        // Prompt focado em geração de conteúdo
+        const systemPrompt: MessagePayload = {
+            role: 'system',
+            content: `Você é um assistente especializado em criar conteúdo estruturado.
+REGRAS:
+1. Gere o conteúdo completo de uma vez
+2. Se for slides/HTML, gere o HTML completo
+3. Se mencionar limite de linhas, respeite rigorosamente
+4. Retorne APENAS o conteúdo solicitado, sem explicações extras
+5. Se o input não tiver fonte de conteúdo clara, pergunte antes de gerar
+
+FORMATO DE SAÍDA:
+- Para slides HTML: HTML completo com <style> inline
+- Para texto estruturado: texto organizado conforme solicitado`
+        };
+
+        const allMessages = [systemPrompt, ...messages];
+
+        try {
+            const response = await this.llm.generate(allMessages);
+            
+            if (response.final_answer) {
+                this.logger.info('short_circuit_success', '[SHORT-CIRCUIT] Conteúdo gerado com sucesso', {
+                    response_length: response.final_answer.length
+                });
+                
+                return {
+                    answer: response.final_answer,
+                    newMessages: messages
+                };
+            }
+
+            // Se não teve resposta final, retornar erro
+            this.logger.warn('short_circuit_empty', '[SHORT-CIRCUIT] LLM retornou resposta vazia');
+            return {
+                answer: 'Não consegui gerar o conteúdo solicitado. Por favor, forneça mais detalhes.',
+                newMessages: messages
+            };
+        } catch (error: any) {
+            this.logger.error('short_circuit_error', error, '[SHORT-CIRCUIT] Erro na geração direta');
+            return {
+                answer: `Erro ao gerar conteúdo: ${error.message}. Tente novamente.`,
+                newMessages: messages
+            };
+        }
     }
 }
