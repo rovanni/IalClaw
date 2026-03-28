@@ -70,7 +70,6 @@ const HEURISTIC_RULES: HeuristicRule[] = [
         patterns: [
             /\b(converter|transformar|convert)\b.*\b(em|para|to)\b/i,
             /\.md\s+(para|to|em)\s+(html|pptx|pdf|docx)/i,
-            /\.(html|pdf|pptx|docx)\b/i,
             /\bmarkdown\b.*\b(pptx|powerpoint|pdf)\b/i,
             /\bpassar\s+(para|o)\s*\w+/i
         ],
@@ -78,27 +77,30 @@ const HEURISTIC_RULES: HeuristicRule[] = [
         confidence: 0.90
     },
     {
-        type: 'file_search',
-        patterns: [
-            /\b(procurar|buscar|encontrar|localizar)\b.*\b(arquivo|file|diretório)\b/i,
-            /\b(onde|qual)\b.*\b(arquivo|arquivos)\b/i,
-            /\blista\b.*\b(arquivos|files)\b/i,
-            /\bfind\b.*\b(file|directory)\b/i,
-            /\bglob\s+/i
-        ],
-        keywords: ['procurar', 'buscar', 'encontrar', 'arquivo'],
-        confidence: 0.85
-    },
-    {
         type: 'content_generation',
         patterns: [
+            // Criação/generação de conteúdo
             /\b(criar|gerar|escrever|redigir|elaborar)\b/i,
             /\b(fazer um|fazer uma)\b.*\b(texto|artigo|post|email|documento)\b/i,
             /\bme ajude a\b.*\b(escrever|criar|gerar)\b/i,
-            /\b(generate|create|write)\b/i
+            /\b(generate|create|write)\b/i,
+            // Slides e apresentações estruturadas
+            /\b(criar|gerar|fazer)\b.*\bslides?\b/i,
+            /\bslides?\b.*\b(html|pptx|powerpoint)\b/i,
+            /\bapresentação\b.*\b(criar|gerar|fazer)\b/i,
+            // HTML estruturado
+            /\b(criar|gerar)\b.*\bhtml\b/i,
+            /\bhtml\b.*\b(estruturado|organizado)\b/i,
+            // Melhoria de conteúdo
+            /\b(melhorar|organizar|reorganizar)\b.*\b(conteúdo|texto|html)\b/i,
+            /\b(legível|organizado)\b/i,
+            // Limite de linhas/estrutura
+            /\blimite\s+(de\s+)?(linhas?|caracteres?)\b/i,
+            /\bestrutura\b.*\b(criar|gerar)\b/i,
+            /\bdividir\b.*\b(blocos?|seções?|partes?)\b/i
         ],
-        keywords: ['criar', 'gerar', 'escrever', 'texto', 'artigo'],
-        confidence: 0.80
+        keywords: ['criar', 'gerar', 'escrever', 'texto', 'artigo', 'slides', 'html', 'estruturar', 'organizar'],
+        confidence: 0.85
     },
     {
         type: 'code_generation',
@@ -283,17 +285,26 @@ export class TaskClassifier {
     private heuristicClassify(normalized: string): TaskClassification | null {
         let bestMatch: TaskClassification | null = null;
 
-        // Verificação prioritária para comandos de terminal
+        // ═══════════════════════════════════════════════════════════════════
+        // VERIFICAÇÕES PRIORITÁRIAS (antes de qualquer outra coisa)
+        // ═══════════════════════════════════════════════════════════════════
+
+        // 1. Comandos de terminal - sempre system_operation
         if (this.isTerminalCommand(normalized)) {
             return { type: 'system_operation', confidence: 0.98, source: 'heuristic' };
         }
 
-        // Verificação prioritária para skill installation
+        // 2. Skill installation - sempre skill_installation
         if (this.isSkillInstallation(normalized)) {
             return { type: 'skill_installation', confidence: 0.98, source: 'heuristic' };
         }
 
-        // Verificação prioritária para conversão de arquivos
+        // 3. CRIAÇÃO DE SLIDES/HTML - SEMPRE content_generation (NÃO file_conversion)
+        if (this.isContentGeneration(normalized)) {
+            return { type: 'content_generation', confidence: 0.95, source: 'heuristic' };
+        }
+
+        // 4. Conversão de arquivos - MAS NÃO se for melhoria/organização
         if (this.isFileConversion(normalized)) {
             return { type: 'file_conversion', confidence: 0.95, source: 'heuristic' };
         }
@@ -352,12 +363,70 @@ export class TaskClassifier {
         return skillPatterns.some(pattern => pattern.test(normalized));
     }
 
+    /**
+     * Detecta criação de conteúdo estruturado (slides, HTML organizado, etc).
+     * CRÍTICO: NUNCA classificar como file_conversion.
+     * 
+     * Exemplos:
+     * - "criar slides em HTML" → content_generation (NÃO file_conversion)
+     * - "organizar conteúdo em 6 linhas por slide" → content_generation
+     * - "melhorar HTML deixando mais legível" → content_generation
+     */
+    private isContentGeneration(normalized: string): boolean {
+        // Criação de slides/apresentações
+        if (/\b(criar|gerar|fazer|montar)\b.*\bslides?\b/i.test(normalized)) {
+            return true;
+        }
+        if (/\bslides?\b.*\b(html|pptx|powerpoint|apresentação)\b/i.test(normalized)) {
+            return true;
+        }
+
+        // HTML estruturado/organizado
+        if (/\b(criar|gerar|fazer)\b.*\bhtml\b/i.test(normalized)) {
+            return true;
+        }
+        if (/\bhtml\b.*\b(estruturado|organizado|slides?)\b/i.test(normalized)) {
+            return true;
+        }
+
+        // Limite de linhas/estrutura
+        if (/\blimite\s*(de)?\s*(linhas?|caracteres?)\b/i.test(normalized)) {
+            return true;
+        }
+        if (/\b(6|seis)\s*linhas?\b/i.test(normalized)) {
+            return true;
+        }
+
+        // Melhoria/organização de conteúdo
+        if (/\b(melhorar|organizar|reorganizar)\b.*\b(conteúdo|texto|html|slides?)\b/i.test(normalized)) {
+            return true;
+        }
+        if (/\b(melhorar|deixar)\b.*\b(legível|organizado|estruturado)\b/i.test(normalized)) {
+            return true;
+        }
+
+        // Divisão em blocos/seções
+        if (/\bdividir\b.*\b(blocos?|seções?|partes?|slides?)\b/i.test(normalized)) {
+            return true;
+        }
+        if (/\bestrutura\b.*\b(criar|gerar|fazer)\b/i.test(normalized)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private isFileConversion(normalized: string): boolean {
-        // Tem caminho de arquivo E palavra de conversão
+        // IMPORTANTE: Verificar se NÃO é content_generation primeiro
+        if (this.isContentGeneration(normalized)) {
+            return false;
+        }
+
+        // Tem caminho de arquivo E palavra de conversão (NÃO melhoria)
         const hasFilePath = /\/[\w\-\.\/]+\.(md|html|pptx|pdf|txt|json)/i.test(normalized) ||
                             /[\w\-]+\/[\w\-]+\.(md|html|pptx|pdf)/i.test(normalized);
         
-        const hasConversionWord = /\b(converter|transformar|convert|pptx|powerpoint|apresentação)\b/i.test(normalized);
+        const hasConversionWord = /\b(converter|transformar|convert)\b/i.test(normalized);
 
         return hasFilePath && hasConversionWord;
     }
