@@ -1,6 +1,5 @@
-// ── Classification Memory com Decay Temporal ─────────────────────────────────
-// Memória adaptativa com controle de qualidade ao longo do tempo.
-// Evita viés acumulado, reforço de erro e drift semântico.
+// ── Classification Memory com Decay Temporal + Detecção de Padrões Tóxicos ────
+// Memória adaptativa com controle de qualidade e prevenção de loops de erro.
 
 import { createLogger } from '../shared/AppLogger';
 
@@ -12,7 +11,8 @@ interface MemoryEntry {
     hits: number;
     createdAt: number;
     lastUsed: number;
-    lastPenalized?: number;
+    penaltyCount: number;      // Contador de penalizações
+    lastPenalized?: number;    // Última penalização
 }
 
 interface ScoredEntry extends MemoryEntry {
@@ -29,7 +29,31 @@ export class ClassificationMemory {
     private readonly MIN_CONFIDENCE_TO_STORE = 0.80;
     private readonly HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias em ms
     private readonly PENALTY_AMOUNT = 2;
-    private readonly MIN_HITS = 1; // Mínimo para não ser removido
+    private readonly MIN_HITS = 1;
+    
+    // Configuração de toxicidade
+    private readonly TOXIC_PENALTY_THRESHOLD = 3;    // Penalizações para ser tóxico
+    private readonly TOXIC_HIT_RATIO = 2;             // hits < penaltyCount * 2 = tóxico
+    private readonly TOXIC_SCORE_PENALTY = 0.5;       // Redução de score para tóxicos
+    private readonly PENALTY_DECAY_FACTOR = 0.9;      // Decay de penalidade por período
+
+    /**
+     * Verifica se uma entrada é tóxica.
+     * Tóxico = frequentemente penalizada + baixa confiabilidade.
+     */
+    private isToxic(entry: MemoryEntry): boolean {
+        // Muitas penalizações
+        if (entry.penaltyCount < this.TOXIC_PENALTY_THRESHOLD) {
+            return false;
+        }
+
+        // Hits muito baixos em relação a penalizações
+        const hitRatio = entry.hits / Math.max(1, entry.penaltyCount);
+        
+        // Tóxico se: penalizado >= 3 vezes E hits < penaltyCount * 2
+        return entry.penaltyCount >= this.TOXIC_PENALTY_THRESHOLD && 
+               entry.hits < entry.penaltyCount * this.TOXIC_HIT_RATIO;
+    }
 
     /**
      * Normaliza texto para comparação.
@@ -55,7 +79,6 @@ export class ClassificationMemory {
 
     /**
      * Calcula o peso de recência (decay temporal).
-     * Entradas mais recentes têm peso maior.
      */
     private computeRecencyWeight(lastUsed: number): number {
         const age = Date.now() - lastUsed;
@@ -64,7 +87,7 @@ export class ClassificationMemory {
 
     /**
      * Calcula o score dinâmico de uma entrada.
-     * Combina: similaridade + frequência (log) + recência
+     * Combina: similaridade + frequência + recência - toxicidade
      */
     private computeScore(entry: MemoryEntry, similarity: number): number {
         const recencyWeight = this.computeRecencyWeight(entry.lastUsed);
@@ -72,28 +95,79 @@ export class ClassificationMemory {
         
         // Penalização por idade
         const age = Date.now() - entry.createdAt;
-        const agePenalty = Math.min(0.2, age / (30 * 24 * 60 * 60 * 1000)); // Max 0.2 após 30 dias
+        const agePenalty = Math.min(0.2, age / (30 * 24 * 60 * 60 * 1000));
         
-        return (
+        let score = (
             similarity * 0.5 +
             frequencyScore * 0.2 +
             recencyWeight * 0.3 -
             agePenalty
         );
+
+        // Penalização adicional para entradas tóxicas
+        if (this.isToxic(entry)) {
+            score -= this.TOXIC_SCORE_PENALTY;
+        }
+
+        return score;
+    }
+
+    /**
+     * Aplica decay às penalidades periodicamente.
+     * Reduz penaltyCount para permitir recuperação.
+     */
+    private applyPenaltyDecay(): void {
+        const now = Date.now();
+        const decayThreshold = 24 * 60 * 60 * 1000; // 1 dia
+
+        for (const entry of this.memory) {
+            if (entry.penaltyCount > 0 && entry.lastPenalized) {
+                const timeSincePenalty = now - entry.lastPenalized;
+                
+                if (timeSincePenalty > decayThreshold) {
+                    const oldPenalty = entry.penaltyCount;
+                    entry.penaltyCount = Math.floor(entry.penaltyCount * this.PENALTY_DECAY_FACTOR);
+                    
+                    if (entry.penaltyCount < oldPenalty) {
+                        this.logger.debug('penalty_decay', 'Penalidade decaída', {
+                            type: entry.type,
+                            old_penalty: oldPenalty,
+                            new_penalty: entry.penaltyCount,
+                            input_preview: entry.input.slice(0, 30)
+                        });
+                    }
+                }
+            }
+        }
     }
 
     /**
      * Busca classificação similar na memória usando score dinâmico.
+     * Ignora entradas tóxicas.
      */
     find(input: string): { type: string; confidence: number } | null {
         const normalized = this.normalize(input);
         const now = Date.now();
+
+        // Aplicar decay de penalidades periodicamente
+        this.applyPenaltyDecay();
 
         let best: MemoryEntry | null = null;
         let bestScore = 0;
         let bestSimilarity = 0;
 
         for (const entry of this.memory) {
+            // Ignorar entradas tóxicas
+            if (this.isToxic(entry)) {
+                this.logger.debug('skip_toxic', 'Entrada tóxica ignorada', {
+                    type: entry.type,
+                    penalty_count: entry.penaltyCount,
+                    hits: entry.hits,
+                    input_preview: entry.input.slice(0, 30)
+                });
+                continue;
+            }
+
             const sim = this.similarity(normalized, entry.normalized);
 
             if (sim >= this.MIN_SIMILARITY) {
@@ -125,6 +199,7 @@ export class ClassificationMemory {
                 similarity: bestSimilarity.toFixed(2),
                 score: bestScore.toFixed(2),
                 hits: best.hits,
+                penalty_count: best.penaltyCount,
                 age_hours: Math.round((now - best.createdAt) / (60 * 60 * 1000)),
                 confidence: finalConfidence.toFixed(2),
                 input_preview: input.slice(0, 50)
@@ -162,9 +237,15 @@ export class ClassificationMemory {
             existing.lastUsed = now;
             existing.confidence = Math.max(existing.confidence, confidence);
             
+            // Recuperar de toxicidade se estava penalizado mas agora está sendo reutilizado
+            if (existing.penaltyCount > 0) {
+                existing.penaltyCount = Math.max(0, existing.penaltyCount - 1);
+            }
+            
             this.logger.debug('memory_update', 'Classificação atualizada', {
                 type,
                 hits: existing.hits,
+                penalty_count: existing.penaltyCount,
                 input_preview: input.slice(0, 50)
             });
             return;
@@ -178,7 +259,8 @@ export class ClassificationMemory {
             confidence,
             hits: 1,
             createdAt: now,
-            lastUsed: now
+            lastUsed: now,
+            penaltyCount: 0
         });
 
         this.logger.info('memory_store', 'Nova classificação aprendida', {
@@ -188,7 +270,7 @@ export class ClassificationMemory {
             input_preview: input.slice(0, 50)
         });
 
-        // Eviction por score (não FIFO)
+        // Eviction por score
         if (this.memory.length > this.MAX_ENTRIES) {
             this.evict();
         }
@@ -196,10 +278,11 @@ export class ClassificationMemory {
 
     /**
      * Penaliza uma entrada quando o LLM discorda.
-     * Evita reforço de erro.
+     * Detecta padrões tóxicos persistentes.
      */
     penalize(input: string, type: string): void {
         const normalized = this.normalize(input);
+        const now = Date.now();
 
         const entry = this.memory.find(e => 
             e.type === type && 
@@ -207,19 +290,28 @@ export class ClassificationMemory {
         );
 
         if (entry) {
-            entry.hits = Math.max(this.MIN_HITS, entry.hits - this.PENALTY_AMOUNT);
-            entry.lastPenalized = Date.now();
+            const wasToxic = this.isToxic(entry);
             
+            entry.hits = Math.max(this.MIN_HITS, entry.hits - this.PENALTY_AMOUNT);
+            entry.penaltyCount++;
+            entry.lastPenalized = now;
+
+            const isNowToxic = this.isToxic(entry);
+
             this.logger.info('memory_penalize', 'Classificação penalizada', {
                 type,
                 hits: entry.hits,
+                penalty_count: entry.penaltyCount,
+                is_toxic: isNowToxic,
                 input_preview: input.slice(0, 50)
             });
 
-            // Se hits ficou muito baixo, remover na próxima eviction
-            if (entry.hits <= 0) {
-                this.logger.warn('memory_toxic', 'Padrão marcado como tóxico', {
+            // Log especial se acabou de se tornar tóxico
+            if (!wasToxic && isNowToxic) {
+                this.logger.warn('memory_toxic_detected', 'Padrão tóxico detectado e neutralizado', {
                     type,
+                    penalty_count: entry.penaltyCount,
+                    hits: entry.hits,
                     input_preview: input.slice(0, 50)
                 });
             }
@@ -228,24 +320,27 @@ export class ClassificationMemory {
 
     /**
      * Remove entradas com menor score (eviction inteligente).
-     * Prioriza remover: antigas, pouco usadas, penalizadas.
+     * Prioriza remover: tóxicas, antigas, pouco usadas.
      */
     private evict(): void {
         const now = Date.now();
         
+        // Aplicar decay antes de eviction
+        this.applyPenaltyDecay();
+
         // Calcular score para todas as entradas
         const scored: ScoredEntry[] = this.memory.map(entry => ({
             ...entry,
             score: this.computeScore(entry, this.similarity(entry.normalized, entry.normalized))
         }));
 
-        // Ordenar por score (menor primeiro)
+        // Ordenar por score (menor primeiro) - tóxicas têm score menor
         scored.sort((a, b) => a.score - b.score);
 
         // Remover as 20% com menor score
         const removeCount = Math.floor(this.MAX_ENTRIES * 0.2);
         const toRemove = scored.slice(0, removeCount);
-        const removeTypes = new Set(toRemove.map(e => e.type));
+        const toxicRemoved = toRemove.filter(e => this.isToxic(e)).length;
 
         // Filtrar mantendo as de maior score
         this.memory = this.memory.filter(entry => {
@@ -257,30 +352,45 @@ export class ClassificationMemory {
         const stats = this.stats();
         this.logger.debug('memory_evict', 'Eviction por score', {
             removed: removeCount,
+            toxic_removed: toxicRemoved,
             remaining: this.memory.length,
-            by_type: stats.byType
+            by_type: stats.byType,
+            toxic_count: stats.toxicCount
         });
     }
 
     /**
      * Retorna estatísticas da memória.
      */
-    stats(): { entries: number; byType: Record<string, number>; avgAge: number; avgHits: number } {
+    stats(): { 
+        entries: number; 
+        byType: Record<string, number>; 
+        avgAge: number; 
+        avgHits: number;
+        toxicCount: number;
+        avgPenalty: number;
+    } {
         const byType: Record<string, number> = {};
         let totalAge = 0;
         let totalHits = 0;
+        let totalPenalty = 0;
+        let toxicCount = 0;
 
         for (const entry of this.memory) {
             byType[entry.type] = (byType[entry.type] || 0) + 1;
             totalAge += Date.now() - entry.createdAt;
             totalHits += entry.hits;
+            totalPenalty += entry.penaltyCount;
+            if (this.isToxic(entry)) toxicCount++;
         }
 
         return {
             entries: this.memory.length,
             byType,
             avgAge: this.memory.length > 0 ? totalAge / this.memory.length : 0,
-            avgHits: this.memory.length > 0 ? totalHits / this.memory.length : 0
+            avgHits: this.memory.length > 0 ? totalHits / this.memory.length : 0,
+            toxicCount,
+            avgPenalty: this.memory.length > 0 ? totalPenalty / this.memory.length : 0
         };
     }
 
@@ -297,6 +407,13 @@ export class ClassificationMemory {
      */
     inspect(): MemoryEntry[] {
         return [...this.memory];
+    }
+
+    /**
+     * Retorna entradas tóxicas para análise.
+     */
+    getToxicEntries(): MemoryEntry[] {
+        return this.memory.filter(e => this.isToxic(e));
     }
 }
 
