@@ -218,6 +218,15 @@ export class TaskClassifier {
             
             // CORREÇÃO 2: Rejeitar generic_task e unknown do LLM
             if (llmResult && this.isValidTaskType(llmResult.type) && llmResult.confidence >= 0.70) {
+                // Verificar se LLM discordou da memória (penalizar entrada antiga)
+                if (memoryResult && memoryResult.type !== llmResult.type) {
+                    this.logger.warn('memory_conflict', 'LLM discordou da memória, penalizando', {
+                        memory_type: memoryResult.type,
+                        llm_type: llmResult.type
+                    });
+                    this.memory.penalize(input, memoryResult.type);
+                }
+                
                 // Aprender na memória
                 this.memory.store(input, llmResult.type, llmResult.confidence);
                 this.logger.info('classification_llm', 'Classificação por LLM', {
