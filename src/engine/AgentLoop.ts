@@ -480,6 +480,21 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         }
                     }
                     
+                    if (await this.checkMemoryBlock(toolName)) {
+                        const fallbackTool = currentStepForValidation 
+                            ? await this.getFallbackToolForStep(currentStepForValidation)
+                            : undefined;
+
+                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
+                            this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${fallbackTool}`);
+                            response.tool_call.name = fallbackTool;
+                        } else {
+                            const blockMsg: MessagePayload = { role: 'tool', content: `[MEMORY] Tool ${toolName} blocked by poor historical performance` };
+                            messages.push(blockMsg);
+                            continue;
+                        }
+                    }
+                    
                     if (ToolReliability.shouldAvoid(toolName, contextKey)) {
                         const fallbackTool = currentStepForValidation 
                             ? await this.getFallbackToolForStep(currentStepForValidation)
@@ -513,6 +528,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     const recordContext = `${this.currentTaskType || 'unknown'}:${execStep?.description || ''}`;
                     
                     ToolReliability.record(response.tool_call.name, evaluation.success, recordContext);
+                    
+                    if (evaluation.success && evaluation.quality > 0.8) {
+                        this.logger.info('reinforce_tool', `[LEARNING] Tool reforçada por alto qualidade: ${response.tool_call.name} (quality=${evaluation.quality.toFixed(2)})`);
+                    }
+
+                    if (evaluation.success) {
+                        this.executionContext.toolsFailed.delete(response.tool_call.name);
+                    } else {
+                        this.recordToolFailure(response.tool_call.name);
+                    }
                     
                     if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
                         this.refinementUsed = true;
@@ -904,14 +929,71 @@ private sanitizeUserFacingAnswer(answer: string): string {
         return "generic";
     }
 
+    private getTemporalWeight(timestamp: number): number {
+        const age = Date.now() - timestamp;
+        const days = age / (1000 * 60 * 60 * 24);
+        return Math.exp(-days / 7);
+    }
+
     private getMemoryScore(tool: string, decisions: ToolDecision[]): number {
         if (!decisions.length) return 0;
 
         const relevant = decisions.filter(d => d.tool === tool);
         if (relevant.length === 0) return 0;
 
-        const successRate = relevant.filter(d => d.success).length / relevant.length;
-        return successRate;
+        const weighted = relevant.reduce((acc, d) => {
+            const w = this.getTemporalWeight(d.timestamp);
+            return acc + (d.success ? w : 0);
+        }, 0);
+
+        const totalWeight = relevant.reduce((acc, d) => acc + this.getTemporalWeight(d.timestamp), 0);
+        
+        if (totalWeight === 0) return 0;
+        return weighted / totalWeight;
+    }
+
+    private async checkMemoryBlock(toolName: string): Promise<boolean> {
+        if (!this.decisionMemory || !this.currentTaskType) return false;
+
+        try {
+            const history = await this.decisionMemory.getToolHistory(toolName, this.currentTaskType);
+            
+            if (history.failure >= 3 && history.rate < 0.3) {
+                this.logger.warn('memory_block', `[MEMORY] Tool bloqueada por histórico ruim: ${toolName} (falhas=${history.failure}, rate=${history.rate.toFixed(2)})`);
+                return true;
+            }
+        } catch (error) {
+            this.logger.warn('memory_block_check_failed', `Falha ao verificar bloqueio por memória: ${error}`);
+        }
+        
+        return false;
+    }
+
+    private getTaskTypePreferences(): { prefer: string[]; avoid: string[] } {
+        switch (this.currentTaskType) {
+            case 'file_conversion':
+                return {
+                    prefer: ['list_directory', 'read_local_file', 'file.convert'],
+                    avoid: ['workspace_create_project', 'web_search']
+                };
+            case 'file_search':
+                return {
+                    prefer: ['list_directory', 'search_file', 'read_local_file'],
+                    avoid: ['web_search', 'workspace_create_project']
+                };
+            case 'content_generation':
+                return {
+                    prefer: ['workspace_create_project', 'workspace_save_artifact'],
+                    avoid: ['run_command', 'delete_file']
+                };
+            case 'system_operation':
+                return {
+                    prefer: ['run_command', 'system.exec'],
+                    avoid: ['web_search', 'workspace_create_project']
+                };
+            default:
+                return { prefer: [], avoid: [] };
+        }
     }
 
     private async rankToolsForStep(step: ExecutionStep, tools: string[]): Promise<string[]> {
@@ -927,6 +1009,8 @@ private sanitizeUserFacingAnswer(answer: string): string {
             }
         }
 
+        const taskPrefs = this.getTaskTypePreferences();
+
         return tools
             .map(tool => {
                 const reliability = ToolReliability.score(tool, contextKey);
@@ -937,7 +1021,20 @@ private sanitizeUserFacingAnswer(answer: string): string {
                     ? this.getMemoryScore(tool, pastDecisions)
                     : 0;
 
-                const score = (reliability * 0.4) + (compatible * 0.3) + (memoryScore * 0.3) + failurePenalty;
+                let memoryBoost = 0;
+                if (memoryScore > 0.8) {
+                    memoryBoost = 0.3;
+                    this.logger.info('reinforce_tool', `[LEARNING] Tool reforçada por memória positiva: ${tool} (score=${memoryScore.toFixed(2)})`);
+                }
+
+                let taskPrefBonus = 0;
+                if (taskPrefs.prefer.includes(tool)) {
+                    taskPrefBonus = 0.2;
+                } else if (taskPrefs.avoid.includes(tool)) {
+                    taskPrefBonus = -0.3;
+                }
+
+                const score = (reliability * 0.4) + (compatible * 0.3) + (memoryScore * 0.3) + failurePenalty + memoryBoost + taskPrefBonus;
                 return { tool, score };
             })
             .sort((a, b) => b.score - a.score)
