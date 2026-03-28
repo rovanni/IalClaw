@@ -31,6 +31,10 @@ export class SkillResolver {
             const hasSkillNoun = /\b(skill|skills|habilidade|habilidades)\b/i.test(trimmed);
             const hasThisPhrase = /\b(?:essa|esse|essa skill|essa habilidade|essa ferramenta)\b/i.test(trimmed);
             if (hasInstallVerb || (hasInstallVerb && hasThisPhrase)) {
+                const skillFromListMatch = trimmed.match(/\*\*([a-zA-Z0-9_-]+)\*\*/i);
+                if (skillFromListMatch) {
+                    return { skill: installer, query: `instale ${skillFromListMatch[1]}` };
+                }
                 const skillArgMatch = trimmed.match(/(?:instala|instalar|instale|adicione|adicionar|baixe|baixar|busque|buscar|procure|procurar|encontre)\s+(?:essa|esse|uma|a)?\s*[:\-]?\s*(\S+)/i);
                 const skillArg = skillArgMatch ? skillArgMatch[1].replace(/[.:]/g, '') : trimmed;
                 return { skill: installer, query: `instale ${skillArg}` };
@@ -57,6 +61,11 @@ export class SkillResolver {
         const hasThisPhrase = /\b(?:essa|esse|essa skill|essa habilidade|essa ferramenta)\b/i.test(trimmed);
         
         if (installer && (hasInstallIntent || hasThisPhrase)) {
+            const skillFromListMatch = trimmed.match(/\*\*([a-zA-Z0-9_-]+)\*\*/i);
+            if (skillFromListMatch) {
+                return { skill: installer, query: `instale ${skillFromListMatch[1]}` };
+            }
+            
             const skillArgMatch = trimmed.match(/(?:instala|instalar|instale|adicione|adicionar|baixe|baixar|busque|buscar|procure|procurar|encontre)\s+(?:essa|esse|uma|a)?\s*[:\-]?\s*(\S+)/i);
             if (skillArgMatch) {
                 const skillArg = skillArgMatch[1].replace(/[.:]/g, '');
