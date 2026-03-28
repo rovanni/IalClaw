@@ -212,12 +212,28 @@ export const createSlidesProjectTemplate: PlanTemplate = {
     match: (goal: string) => {
         const g = goal.toLowerCase();
         return (
+            // Palavras-chave diretas
             g.includes('slide')
             || g.includes('slides')
             || g.includes('apresentacao')
             || g.includes('apresentação')
             || g.includes('presentation')
             || g.includes('deck')
+            // Criação de slides
+            || g.includes('criar slide')
+            || g.includes('gerar slide')
+            || g.includes('fazer slide')
+            || g.includes('montar slide')
+            // HTML estruturado/apresentação
+            || (g.includes('html') && (g.includes('estruturado') || g.includes('organizado')))
+            || (g.includes('html') && g.includes('slide'))
+            // Limite de linhas indica estrutura de slides
+            || (g.includes('limite') && g.includes('linha'))
+            || g.includes('6 linhas')
+            || g.includes('seis linhas')
+            // Organizar em slides/blocos
+            || (g.includes('organizar') && (g.includes('slide') || g.includes('blocos') || g.includes('apresentacao')))
+            || (g.includes('dividir') && g.includes('slide'))
         );
     },
     build: async ({ goal, provider, hasActiveProject, currentProjectId, workspaceContext }: PlanTemplateContext): Promise<ExecutionPlan> => {

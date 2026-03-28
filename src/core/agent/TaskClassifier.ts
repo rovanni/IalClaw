@@ -591,10 +591,11 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
             ];
         case 'content_generation':
             return [
-                'definir estrutura do conteúdo',
-                'gerar conteúdo',
-                'revisar conteúdo',
-                'salvar resultado'
+                'obter conteúdo fonte',
+                'interpretar e segmentar conteúdo',
+                'estruturar conteúdo no formato solicitado',
+                'gerar saída formatada',
+                'salvar resultado se necessário'
             ];
         case 'system_operation':
             return [
