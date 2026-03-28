@@ -4,6 +4,9 @@ import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
+import { StepValidator, ValidationContext } from './StepValidator';
+import { ToolReliability } from './ToolReliability';
+import { ResultEvaluator } from './ResultEvaluator';
 
 export type AgentProgressEvent = {
     stage:
@@ -161,6 +164,8 @@ export class AgentLoop {
     private mode: AgentMode = 'THINKING';
     private disableFollowUpQuestions: boolean = false;
     private actionTaken: boolean = false;
+    private refinementUsed: boolean = false;
+    private readonly QUALITY_THRESHOLD = 0.5;
     
     private readonly MODE_TRANSITION_CONFIDENCE = 0.75;
     
@@ -392,13 +397,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             repeat_count: toolRepeatCount
                         });
                         
-                        const fallbackTool = this.executionContext.currentPlan?.steps[this.executionContext.currentPlan.currentStepIndex - 1]?.tool 
-                            ? this.getFallbackToolForStep(this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex - 1])
+                        const plan = this.executionContext.currentPlan;
+                        const fallbackStep = plan && plan.currentStepIndex < plan.steps.length
+                            ? plan.steps[plan.currentStepIndex]
                             : undefined;
-                        if (fallbackTool && this.executionContext.currentPlan) {
-                            const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex - 1];
-                            if (currentStep) {
-                                currentStep.tool = fallbackTool;
+                        const fallbackTool = fallbackStep?.tool 
+                            ? this.getFallbackToolForStep(fallbackStep)
+                            : undefined;
+                        if (fallbackTool && plan) {
+                            if (fallbackStep) {
+                                fallbackStep.tool = fallbackTool;
                                 this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${fallbackTool}`);
                             }
                         }
@@ -428,8 +436,34 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     continue; // Pushes model to finalize answer
                 }
 
-toolCallsCount++;
+                    toolCallsCount++;
                 try {
+                    const plan = this.executionContext.currentPlan;
+                    const currentStepForValidation = plan && plan.currentStepIndex < plan.steps.length
+                        ? plan.steps[plan.currentStepIndex]
+                        : undefined;
+                    const validationContext: ValidationContext = {
+                        safeMode: policy?.security?.safeMode ?? false,
+                        currentPlan: plan ?? undefined
+                    };
+                    
+                    if (currentStepForValidation) {
+                        const stepValidation = StepValidator.validate(currentStepForValidation, validationContext);
+                        if (!stepValidation.plausible || stepValidation.risk === "high") {
+                            this.logger.warn('step_validation_failed', `[VALIDATION] Step skipped: ${stepValidation.reason}`);
+                            const skipMsg: MessagePayload = { role: 'tool', content: `[VALIDATION] Step skipped due to: ${stepValidation.reason}` };
+                            messages.push(skipMsg);
+                            continue;
+                        }
+                    }
+                    
+                    if (ToolReliability.shouldAvoid(response.tool_call.name)) {
+                        this.logger.warn('tool_avoided', `[RELIABILITY] Avoiding unreliable tool: ${response.tool_call.name}`);
+                        const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${response.tool_call.name} skipped due to low reliability` };
+                        messages.push(avoidMsg);
+                        continue;
+                    }
+                    
                     this.logger.info('tool_call_started', t('log.loop.tool_call_started'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name,
@@ -437,6 +471,22 @@ toolCallsCount++;
                     });
                     await emitProgress({ stage: 'tool_started', iteration: i + 1, tool_name: response.tool_call.name });
                     const result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
+                    
+                    const evaluation = ResultEvaluator.evaluate(result);
+                    
+                    ToolReliability.record(response.tool_call.name, evaluation.success);
+                    
+                    if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
+                        this.logger.info('low_quality_detected', `[QUALITY] Low quality detected: ${evaluation.quality.toFixed(2)}. Attempting refinement.`);
+                        this.refinementUsed = true;
+                        
+                        const refineMsg: MessagePayload = {
+                            role: 'system',
+                            content: `[REFINEMENT] Previous result quality low (${evaluation.quality.toFixed(2)}). Please improve the output with better parameters or approach.`
+                        };
+                        messages.push(refineMsg);
+                    }
+                    
                     toolEvidence.push(String(result).slice(0, 2000));
                     consecutiveToolFailures = 0;
 
@@ -458,7 +508,10 @@ toolCallsCount++;
                     });
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: response.tool_call.name });
                     
-                    const currentStep = this.executionContext.currentPlan?.steps[this.executionContext.currentPlan.currentStepIndex - 1];
+                    const p = this.executionContext.currentPlan;
+                    const currentStep = p && p.currentStepIndex < p.steps.length
+                        ? p.steps[p.currentStepIndex]
+                        : undefined;
                     if (currentStep) {
                         const validation = this.validateStepResult(currentStep, result, response.tool_call.name);
                         this.logValidation(currentStep, validation);
@@ -500,7 +553,7 @@ toolCallsCount++;
                     this.advanceToNextStep();
 
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
-                    const lastSuccessful = !result.toLowerCase().includes('erro') && !result.toLowerCase().includes('error') && !result.toLowerCase().includes('failed');
+                    const lastSuccessful = evaluation.success;
                     const globalConf = this.getGlobalConfidence(this.stepValidations);
                     
                     if (this.mode === 'EXECUTION' && !lastSuccessful && globalConf < this.GLOBAL_CONFIDENCE_THRESHOLD) {
