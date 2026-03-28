@@ -184,38 +184,6 @@ IalClaw includes a **hybrid semantic search system** that combines intelligent i
 - **Synonym Expansion**: Local synonym expansion for better results
 - **Debug Mode**: Detailed score breakdowns and expansion info
 
-### Usage
-
-```typescript
-import { createSearchEngine } from './search';
-
-const engine = createSearchEngine({
-  useGraphExpansion: true
-});
-
-await engine.indexDocument({
-  id: '1',
-  title: 'Machine Learning Basics',
-  content: 'Machine learning is a subset of AI...'
-});
-
-// Basic search with graph expansion
-const results = await engine.search('machine learning', {
-  expandWithGraph: true
-});
-
-// Debug mode for detailed info
-const resultsWithDebug = await engine.search('machine learning', {
-  expandWithGraph: true,
-  debug: true
-});
-
-resultsWithDebug.forEach(r => {
-  console.log(r.debugInfo.graphTerms);
-  console.log(r.debugInfo.scoreBreakdown);
-});
-```
-
 > For technical specification, see [specs/search-system.md](./specs/search-system.md).
 
 ---
@@ -539,38 +507,6 @@ O IalClaw inclui um **sistema de busca semântica híbrido** que combina indexa�
 - **Re-ranking LLM**: Opcional, re-ordena top resultados
 - **Expansão de Sinônimos**: Expansão local de sinônimos para melhores resultados
 - **Modo Debug**: Detalhamento de scores e expansão
-
-### Uso
-
-```typescript
-import { createSearchEngine } from './search';
-
-const engine = createSearchEngine({
-  useGraphExpansion: true
-});
-
-await engine.indexDocument({
-  id: '1',
-  title: 'Machine Learning Basics',
-  content: 'Machine learning is a subset of AI...'
-});
-
-// Busca básica com expansão via grafo
-const results = await engine.search('machine learning', {
-  expandWithGraph: true
-});
-
-// Modo debug para informações detalhadas
-const resultsWithDebug = await engine.search('machine learning', {
-  expandWithGraph: true,
-  debug: true
-});
-
-resultsWithDebug.forEach(r => {
-  console.log(r.debugInfo.graphTerms);
-  console.log(r.debugInfo.scoreBreakdown);
-});
-```
 
 > Para especificação técnica, veja [specs/search-system.md](./specs/search-system.md).
 
