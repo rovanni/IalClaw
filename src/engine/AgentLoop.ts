@@ -911,7 +911,8 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             return { shouldStop: false, reason: 'insufficient_validations_for_delta' };
         }
 
-        const currentConfidence = this.stepValidations[this.stepValidations.length - 1];
+        const recent = this.stepValidations.slice(-3);
+        const currentConfidence = recent.reduce((a, b) => a + b, 0) / recent.length;
 
         if (typeof currentConfidence !== 'number') {
             return { shouldStop: false, reason: 'invalid_confidence' };
@@ -920,7 +921,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         if (this.previousConfidence !== null) {
             const delta = currentConfidence - this.previousConfidence;
 
-            console.log(`[DELTA] current=${currentConfidence.toFixed(2)} prev=${this.previousConfidence.toFixed(2)} delta=${delta.toFixed(3)}`);
+            console.log(`[DELTA] avg_current=${currentConfidence.toFixed(2)} prev=${this.previousConfidence?.toFixed(2) ?? 'null'} delta=${delta.toFixed(3)}`);
 
             if (delta < this.MIN_DELTA_THRESHOLD) {
                 this.lowImprovementCount++;
