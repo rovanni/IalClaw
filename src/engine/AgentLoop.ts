@@ -785,15 +785,47 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
         }
 
         // Graceful fallback: pedir ao LLM uma resposta final sem tools
+        const hasPendingFallback = this.hasPendingSteps();
         this.logger.warn('loop_max_iterations_fallback', t('log.loop.max_iterations_fallback'), {
             duration_ms: Date.now() - startedAt,
             max_iterations: maxIter,
             tool_calls_count: toolCallsCount,
-            fail_safe: this.failSafe
+            fail_safe: this.failSafe,
+            has_pending_steps: hasPendingFallback
         });
 
-        if (this.failSafe && toolCallsCount === 0) {
-            this.logger.warn('fail_safe_final', '[FAIL-SAFE] Resposta direta forçada');
+        if ((this.failSafe || hasPendingFallback) && toolCallsCount === 0) {
+            this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
+            const defaultTool = this.getDefaultToolForInput(userInput);
+            this.logger.info('fail_safe_tool_attempt', `[FAIL-SAFE] Tentando ferramenta: ${defaultTool}`);
+            
+            if (this.executionContext.currentPlan && this.executionContext.currentPlan.currentStepIndex < this.executionContext.currentPlan.steps.length) {
+                const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex];
+                if (!currentStep.tool) {
+                    currentStep.tool = this.mapStepToTool(currentStep.description) || defaultTool;
+                }
+                
+                try {
+                    this.logger.info('fail_safe_forced_execution', `[FAIL-SAFE] Forçando execução: ${currentStep.tool} para step "${currentStep.description}"`);
+                    const forcedResult = await this.registry.executeTool(currentStep.tool, {});
+                    const toolMsg: MessagePayload = { role: 'tool', content: forcedResult };
+                    newMessages.push(toolMsg);
+                    toolCallsCount++;
+                    
+                    if (forcedResult && forcedResult.length > 0 && !forcedResult.toLowerCase().includes('erro')) {
+                        this.advanceToNextStep();
+                        const directAnswer = `Executei a ação: ${currentStep.description}. Resultado: ${forcedResult.slice(0, 500)}`;
+                        const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
+                        newMessages.push(finalMsg);
+                        const duration = Date.now() - startedAt;
+                        await emitProgress({ stage: 'completed', duration_ms: duration });
+                        return { answer: directAnswer, newMessages };
+                    }
+                } catch (forcedError: any) {
+                    this.logger.error('fail_safe_forced_error', forcedError as Error, '[FAIL-SAFE] Falha na execução forçada');
+                }
+            }
+            
             const directAnswer = `Vou tentar resolver diretamente: ${userInput}`;
             const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
             newMessages.push(finalMsg);
@@ -1351,9 +1383,14 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
     public setOriginalInput(input: string) {
         this.originalInput = input;
         
-        this.failSafe = this.isUserIntentClear(input);
-        
+        const intentClear = this.isUserIntentClear(input);
         const classification = classifyTask(input);
+        
+        this.failSafe = intentClear || classification.type === 'unknown' || classification.type === 'generic_task';
+        
+        if (this.failSafe) {
+            this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: intentClear=${intentClear}, type=${classification.type}`);
+        }
         
         if (this.failSafe && (classification.type === 'unknown' || classification.confidence === 0)) {
             this.logger.warn('fail_safe_classification', '[FAIL-SAFE] Classificação ignorada - definindo como generic_task');
@@ -1384,14 +1421,35 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         return total / validations.length;
     }
 
+    private hasPendingSteps(): boolean {
+        const plan = this.executionContext.currentPlan;
+        if (!plan) return false;
+        
+        return plan.steps.some(step => !step.completed && !step.failed);
+    }
+
     private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): { shouldStop: boolean; reason: string } {
+        const hasPending = this.hasPendingSteps();
+        
+        if (hasPending && this.failSafe) {
+            this.logger.info('fail_safe_prevents_stop', `[FAIL-SAFE] Impedindo parada - há steps pendentes (failSafe=true)`);
+            return { shouldStop: false, reason: 'fail_safe_prevents_stop_has_pending_steps' };
+        }
+
         if (stepCount < 2) {
             return { shouldStop: false, reason: 'insufficient_steps' };
         }
 
         const globalConfidence = this.getGlobalConfidence(this.stepValidations);
 
-        if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful) {
+        if (hasPending && globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful) {
+            const plan = this.executionContext.currentPlan;
+            const pendingCount = plan?.steps.filter((s: ExecutionStep) => !s.completed && !s.failed).length || 0;
+            this.logger.info('pending_steps_prevent_stop', `[STOP-BLOCK] Ignorando confiança alta - há ${pendingCount} steps pendentes`);
+            return { shouldStop: false, reason: 'has_pending_steps_prevent_stop' };
+        }
+
+        if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful && !hasPending) {
             return { 
                 shouldStop: true, 
                 reason: `global_confidence=${globalConfidence.toFixed(2)}_threshold=${this.GLOBAL_CONFIDENCE_THRESHOLD}` 
