@@ -9,6 +9,7 @@ import { SessionManager } from '../shared/SessionManager';
 import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
 import { SkillResolver } from '../skills/SkillResolver';
+import { SkillResolutionManager, ResolutionResult } from '../skills/SkillResolutionManager';
 import { LoadedSkill } from '../skills/types';
 import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
@@ -34,6 +35,7 @@ export class AgentController {
     private inputHandler: TelegramInputHandler;
     private outputHandler: TelegramOutputHandler;
     private skillResolver?: SkillResolver;
+    private skillResolution?: SkillResolutionManager;
     private memoryLifecycle?: MemoryLifecycleManager;
     private logger = createLogger('AgentController');
 
@@ -62,6 +64,7 @@ export class AgentController {
         this.inputHandler = inputHandler;
         this.outputHandler = outputHandler;
         this.skillResolver = skillResolver;
+        this.skillResolution = new SkillResolutionManager();
         this.memoryLifecycle = memoryLifecycle;
     }
 
@@ -70,6 +73,17 @@ export class AgentController {
         if (typeof maybeLoop?.getProvider !== 'function') {
             throw new Error(t('error.agent.invalid_loop_provider'));
         }
+    }
+
+    private formatSkillList(results: { name: string; description: string; source: string; rank?: number; installs?: string }[]): string {
+        let text = `Encontrei ${results.length} skills para essa busca:\n\n`;
+        for (const r of results) {
+            const rank = r.rank ? `⭐ Rank #${r.rank}` : '';
+            const installs = r.installs ? `| 📥 ${r.installs} instalações` : '';
+            text += `${r.name}: ${r.description}\n  ${rank} ${installs}\n  Fonte: ${r.source}\n\n`;
+        }
+        text += 'Para instalar, digite "instale essa: [nome]" ou "instale o número X"';
+        return text;
     }
 
     public async handleMessage(ctx: Context) {
@@ -358,8 +372,51 @@ export class AgentController {
             has_current_project: Boolean(session?.current_project_id)
         });
 
-        // ── Resolução de skill ──────────────────────────────────────────────
-        if (this.skillResolver) {
+        // ── Resolução de skill com sistema robusto ───────────────────────────
+        if (this.skillResolver && this.skillResolution) {
+            const hasListReference = /(?:essa|esse|a|o|numero|n)\s*[:\-]?\s*\d+/i.test(effectiveUserQuery);
+            const hasInstallIntent = /(?:instala|instalar|instale|adicione|adicionar)/i.test(effectiveUserQuery);
+            
+            if (!hasListReference && hasInstallIntent) {
+                this.skillResolution.clearPendingList();
+            }
+            
+            const resolution = this.skillResolution.resolve(effectiveUserQuery);
+            
+            if (resolution.action === 'install' && resolution.skillName) {
+                const installer = this.skillResolver.resolve(`instale ${resolution.skillName}`);
+                if (installer) {
+                    logger.info('skill_resolved', t('log.agent.skill_resolved'), {
+                        skill_name: resolution.skillName
+                    });
+                    return this.runWithSkill(sessionId, effectiveUserQuery, installer.query, installer.skill, onProgress, shouldStop);
+                }
+            }
+            
+            if (resolution.action === 'list' && resolution.searchResults) {
+                const listText = this.formatSkillList(resolution.searchResults);
+                this.memory.saveMessage(sessionId, 'assistant', listText);
+                logger.info('skill_list_shown', '[SKILL] Lista de skills apresentada', {
+                    count: resolution.searchResults.length
+                });
+                return listText;
+            }
+            
+            if (resolution.action === 'ask_input' && resolution.message) {
+                this.memory.saveMessage(sessionId, 'assistant', resolution.message);
+                return resolution.message;
+            }
+            
+            if (resolution.action === 'none') {
+                const resolved = this.skillResolver.resolve(effectiveUserQuery);
+                if (resolved) {
+                    logger.info('skill_resolved', t('log.agent.skill_resolved'), {
+                        skill_name: resolved.skill.name
+                    });
+                    return this.runWithSkill(sessionId, effectiveUserQuery, resolved.query, resolved.skill, onProgress, shouldStop);
+                }
+            }
+        } else if (this.skillResolver) {
             const resolved = this.skillResolver.resolve(effectiveUserQuery);
             if (resolved) {
                 logger.info('skill_resolved', t('log.agent.skill_resolved'), {
@@ -529,6 +586,10 @@ export class AgentController {
             duration_ms: Date.now() - startedAt,
             response_length: result.answer.length
         });
+
+        if (this.skillResolution) {
+            this.skillResolution.clearPendingList();
+        }
 
         return result.answer;
     }
