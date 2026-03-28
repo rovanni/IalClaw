@@ -209,6 +209,50 @@ export class AgentLoop {
         return continuationIndicators.some(p => p.test(normalized));
     }
 
+    /**
+     * Verifica se tem todos os parâmetros necessários para o tipo de tarefa.
+     */
+    private hasRequiredParams(input: string, type: TaskType | null): boolean {
+        // content_generation precisa de fonte de conteúdo
+        if (type === 'content_generation') {
+            const hasSource = /\b(usar|utilizar|com|arquivo|conte[úu]do)\b/i.test(input) ||
+                              /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
+            return hasSource;
+        }
+        
+        // file_conversion precisa de arquivo fonte e destino
+        if (type === 'file_conversion') {
+            const hasSource = /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
+            return hasSource;
+        }
+        
+        // Outros tipos não precisam de parâmetros especiais
+        return true;
+    }
+
+    /**
+     * Detecta nível de risco baseado no tipo de tarefa e input.
+     */
+    private detectRiskLevel(type: TaskType | null, input: string): 'low' | 'medium' | 'high' {
+        // Alto risco: comandos destrutivos
+        const highRiskPatterns = [
+            /delete/i, /remove/i, /drop/i, /truncate/i,
+            /rm\s+/i, /del\s+/i, /uninstall/i, /purge/i
+        ];
+        
+        if (highRiskPatterns.some(p => p.test(input))) {
+            return 'high';
+        }
+        
+        // Médio risco: operações de sistema
+        if (type === 'system_operation') {
+            return 'medium';
+        }
+        
+        // Baixo risco: geração de conteúdo, informações
+        return 'low';
+    }
+
     constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
         this.llm = llm;
         this.registry = registry;
@@ -366,41 +410,71 @@ export class AgentLoop {
         // Detectar continuação
         this.isContinuation = this.detectContinuation(userInput);
         
+        // ═══════════════════════════════════════════════════════════════════
+        // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
+        // "Classificar não é decidir — decidir vem depois."
+        // ═══════════════════════════════════════════════════════════════════
+        const hasAllParams = this.hasRequiredParams(userInput, this.currentTaskType);
+        const riskLevel = this.detectRiskLevel(this.currentTaskType, userInput);
+        
         const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
             isContinuation: this.isContinuation,
-            hasAllParams: !this.needsUserContext,
-            riskLevel: this.currentTaskType === 'system_operation' ? 'medium' : 'low',
+            hasAllParams: hasAllParams,
+            riskLevel: riskLevel,
             isDestructive: false,
             isReversible: true
         });
         
         const autonomyDecision = decideAutonomy(autonomyContext);
         
+        // Log da decisão (essencial para debug)
         this.logger.info('autonomy_decision', `[AUTONOMY] Decisão: ${autonomyDecision}`, {
             intent: autonomyContext.intent,
             decision: autonomyDecision,
             hasAllParams: autonomyContext.hasAllParams,
-            riskLevel: autonomyContext.riskLevel
+            riskLevel: autonomyContext.riskLevel,
+            isContinuation: autonomyContext.isContinuation,
+            taskType: this.currentTaskType
         });
         
+        // ═══════════════════════════════════════════════════════════════════
         // 🔴 CONFIRM: Ação destrutiva ou risco alto → confirmar
+        // ═══════════════════════════════════════════════════════════════════
         if (autonomyDecision === AutonomyDecision.CONFIRM) {
-            this.logger.warn('autonomy_confirm_required', '[AUTONOMY] Ação requer confirmação');
+            this.logger.warn('autonomy_confirm_required', '[AUTONOMY] Ação requer confirmação', {
+                taskType: this.currentTaskType,
+                riskLevel: riskLevel
+            });
             return {
                 answer: t('autonomy.confirm_action', { action: this.currentTaskType }),
                 newMessages: []
             };
         }
         
-        // 🟡 ASK: Falta informação → perguntar
+        // ═══════════════════════════════════════════════════════════════════
+        // 🟡 ASK: Falta informação → perguntar (específico por tipo)
+        // ═══════════════════════════════════════════════════════════════════
         if (autonomyDecision === AutonomyDecision.ASK) {
             this.logger.info('autonomy_ask', '[AUTONOMY] Informação necessária', {
-                missing: this.needsUserContext ? 'context' : 'params'
+                taskType: this.currentTaskType,
+                missing: !hasAllParams ? 'params' : 'context'
             });
-            return {
-                answer: t('content.ask_for_source'),
-                newMessages: []
-            };
+            
+            // Mensagem específica por tipo de tarefa
+            if (this.currentTaskType === 'content_generation') {
+                return { answer: t('content.ask_for_source'), newMessages: [] };
+            }
+            
+            if (this.currentTaskType === 'file_conversion') {
+                return { answer: t('file.ask_for_source'), newMessages: [] };
+            }
+            
+            if (this.currentTaskType === 'file_search') {
+                return { answer: t('file.ask_search_query'), newMessages: [] };
+            }
+            
+            // Fallback genérico
+            return { answer: t('autonomy.ask_context'), newMessages: [] };
         }
         
         // 🟢 EXECUTE: Segue fluxo (short-circuit ou loop)
