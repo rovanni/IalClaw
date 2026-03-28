@@ -75,9 +75,14 @@ const TASK_RULES: TaskRule[] = [
             /\brun\b.*\b(npm|yarn|pnpm|python|node)\b/i,
             /\binstall\b.*\b(npm|yarn|pnpm|pip)\b/i,
             /\bapt\b/i,
-            /\b(sudo|chmod|chown)\b/i
+            /\b(sudo|chmod|chown)\b/i,
+            /\b(instale|instalando|instalado)\b/i,
+            /\b(pip install|npm install|yarn add)\b/i,
+            /\b(apt install|apt-get install)\b/i,
+            /\bconfigure\b/i,
+            /\bsetup\b/i
         ],
-        confidence: 0.8
+        confidence: 0.85
     },
     {
         type: 'skill_installation',

@@ -763,5 +763,147 @@ export class SkillRegistry {
                 }
             }
         });
+
+        /**
+         * run_python: executa um script Python.
+         */
+        this.register({
+            name: "run_python",
+            description: "Executa um script Python. Use para conversões, processamento de dados, automações. Retorna stdout e stderr.",
+            parameters: {
+                type: "object",
+                properties: {
+                    script: { type: "string", description: "Caminho do script Python (.py)" },
+                    args: { type: "array", items: { type: "string" }, description: "Argumentos para o script (opcional)" }
+                },
+                required: ["script"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const { execSync } = require('child_process');
+                const scriptPath = args.script;
+                
+                // Verificar se o script existe
+                if (!fs.existsSync(scriptPath)) {
+                    return `Erro: script não encontrado: ${scriptPath}`;
+                }
+                
+                // Construir comando
+                const scriptArgs = args.args || [];
+                const argsStr = scriptArgs.map((a: string) => `"${a}"`).join(' ');
+                const cmd = `python3 "${scriptPath}" ${argsStr}`.trim();
+                
+                try {
+                    const stdout = execSync(cmd, { 
+                        encoding: 'utf8',
+                        timeout: 30000, // 30 segundos
+                        cwd: path.dirname(scriptPath)
+                    });
+                    return `✅ Script executado:\n${stdout}`;
+                } catch (e: any) {
+                    const stderr = e.stderr?.toString() || e.message;
+                    const stdout = e.stdout?.toString() || '';
+                    
+                    if (stderr.includes('No module named')) {
+                        const missingModule = stderr.match(/No module named '(\w+)'/)?.[1];
+                        return `❌ Módulo Python não encontrado: ${missingModule}
+
+Instale com: pip install ${missingModule}`;
+                    }
+                    
+                    return `❌ Erro ao executar:\n${stderr}\n${stdout}`;
+                }
+            }
+        });
+
+        /**
+         * exec_command: executa um comando shell.
+         * Para comandos sudo, forneça a senha no parâmetro 'password'.
+         */
+        this.register({
+            name: "exec_command",
+            description: "Executa um comando shell no sistema. Use para instalar pacotes, verificar versões, etc. Para comandos sudo, forneça a senha.",
+            parameters: {
+                type: "object",
+                properties: {
+                    command: { type: "string", description: "Comando a executar (ex: 'apt install pandoc', 'pip install python-pptx')" },
+                    sudo: { type: "boolean", description: "Se true, executa com sudo" },
+                    password: { type: "string", description: "Senha para sudo (se necessário)" }
+                },
+                required: ["command"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const { execSync } = require('child_process');
+                let cmd = args.command;
+                
+                // Bloquear comandos perigosos
+                const dangerousCommands = [
+                    /rm\s+-rf\s+\//,
+                    /chmod\s+777/,
+                    /dd\s+if=/,
+                    />\s*\/dev\/sd/,
+                    /mkfs/,
+                    /fdisk/,
+                    /format\s+/i,
+                    /:(){ :|:& };:/,
+                    />\s*\/dev\/sda/,
+                    /shutdown/,
+                    /reboot/,
+                    /init\s+0/,
+                    /halt/
+                ];
+                
+                for (const pattern of dangerousCommands) {
+                    if (pattern.test(cmd)) {
+                        return `❌ Comando bloqueado por segurança: ${cmd}`;
+                    }
+                }
+                
+                // Construir comando final
+                let finalCmd = cmd;
+                if (args.sudo) {
+                    if (args.password) {
+                        // Passar senha para sudo via stdin
+                        finalCmd = `echo '${args.password}' | sudo -S ${cmd}`;
+                    } else {
+                        finalCmd = `sudo ${cmd}`;
+                    }
+                }
+                
+                try {
+                    const stdout = execSync(finalCmd, { 
+                        encoding: 'utf8',
+                        timeout: 120000
+                    });
+                    return `✅ Comando executado:\n${stdout || '(sem output)'}`;
+                } catch (e: any) {
+                    const stderr = e.stderr?.toString() || '';
+                    const stdout = e.stdout?.toString() || '';
+                    
+                    // Verificar erros comuns
+                    if (stderr.includes('incorrect password') || stderr.includes('senha incorreta')) {
+                        return `❌ Senha incorreta.`;
+                    }
+                    
+                    if (stderr.includes('password') || stderr.includes('senha') || stderr.includes('[sudo]')) {
+                        if (!args.password) {
+                            return `❌ Comando requer senha sudo. Forneça o parâmetro 'password'.`;
+                        }
+                        return `❌ Erro de autenticação: ${stderr}`;
+                    }
+                    
+                    if (stderr.includes('not found') || stderr.includes('não encontrado') || stderr.includes('command not found')) {
+                        return `❌ Comando não encontrado: ${cmd}`;
+                    }
+                    
+                    if (stderr.includes('Unable to locate package') || stderr.includes('E:')) {
+                        return `❌ Erro apt: ${stderr}`;
+                    }
+                    
+                    return `❌ Erro:\n${stderr}\n${stdout}`;
+                }
+            }
+        });
     }
 }

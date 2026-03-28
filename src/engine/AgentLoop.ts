@@ -136,10 +136,10 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
 export type AgentMode = 'THINKING' | 'EXECUTION';
 
 export const TASK_TOOL_MAP: Record<string, string[]> = {
-    'file_conversion': ['list_directory', 'read_local_file', 'file.convert'],
+    'file_conversion': ['file_convert', 'read_local_file', 'list_directory', 'run_python', 'exec_command'],
     'file_search': ['list_directory', 'search_file', 'read_local_file'],
     'content_generation': ['workspace_create_project', 'workspace_save_artifact'],
-    'system_operation': ['system.exec', 'run_command'],
+    'system_operation': ['exec_command', 'run_python', 'list_directory'],
     'web_search': ['web_search', 'fetch_url'],
 };
 
@@ -694,38 +694,36 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     });
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: execToolName });
                     
-                    let stepValidation: StepValidation | null = null;
-                    
                     if (execStep) {
-                        stepValidation = this.validateStepResult(execStep, result, execToolName);
-                        this.logValidation(execStep, stepValidation);
+                        const validation = this.validateStepResult(execStep, result, execToolName);
+                        this.logValidation(execStep, validation);
                         
-                        this.stepValidations.push(stepValidation.confidence);
+                        this.stepValidations.push(validation.confidence);
                         this.actionTaken = true;
                         
-                        if (!stepValidation.success) {
-                            this.markCurrentStepFailed(stepValidation.reason);
+                        if (!validation.success) {
+                            this.markCurrentStepFailed(validation.reason);
                             
                             if (this.shouldReclassify(consecutiveToolFailures)) {
                                 messages = this.reclassifyAndAdjustPlan(messages);
                             }
                             
-                            if (this.shouldRetryWithLlm(stepValidation, consecutiveToolFailures)) {
+                            if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
-                                    content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${stepValidation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
+                                    content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
                                 };
                                 messages.push(llmCheck);
-                            } else if (!stepValidation.needsLlm) {
-                                messages = this.adjustPlanAfterFailure(messages, execStep, stepValidation);
+                            } else if (!validation.needsLlm) {
+                                messages = this.adjustPlanAfterFailure(messages, execStep, validation);
                             }
                         }
                         
                         await this.registerExecutionMemory(
                             execStep,
                             execToolName,
-                            stepValidation.success,
-                            stepValidation.reason
+                            validation.success,
+                            validation.reason
                         );
                     }
                     
@@ -734,16 +732,8 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
                     
                     this.lastStepResult = result;
-                    
-                    const stepSuccess = stepValidation ? stepValidation.success : evaluation.success;
-                    if (stepSuccess) {
-                        if (execStep) {
-                            execStep.completed = true;
-                            execStep.result = result.slice(0, 200);
-                        }
+                    if (evaluation.success) {
                         this.advanceToNextStep();
-                    } else {
-                        this.logger.warn('step_not_advanced', `[STEP] Step falhou, não avançando: ${execStep?.description || 'unknown'}`);
                     }
 
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
@@ -1156,7 +1146,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
         switch (this.currentTaskType) {
             case 'file_conversion':
                 return {
-                    prefer: ['list_directory', 'read_local_file', 'file.convert'],
+                    prefer: ['file_convert', 'read_local_file', 'list_directory', 'run_python', 'exec_command'],
                     avoid: ['workspace_create_project', 'web_search']
                 };
             case 'file_search':
@@ -1167,11 +1157,11 @@ private sanitizeUserFacingAnswer(answer: string): string {
             case 'content_generation':
                 return {
                     prefer: ['workspace_create_project', 'workspace_save_artifact'],
-                    avoid: ['run_command', 'delete_file']
+                    avoid: ['exec_command', 'delete_file']
                 };
             case 'system_operation':
                 return {
-                    prefer: ['run_command', 'system.exec'],
+                    prefer: ['exec_command', 'run_python', 'list_directory'],
                     avoid: ['web_search', 'workspace_create_project']
                 };
             default:
