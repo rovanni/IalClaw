@@ -5,8 +5,9 @@ export interface ToolStats {
 
 export class ToolReliability {
   private static stats: Record<string, ToolStats> = {};
+  private static contextStats: Record<string, Record<string, ToolStats>> = {};
 
-  static record(tool: string, success: boolean): void {
+  static record(tool: string, success: boolean, contextKey?: string): void {
     if (!tool) return;
     
     if (!this.stats[tool]) {
@@ -18,10 +19,34 @@ export class ToolReliability {
     } else {
       this.stats[tool].failure++;
     }
+
+    if (contextKey) {
+      if (!this.contextStats[contextKey]) {
+        this.contextStats[contextKey] = {};
+      }
+      if (!this.contextStats[contextKey][tool]) {
+        this.contextStats[contextKey][tool] = { success: 0, failure: 0 };
+      }
+      if (success) {
+        this.contextStats[contextKey][tool].success++;
+      } else {
+        this.contextStats[contextKey][tool].failure++;
+      }
+    }
   }
 
-  static score(tool: string): number {
-    if (!tool || !this.stats[tool]) {
+  static score(tool: string, contextKey?: string): number {
+    if (!tool) return 1;
+
+    if (contextKey && this.contextStats[contextKey]?.[tool]) {
+      const stat = this.contextStats[contextKey][tool];
+      const total = stat.success + stat.failure;
+      if (total >= 2) {
+        return stat.success / total;
+      }
+    }
+
+    if (!this.stats[tool]) {
       return 1;
     }
 
@@ -35,8 +60,16 @@ export class ToolReliability {
     return stat.success / total;
   }
 
-  static shouldAvoid(tool: string): boolean {
+  static shouldAvoid(tool: string, contextKey?: string): boolean {
     if (!tool) return false;
+
+    if (contextKey && this.contextStats[contextKey]?.[tool]) {
+      const stat = this.contextStats[contextKey][tool];
+      const total = stat.success + stat.failure;
+      if (total >= 3) {
+        return (stat.success / total) < 0.3;
+      }
+    }
     
     const stat = this.stats[tool];
     if (!stat) return false;

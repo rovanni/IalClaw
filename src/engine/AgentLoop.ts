@@ -843,16 +843,44 @@ private sanitizeUserFacingAnswer(answer: string): string {
         
         for (const [key, tools] of Object.entries(STEP_TOOL_MAPPING)) {
             if (lowerDesc.includes(key)) {
-                for (const tool of tools) {
-                    const failCount = this.executionContext.toolsFailed.get(tool) || 0;
-                    if (failCount === 0) {
-                        return tool;
-                    }
+                const ranked = this.rankToolsForStep(step, tools);
+
+                for (const tool of ranked) {
+                    if (this.executionContext.toolsFailed.has(tool)) continue;
+                    if (!this.isToolCompatible(step, tool)) continue;
+                    return tool;
                 }
-                return tools[0];
+
+                return ranked[0];
             }
         }
         return undefined;
+    }
+
+    private isToolCompatible(step: ExecutionStep, tool: string): boolean {
+        const desc = step.description.toLowerCase();
+
+        if (desc.includes("ler") && !tool.includes("read")) return false;
+        if (desc.includes("arquivo") && tool.includes("web")) return false;
+        if (desc.includes("salvar") && !tool.includes("write")) return false;
+        if (desc.includes("buscar") && !(tool.includes("search") || tool.includes("web"))) return false;
+
+        return true;
+    }
+
+    private rankToolsForStep(step: ExecutionStep, tools: string[]): string[] {
+        const contextKey = `${this.currentTaskType || 'unknown'}:${step.description}`;
+
+        return tools
+            .map(tool => {
+                const reliability = ToolReliability.score(tool, contextKey);
+                const compatible = this.isToolCompatible(step, tool) ? 1 : 0;
+                const failurePenalty = this.executionContext.toolsFailed.has(tool) ? -0.5 : 0;
+                const score = (reliability * 0.6) + (compatible * 0.4) + failurePenalty;
+                return { tool, score };
+            })
+            .sort((a, b) => b.score - a.score)
+            .map(t => t.tool);
     }
 
     private adaptArgsForRetry(step: ExecutionStep, originalArgs?: Record<string, any>): Record<string, any> {
