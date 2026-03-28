@@ -45,16 +45,42 @@ export class SkillRegistry {
 
         this.register({
             name: "read_local_file",
-            description: "Lê o conteúdo de um arquivo de texto local baseado no caminho absoluto fornecido. Útil para consultar documentos ou códigos no computador.",
+            description: "Lê o conteúdo de um arquivo de texto local. Aceita caminhos absolutos ou relativos ao workspace.",
             parameters: {
                 type: "object",
-                properties: { path: { type: "string", description: "Caminho absoluto do arquivo." } },
+                properties: { path: { type: "string", description: "Caminho do arquivo (absoluto ou relativo ao workspace)" } },
                 required: ["path"]
             }
         }, {
             execute: async (args: any) => {
-                try { return fs.readFileSync(args.path, 'utf8'); }
-                catch (e: any) { return "Erro ao ler arquivo: " + e.message; }
+                const workspaceRoot = process.cwd();
+                let targetPath: string;
+                
+                // Se o caminho é absoluto, usar diretamente
+                if (args.path && path.isAbsolute(args.path)) {
+                    targetPath = args.path;
+                } else {
+                    targetPath = args.path ? path.resolve(workspaceRoot, args.path) : workspaceRoot;
+                }
+                
+                // Verificação de segurança: caminhos permitidos
+                const allowedPaths = [
+                    workspaceRoot,
+                    '/home',
+                    '/tmp',
+                    process.env.HOME || ''
+                ].filter(Boolean);
+                
+                const isAllowed = allowedPaths.some(p => targetPath.startsWith(p));
+                if (!isAllowed) {
+                    return `Erro: path "${args.path}" não está em um diretório permitido.`;
+                }
+                
+                try {
+                    return fs.readFileSync(targetPath, 'utf8');
+                } catch (e: any) {
+                    return "Erro ao ler arquivo: " + e.message;
+                }
             }
         });
 
@@ -383,11 +409,11 @@ export class SkillRegistry {
          */
         this.register({
             name: "write_file",
-            description: "Escreve conteúdo em um arquivo dentro do workspace IalClaw. Cria diretórios automaticamente se necessário. Use caminhos relativos ao workspace.",
+            description: "Escreve conteúdo em um arquivo. Aceita caminhos absolutos ou relativos ao workspace. Cria diretórios automaticamente se necessário.",
             parameters: {
                 type: "object",
                 properties: {
-                    path: { type: "string", description: "Caminho relativo ao workspace (ex: src/newfile.ts ou data/config.json)" },
+                    path: { type: "string", description: "Caminho do arquivo (absoluto ou relativo ao workspace)" },
                     content: { type: "string", description: "Conteúdo completo do arquivo" }
                 },
                 required: ["path", "content"]
@@ -395,11 +421,26 @@ export class SkillRegistry {
         }, {
             execute: async (args: any) => {
                 const workspaceRoot = process.cwd();
-                const targetPath = path.resolve(workspaceRoot, args.path);
+                let targetPath: string;
                 
-                // Segurança: garantir que o path está dentro do workspace
-                if (!targetPath.startsWith(workspaceRoot)) {
-                    return `Erro: path fora do workspace. Use caminhos relativos ao workspace.`;
+                // Se o caminho é absoluto, usar diretamente
+                if (args.path && path.isAbsolute(args.path)) {
+                    targetPath = args.path;
+                } else {
+                    targetPath = path.resolve(workspaceRoot, args.path);
+                }
+                
+                // Verificação de segurança: caminhos permitidos
+                const allowedPaths = [
+                    workspaceRoot,
+                    '/home',
+                    '/tmp',
+                    process.env.HOME || ''
+                ].filter(Boolean);
+                
+                const isAllowed = allowedPaths.some(p => targetPath.startsWith(p));
+                if (!isAllowed) {
+                    return `Erro: path "${args.path}" não está em um diretório permitido.`;
                 }
                 
                 try {
@@ -408,7 +449,7 @@ export class SkillRegistry {
                         fs.mkdirSync(dir, { recursive: true });
                     }
                     fs.writeFileSync(targetPath, String(args.content), 'utf8');
-                    return `Arquivo salvo com sucesso: ${path.relative(workspaceRoot, targetPath)}`;
+                    return `Arquivo salvo com sucesso: ${targetPath}`;
                 } catch (e: any) {
                     return `Erro ao escrever arquivo: ${e.message}`;
                 }
@@ -502,26 +543,42 @@ export class SkillRegistry {
          */
         this.register({
             name: "list_directory",
-            description: "Lista arquivos e subdiretórios dentro de um diretório do workspace. Retorna nomes e tipos (file/dir).",
+            description: "Lista arquivos e subdiretórios dentro de um diretório. Aceita caminhos absolutos ou relativos ao workspace.",
             parameters: {
                 type: "object",
                 properties: {
-                    path: { type: "string", description: "Caminho relativo do diretório (deixe vazio para raiz do workspace)" }
+                    path: { type: "string", description: "Caminho do diretório (absoluto ou relativo ao workspace)" }
                 },
                 required: []
             }
         }, {
             execute: async (args: any) => {
                 const workspaceRoot = process.cwd();
-                const targetPath = args.path ? path.resolve(workspaceRoot, args.path) : workspaceRoot;
+                let targetPath: string;
                 
-                if (!targetPath.startsWith(workspaceRoot)) {
-                    return `Erro: path fora do workspace.`;
+                // Se o caminho é absoluto, usar diretamente
+                if (args.path && path.isAbsolute(args.path)) {
+                    targetPath = args.path;
+                } else {
+                    targetPath = args.path ? path.resolve(workspaceRoot, args.path) : workspaceRoot;
+                }
+                
+                // Verificação de segurança: caminhos permitidos
+                const allowedPaths = [
+                    workspaceRoot,
+                    '/home',
+                    '/tmp',
+                    process.env.HOME || ''
+                ].filter(Boolean);
+                
+                const isAllowed = allowedPaths.some(p => targetPath.startsWith(p));
+                if (!isAllowed) {
+                    return `Erro: path "${args.path}" não está em um diretório permitido.`;
                 }
                 
                 try {
                     if (!fs.existsSync(targetPath)) {
-                        return `Diretório não encontrado: ${path.relative(workspaceRoot, targetPath) || '(raiz)'}`;
+                        return `Diretório não encontrado: ${targetPath}`;
                     }
                     
                     const stats = fs.statSync(targetPath);
@@ -531,16 +588,20 @@ export class SkillRegistry {
                     
                     const entries = fs.readdirSync(targetPath);
                     if (entries.length === 0) {
-                        return `Diretório vazio.`;
+                        return `Diretório vazio: ${targetPath}`;
                     }
                     
                     const items = entries.map(entry => {
                         const fullPath = path.join(targetPath, entry);
-                        const isDir = fs.statSync(fullPath).isDirectory();
-                        return `${isDir ? '📁' : '📄'} ${entry}${isDir ? '/' : ''}`;
+                        try {
+                            const isDir = fs.statSync(fullPath).isDirectory();
+                            return `${isDir ? '📁' : '📄'} ${entry}${isDir ? '/' : ''}`;
+                        } catch {
+                            return `❓ ${entry}`;
+                        }
                     });
                     
-                    return `Conteúdo de ${path.relative(workspaceRoot, targetPath) || '(raiz)'}:\n${items.join('\n')}`;
+                    return `Conteúdo de ${targetPath}:\n${items.join('\n')}`;
                 } catch (e: any) {
                     return `Erro ao listar diretório: ${e.message}`;
                 }
@@ -590,6 +651,115 @@ export class SkillRegistry {
                     return `Movido: ${path.relative(workspaceRoot, fromPath)} → ${path.relative(workspaceRoot, toPath)}`;
                 } catch (e: any) {
                     return `Erro ao mover: ${e.message}`;
+                }
+            }
+        });
+
+        /**
+         * file_convert: converte arquivos entre formatos (md, html, pptx, pdf).
+         */
+        this.register({
+            name: "file_convert",
+            description: "Converte arquivos entre formatos usando Pandoc. Suporta: md↔html, md→pptx, md→pdf, html→md.",
+            parameters: {
+                type: "object",
+                properties: {
+                    input: { type: "string", description: "Caminho do arquivo de entrada" },
+                    output: { type: "string", description: "Caminho do arquivo de saída (opcional, usa mesmo diretório por padrão)" },
+                    format: { type: "string", description: "Formato de saída: pptx, pdf, html, md" }
+                },
+                required: ["input"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const { execSync } = require('child_process');
+                const inputPath = args.input;
+                
+                if (!fs.existsSync(inputPath)) {
+                    return `Erro: arquivo não encontrado: ${inputPath}`;
+                }
+                
+                // Determinar formato de saída
+                const inputExt = path.extname(inputPath).toLowerCase();
+                let outputFormat = args.format || 'pptx';
+                
+                // Mapear extensões
+                const formatMap: Record<string, string> = {
+                    '.md': outputFormat,
+                    '.markdown': outputFormat,
+                    '.html': 'md',
+                    '.htm': 'md'
+                };
+                
+                // Se não especificado, inferir pelo formato de entrada
+                if (!args.format) {
+                    if (inputExt === '.md' || inputExt === '.markdown') {
+                        outputFormat = 'pptx'; // padrão para md
+                    } else if (inputExt === '.html' || inputExt === '.htm') {
+                        outputFormat = 'md';
+                    }
+                }
+                
+                // Gerar caminho de saída
+                const inputDir = path.dirname(inputPath);
+                const inputBase = path.basename(inputPath, inputExt);
+                const outputPath = args.output || path.join(inputDir, `${inputBase}.${outputFormat}`);
+                
+                // Verificar se pandoc existe
+                try {
+                    execSync('which pandoc', { stdio: 'ignore' });
+                } catch {
+                    return `Erro: Pandoc não está instalado. Instale com: apt install pandoc (Linux) ou brew install pandoc (macOS)`;
+                }
+                
+                // Executar conversão
+                try {
+                    const cmd = `pandoc "${inputPath}" -o "${outputPath}" --slide-level=2`;
+                    execSync(cmd, { stdio: 'pipe' });
+                    
+                    if (!fs.existsSync(outputPath)) {
+                        return `Erro: arquivo de saída não foi criado.`;
+                    }
+                    
+                    const stats = fs.statSync(outputPath);
+                    return `✅ Conversão concluída!\n📄 Arquivo: ${outputPath}\n📊 Tamanho: ${(stats.size / 1024).toFixed(1)} KB`;
+                } catch (e: any) {
+                    const stderr = e.stderr?.toString() || e.message;
+                    return `Erro ao converter: ${stderr}`;
+                }
+            }
+        });
+
+        /**
+         * file_exists: verifica se um arquivo existe.
+         */
+        this.register({
+            name: "file_exists",
+            description: "Verifica se um arquivo ou diretório existe no caminho especificado.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Caminho do arquivo ou diretório" }
+                },
+                required: ["path"]
+            }
+        }, {
+            execute: async (args: any) => {
+                const targetPath = args.path;
+                
+                try {
+                    if (fs.existsSync(targetPath)) {
+                        const stats = fs.statSync(targetPath);
+                        if (stats.isDirectory()) {
+                            return `✅ Diretório encontrado: ${targetPath}`;
+                        } else {
+                            return `✅ Arquivo encontrado: ${targetPath} (${(stats.size / 1024).toFixed(1)} KB)`;
+                        }
+                    } else {
+                        return `❌ Não encontrado: ${targetPath}`;
+                    }
+                } catch (e: any) {
+                    return `❌ Erro ao verificar: ${e.message}`;
                 }
             }
         });

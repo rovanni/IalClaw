@@ -26,14 +26,21 @@ const TASK_RULES: TaskRule[] = [
         type: 'file_conversion',
         patterns: [
             /\b(converter|transformar|convert|transform)\b/i,
-            /\.md\s+(para|to|into)\s+(html|pptx|pdf)/i,
-            /\.html\s+(para|to)\s+(md|markdown)/i,
+            /\b(converte|convertei|converter)\b/i,
+            /\.md\s+(para|to|into|em)\s+(html|pptx|pdf)/i,
+            /\.html\s+(para|to|em)\s+(md|markdown)/i,
             /\.pptx\b/i,
-            /\.pdf\s+(para|to)/i,
-            /\b(passar para|passar o)\b.*\b(md|html|pptx)\b/i,
-            /\bexportar\b.*\b(md|html|pdf)\b/i
+            /\.pdf\b/i,
+            /\b(passar para|passar o)\b.*\b(md|html|pptx|pdf)\b/i,
+            /\bexportar\b.*\b(md|html|pdf)\b/i,
+            /\bmarkdown\b.*\b(pptx|powerpoint|apresentação)\b/i,
+            /\bpptx\b/i,
+            /\bpowerpoint\b/i,
+            /\bapresentação\b.*\b(markdown|md)\b/i,
+            /arquivo.*\.md.*pptx/i,
+            /\.md\b.*\b(pptx|powerpoint|apresentação)\b/i
         ],
-        confidence: 0.85
+        confidence: 0.90
     },
     {
         type: 'file_search',
@@ -90,6 +97,23 @@ export function classifyTask(text: string): TaskClassification {
     const normalized = text.toLowerCase().trim();
     let bestMatch: TaskClassification = { type: 'unknown', confidence: 0 };
 
+    // Verificar se menciona caminho de arquivo específico
+    const hasFilePath = /\/[\w\-\.\/]+\.(md|html|pptx|pdf|txt|json)/i.test(text) ||
+                         /[\w\-]+\/[\w\-]+\.(md|html|pptx|pdf)/i.test(text);
+    
+    // Verificar se menciona conversão explicitamente
+    const hasConversionWord = /\b(converter|transformar|convert|transform|pptx|powerpoint|apresentação)\b/i.test(text);
+    
+    // Se tem caminho de arquivo E palavra de conversão, é file_conversion
+    if (hasFilePath && hasConversionWord) {
+        return { type: 'file_conversion', confidence: 0.95 };
+    }
+    
+    // Se tem caminho de arquivo .md e contexto sugere conversão
+    if (hasFilePath && /\.md\b/i.test(text)) {
+        return { type: 'file_conversion', confidence: 0.85 };
+    }
+
     for (const rule of TASK_RULES) {
         let ruleConfidence = 0;
         
@@ -119,8 +143,8 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
         case 'file_conversion':
             return [
                 'localizar arquivo de origem',
-                'ler conteúdo do arquivo',
-                'converter conteúdo',
+                'verificar formato do arquivo',
+                'converter para formato de destino',
                 'salvar resultado'
             ];
         case 'file_search':
