@@ -191,7 +191,7 @@ export class AgentLoop {
         if (this.mode === 'EXECUTION') return;
         
         const confidence = this.currentTaskConfidence;
-        const classified = this.currentTaskType !== null && this.currentTaskType !== 'unknown';
+        const classified = this.currentTaskType !== null && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task';
         
         if (confidence >= this.MODE_TRANSITION_CONFIDENCE && classified) {
             this.mode = 'EXECUTION';
@@ -203,7 +203,7 @@ export class AgentLoop {
     private ensureMinimalPlan(): void {
         if (this.executionContext.currentPlan && this.executionContext.currentPlan.steps.length > 0) return;
         
-        if (!this.currentTaskType || this.currentTaskType === 'unknown') {
+        if (!this.currentTaskType || this.currentTaskType === 'unknown' || this.currentTaskType === 'generic_task') {
             this.executionContext.currentPlan = {
                 goal: this.originalInput,
                 steps: [{ id: 1, description: 'processar entrada do usuário', completed: false, failed: false }],
@@ -351,6 +351,11 @@ export class AgentLoop {
                 return { answer: t('loop.stopped_by_user'), newMessages };
             }
 
+            if (this.executionContext.currentPlan && this.executionContext.currentPlan.currentStepIndex >= this.executionContext.currentPlan.steps.length) {
+                this.logger.info('all_steps_exhausted', `[LOOP] Todos os steps foram executados, encerrando loop`);
+                break;
+            }
+
             // Verificar timeout global
             const elapsedTime = Date.now() - startedAt;
             if (elapsedTime > timeoutMs) {
@@ -489,9 +494,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${fallbackTool}`);
                             response.tool_call.name = fallbackTool;
                         } else {
-                            const blockMsg: MessagePayload = { role: 'tool', content: `[MEMORY] Tool ${toolName} blocked by poor historical performance` };
-                            messages.push(blockMsg);
-                            continue;
+                            this.logger.warn('memory_block_override', `[MEMORY] Tool ${toolName} com histórico ruim, mas executando mesmo assim`);
                         }
                     }
                     
@@ -504,10 +507,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${fallbackTool}`);
                             response.tool_call.name = fallbackTool;
                         } else {
-                            this.logger.warn('fallback_failed', `[FALLBACK] Nenhuma alternativa válida para ${toolName}`);
-                            const avoidMsg: MessagePayload = { role: 'tool', content: `[RELIABILITY] Tool ${toolName} skipped - no fallback available` };
-                            messages.push(avoidMsg);
-                            continue;
+                            this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
                         }
                     }
                     
@@ -517,7 +517,18 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         tool_calls_count: toolCallsCount
                     });
                     await emitProgress({ stage: 'tool_started', iteration: i + 1, tool_name: response.tool_call.name });
-                    let result = await this.registry.executeTool(response.tool_call.name, response.tool_call.args);
+                    
+                    const execToolName = response.tool_call.name;
+                    if (!execToolName || execToolName.trim() === '') {
+                        this.logger.warn('no_tool_available', 'Executando fallback básico - nenhuma tool_name disponível');
+                        const fallbackResult = "Não consegui executar com ferramentas disponíveis, mas posso tentar ajudar diretamente.";
+                        const fallbackMsg: MessagePayload = { role: 'tool', content: fallbackResult };
+                        messages.push(fallbackMsg);
+                        newMessages.push(fallbackMsg);
+                        continue;
+                    }
+
+                    let result = await this.registry.executeTool(execToolName, response.tool_call.args);
                     
                     const execPlan = this.executionContext.currentPlan;
                     const execStep = execPlan && execPlan.currentStepIndex < execPlan.steps.length
@@ -527,16 +538,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     const evaluation = ResultEvaluator.evaluate(result);
                     const recordContext = `${this.currentTaskType || 'unknown'}:${execStep?.description || ''}`;
                     
-                    ToolReliability.record(response.tool_call.name, evaluation.success, recordContext);
+                    ToolReliability.record(execToolName, evaluation.success, recordContext);
                     
                     if (evaluation.success && evaluation.quality > 0.8) {
-                        this.logger.info('reinforce_tool', `[LEARNING] Tool reforçada por alto qualidade: ${response.tool_call.name} (quality=${evaluation.quality.toFixed(2)})`);
+                        this.logger.info('reinforce_tool', `[LEARNING] Tool reforçada por alto qualidade: ${execToolName} (quality=${evaluation.quality.toFixed(2)})`);
                     }
 
                     if (evaluation.success) {
-                        this.executionContext.toolsFailed.delete(response.tool_call.name);
+                        this.executionContext.toolsFailed.delete(execToolName);
                     } else {
-                        this.recordToolFailure(response.tool_call.name);
+                        this.recordToolFailure(execToolName);
                     }
                     
                     if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
@@ -548,7 +559,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.info('refinement_success', '[REFINE] Active refinement completed successfully');
                             result = refinedResult;
                             const newEvaluation = ResultEvaluator.evaluate(result);
-                            ToolReliability.record(response.tool_call.name, newEvaluation.success, recordContext);
+                            ToolReliability.record(execToolName, newEvaluation.success, recordContext);
                         } else {
                             this.logger.warn('refinement_failed', '[REFINE] Active refinement failed, using original result');
                         }
@@ -560,7 +571,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     const assistantMsg: MessagePayload = {
                         role: 'assistant',
                         content: '',
-                        tool_name: response.tool_call.name,
+                        tool_name: execToolName,
                         tool_args: response.tool_call.args
                     };
                     const toolMsg: MessagePayload = { role: 'tool', content: result };
@@ -570,13 +581,13 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
 
                     this.logger.info('tool_call_completed', t('log.loop.tool_call_completed'), {
                         iteration: i + 1,
-                        tool_name: response.tool_call.name,
+                        tool_name: execToolName,
                         result_length: result.length
                     });
-                    await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: response.tool_call.name });
+                    await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: execToolName });
                     
                     if (execStep) {
-                        const validation = this.validateStepResult(execStep, result, response.tool_call.name);
+                        const validation = this.validateStepResult(execStep, result, execToolName);
                         this.logValidation(execStep, validation);
                         
                         this.stepValidations.push(validation.confidence);
@@ -602,7 +613,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         
                         await this.registerExecutionMemory(
                             execStep,
-                            response.tool_call.name,
+                            execToolName,
                             validation.success,
                             validation.reason
                         );
@@ -613,7 +624,9 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
                     
                     this.lastStepResult = result;
-                    this.advanceToNextStep();
+                    if (evaluation.success) {
+                        this.advanceToNextStep();
+                    }
 
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
                     const lastSuccessful = evaluation.success;
@@ -1182,11 +1195,15 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 
     private advanceToNextStep() {
         if (this.executionContext.currentPlan) {
-            const currentIdx = this.executionContext.currentPlan.currentStepIndex;
-            if (currentIdx < this.executionContext.currentPlan.steps.length) {
-                this.executionContext.currentPlan.steps[currentIdx].completed = true;
+            const plan = this.executionContext.currentPlan;
+            const currentIdx = plan.currentStepIndex;
+            if (currentIdx < plan.steps.length) {
+                plan.steps[currentIdx].completed = true;
             }
-            this.executionContext.currentPlan.currentStepIndex++;
+            plan.currentStepIndex++;
+            if (plan.currentStepIndex >= plan.steps.length) {
+                this.logger.info('all_steps_completed', `[LOOP] Todos os steps foram executados (index=${plan.currentStepIndex}/${plan.steps.length})`);
+            }
             this.logCurrentPlan();
         }
     }
@@ -1269,7 +1286,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         this.currentTaskType = classification.type;
         this.currentTaskConfidence = classification.confidence;
         
-        if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown') {
+        if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
             this.mode = 'EXECUTION';
             this.disableFollowUpQuestions = true;
             this.logger.info('execution_mode_ready', `[MODE] Modo EXECUTION ativado: type=${this.currentTaskType}, confidence=${classification.confidence.toFixed(2)}`);

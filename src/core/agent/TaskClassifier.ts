@@ -6,6 +6,7 @@ export type TaskType =
     | 'file_search' 
     | 'content_generation' 
     | 'system_operation' 
+    | 'generic_task'
     | 'unknown';
 
 export interface TaskClassification {
@@ -90,6 +91,10 @@ export function classifyTask(text: string): TaskClassification {
         }
     }
 
+    if (bestMatch.type === 'unknown' || bestMatch.confidence === 0) {
+        bestMatch = { type: 'generic_task', confidence: 0.6 };
+    }
+
     const logMsg = `[CLASSIFIER] type=${bestMatch.type} confidence=${bestMatch.confidence.toFixed(2)}`;
     console.log(logMsg);
 
@@ -122,6 +127,12 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
                 'verificar pré-requisitos',
                 'executar operação',
                 'verificar resultado'
+            ];
+        case 'generic_task':
+            return [
+                'analisar entrada',
+                'executar ação',
+                'retornar resultado'
             ];
         default:
             return null;

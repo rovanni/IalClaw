@@ -80,6 +80,18 @@ export class ToolReliability {
     return this.score(tool) < 0.3;
   }
 
+  static getFallbackScore(tool: string, contextKey?: string): number {
+    if (!tool) return 1;
+    if (contextKey && this.contextStats[contextKey]?.[tool]) {
+      const stat = this.contextStats[contextKey][tool];
+      const total = stat.success + stat.failure;
+      if (total >= 2) {
+        return stat.success / total;
+      }
+    }
+    return this.score(tool);
+  }
+
   static getStats(tool: string): ToolStats | null {
     return this.stats[tool] || null;
   }

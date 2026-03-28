@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import { LLMProvider } from '../engine/ProviderFactory';
 
+export const EMBEDDING_ENABLED = false;
+
 export interface ToolDecision {
     taskType: string;
     step: string;
@@ -22,9 +24,18 @@ export class DecisionMemory {
     async store(decision: ToolDecision): Promise<void> {
         const now = new Date().toISOString();
         const content = JSON.stringify(decision);
-        const embedding = await this.provider.embed(
-            `tool:${decision.tool} task:${decision.taskType} step:${decision.step} success:${decision.success}`
-        );
+        
+        let embedding = '[]';
+        if (EMBEDDING_ENABLED) {
+            try {
+                const emb = await this.provider.embed(
+                    `tool:${decision.tool} task:${decision.taskType} step:${decision.step} success:${decision.success}`
+                );
+                embedding = JSON.stringify(emb);
+            } catch {
+                embedding = '[]';
+            }
+        }
 
         const nodeId = `tool_decision:${this.hash(`${decision.taskType}:${decision.step}:${decision.tool}:${decision.timestamp}`)}`;
         const tags = JSON.stringify(['tool_decision', decision.taskType, decision.tool, decision.success ? 'success' : 'failure']);
@@ -38,7 +49,7 @@ export class DecisionMemory {
             `tool_decision:${decision.tool}`,
             content,
             content.slice(0, 280),
-            JSON.stringify(embedding),
+            embedding,
             'tool_decision',
             tags,
             decision.success ? 0.8 : 0.5,
@@ -53,6 +64,10 @@ export class DecisionMemory {
     }
 
     async query(taskType: string, step: string, topK: number = 10): Promise<ToolDecision[]> {
+        if (!EMBEDDING_ENABLED) {
+            return this.queryWithoutEmbedding(taskType, step, topK);
+        }
+
         const queryText = `${taskType} ${step}`;
         const queryEmbedding = await this.provider.embed(queryText);
 
@@ -92,6 +107,31 @@ export class DecisionMemory {
             .sort((a, b) => b.similarity - a.similarity)
             .slice(0, topK)
             .map(r => r.decision);
+
+        return results;
+    }
+
+    private async queryWithoutEmbedding(taskType: string, step: string, topK: number): Promise<ToolDecision[]> {
+        const rows = this.db.prepare(`
+            SELECT content FROM nodes
+            WHERE type = 'memory'
+            AND subtype = 'tool_decision'
+            AND content LIKE ?
+            ORDER BY modified DESC
+            LIMIT ?
+        `).all(`%"taskType":"${taskType}"%`, topK) as Array<{ content: string }>;
+
+        const results: ToolDecision[] = [];
+        for (const row of rows) {
+            try {
+                const parsed = JSON.parse(row.content) as ToolDecision;
+                if (parsed.taskType === taskType) {
+                    results.push(parsed);
+                }
+            } catch {
+                // Skip invalid entries
+            }
+        }
 
         return results;
     }
