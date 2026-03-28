@@ -273,19 +273,28 @@ export class AgentLoop {
             }
         }
         
-        if (!this.currentTaskType || this.currentTaskType === 'unknown' || this.currentTaskType === 'generic_task') {
+        // Se não há tipo definido, usa plano mínimo genérico
+        if (!this.currentTaskType || this.currentTaskType === 'unknown') {
+            const forcedPlan = getForcedPlanForTaskType('unknown');
             this.executionContext.currentPlan = {
                 goal: this.originalInput,
-                steps: [{ id: 1, description: 'processar entrada do usuário', completed: false, failed: false }],
+                steps: forcedPlan ? forcedPlan.map((desc, idx) => ({
+                    id: idx + 1,
+                    description: desc,
+                    completed: false,
+                    failed: false
+                })) : [{ id: 1, description: 'analisar solicitação', completed: false, failed: false }],
                 currentStepIndex: 0,
                 createdAt: Date.now(),
                 triedPaths: [],
                 failedTools: new Map()
             };
             this.executionContext.planTaskType = this.currentTaskType;
+            this.logger.warn('minimal_plan_unknown', '[PLAN] Tipo desconhecido - usando plano mínimo');
             return;
         }
         
+        // generic_task AGORA TEM PLANO ÚTIL (não é mais "processar entrada")
         const forcedPlan = getForcedPlanForTaskType(this.currentTaskType);
         if (forcedPlan) {
             const steps = forcedPlan.map((desc, idx) => ({
