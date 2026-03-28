@@ -8,6 +8,7 @@
 import { LLMProvider, ProviderFactory } from '../../engine/ProviderFactory';
 import { createLogger } from '../../shared/AppLogger';
 import { getClassificationMemory } from '../../memory/ClassificationMemory';
+import { t } from '../../i18n';
 
 export type TaskType = 
     | 'file_conversion' 
@@ -662,13 +663,11 @@ Responda APENAS JSON válido:
             
             if (!hasSource) {
                 // Intenção incompleta - precisa de contexto
+                // NÃO usar texto hardcoded - delega para t()
                 return {
                     ...baseClassification,
                     needsContext: true,
-                    contextQuestion: 'Qual conteúdo você deseja usar? Você pode:\n' +
-                        '• Colar o texto aqui\n' +
-                        '• Informar o caminho de um arquivo\n' +
-                        '• Descrever o conteúdo que deseja'
+                    contextQuestion: t('content.ask_for_source')
                 };
             }
         }

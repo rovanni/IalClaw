@@ -823,7 +823,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.info('fail_safe_tool_selected', `[FAIL-SAFE] Tool selecionada: ${response.tool_call.name}`);
                         } else {
                             this.logger.warn('no_tool_available', 'Executando fallback básico - nenhuma tool_name disponível');
-                            const fallbackResult = "Não consegui executar com ferramentas disponíveis, mas posso tentar ajudar diretamente.";
+                            const fallbackResult = t('loop.fallback.default_answer');
                             const fallbackMsg: MessagePayload = { role: 'tool', content: fallbackResult };
                             messages.push(fallbackMsg);
                             newMessages.push(fallbackMsg);
