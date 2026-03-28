@@ -18,6 +18,7 @@ The v3.0 architecture focuses on long-term knowledge persistence through an acti
 * Episodic memory (history)
 * Semantic memory (documents + vector embeddings)
 * Relational memory (graph)
+* Execution memory (tool decisions + reliability)
 
 The system maintains 100% local execution using:
 
@@ -76,6 +77,7 @@ graph TB
         GraphE[GraphEngine - Relational/RAG]
         QueryC[QueryCache - Efficiency]
         CtxB[ContextBuilder - Ranking]
+        DecMem[DecisionMemory - Tool Decisions]
     end
 
     subgraph "Reasoning Layer"
@@ -95,6 +97,9 @@ graph TB
     InputH --> Controller
     Controller --> Gateway
     Gateway --> CogMem
+    CogMem --> DecMem
+    Loop --> DecMem
+    DecMem --> CogMem
 
     CogMem --> QueryC
     CogMem --> GraphE
@@ -265,6 +270,7 @@ A arquitetura v3.0 foca na persistência de conhecimento a longo prazo através 
 * Memória episódica (histórico)
 * Memória semântica (documentos + embeddings)
 * Memória relacional (grafo)
+* Memória de execução (decisões de tools + confiabilidade)
 
 O sistema mantém execução 100% local utilizando:
 
@@ -323,6 +329,7 @@ graph TB
         GraphE[GraphEngine - Relacional/RAG]
         QueryC[QueryCache - Eficiência]
         CtxB[ContextBuilder - Ranking]
+        DecMem[DecisionMemory - Decisões de Tools]
     end
 
     subgraph "Reasoning Layer"
@@ -342,6 +349,9 @@ graph TB
     InputH --> Controller
     Controller --> Gateway
     Gateway --> CogMem
+    CogMem --> DecMem
+    Loop --> DecMem
+    DecMem --> CogMem
 
     CogMem --> QueryC
     CogMem --> GraphE

@@ -13,11 +13,12 @@
 
 IalClaw's memory system is not merely a persistence engine, but an **active cognitive system** responsible for storing, retrieving, relating, and evolving knowledge over time.
 
-Memory is structured into three complementary layers:
+Memory is structured into four complementary layers:
 
 * Episodic Memory
 * Semantic Memory (with Embeddings)
 * Relational Memory (Graph)
+* Execution Memory (Tool Decisions + Reliability)
 
 ---
 
@@ -52,6 +53,13 @@ Represents connections between knowledge.
 
 **Structure:** `nodes` (with embeddings), `edges`  
 **Function:** Semantic navigation, indirect inference, concept association.
+
+### 3.4 Execution Memory (Tool Decisions)
+Represents learned tool execution patterns.
+
+**Structure:** `nodes` (type: tool_decision) with taskType, step, tool, success  
+**Function:** Persist historical tool performance to improve future decision-making.
+**Integration:** DecisionMemory queries past successes/failures before ranking tools.
 
 ---
 
@@ -134,11 +142,12 @@ IalClaw's memory system transforms the agent from a pure "prompt executor" into 
 
 O sistema de memória do IalClaw não é apenas um mecanismo de persistência, mas um **sistema cognitivo ativo**, responsável por armazenar, recuperar, relacionar e evoluir conhecimento ao longo do tempo.
 
-A memória é estruturada em três camadas complementares:
+A memória é estruturada em quatro camadas complementares:
 
 * Memória Episódica
 * Memória Semântica (com Embeddings)
 * Memória Relacional (Grafo)
+* Memória de Execução (Decisões de Tools + Confiabilidade)
 
 ---
 
@@ -173,6 +182,13 @@ Representa conexões entre conhecimentos.
 
 **Estrutura:** `nodes` (com embeddings), `edges`  
 **Função:** Navegação semântica e associação de conceitos.
+
+### 3.4 Memória de Execução (Decisões de Tools)
+Representa padrões aprendidos de execução de tools.
+
+**Estrutura:** `nodes` (tipo: tool_decision) com taskType, step, tool, success  
+**Função:** Persistir histórico de performance de tools para melhorar decisões futuras.
+**Integração:** DecisionMemory consulta sucessos/falhas passadas antes de ranquear tools.
 
 ---
 
