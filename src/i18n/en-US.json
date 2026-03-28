@@ -271,5 +271,8 @@
   "script.bootstrap.identities.failed": "[Bootstrap] Failed to seed gateway identities:",
   "content.ask_for_source": "What content do you want to use?\n\nYou can:\n• Paste the text here\n• Provide a file path\n• Describe the content you want",
   "content.generation_failed": "I couldn't generate the content correctly. Can you rephrase your request or provide more details?",
-  "content.generation_error": "Error generating content: {error}. Please try again with more details."
+  "content.generation_error": "Error generating content: {error}. Please try again with more details.",
+  "autonomy.confirm_action": "⚠️ This action requires confirmation: {action}\n\nAre you sure you want to continue?",
+  "autonomy.ask_context": "I need more information to continue.",
+  "autonomy.execute_confirmed": "Executing confirmed action."
 }

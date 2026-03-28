@@ -4,6 +4,7 @@ import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
+import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
@@ -188,6 +189,25 @@ export class AgentLoop {
     // Detecção de intenção incompleta
     private needsUserContext: boolean = false;
     private contextQuestion: string | undefined;
+    private isContinuation: boolean = false;  // É continuação de tarefa anterior?
+
+    /**
+     * Detecta se o input é continuação de uma tarefa anterior.
+     */
+    private detectContinuation(input: string): boolean {
+        const continuationIndicators = [
+            /^e\s+/i,
+            /^e\s+para/i,
+            /^usar\s+/i,
+            /^utilizar\s+/i,
+            /^com\s+esse/i,
+            /^agora\s+com/i,
+            /^usando\s+/i
+        ];
+        
+        const normalized = input.toLowerCase().trim();
+        return continuationIndicators.some(p => p.test(normalized));
+    }
 
     constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
         this.llm = llm;
@@ -335,15 +355,61 @@ export class AgentLoop {
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
         // ═══════════════════════════════════════════════════════════════════
-        // SHORT-CIRCUIT: content_generation NÃO precisa de loop
-        // "Se não precisa agir no mundo, não entra no loop."
+        // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
+        // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
         this.setOriginalInput(userInput);
         this.evaluateModeTransition();
         this.ensureMinimalPlan();
         
-        // SHORT-CIRCUIT para content_generation (independente de failSafe)
+        // Detectar continuação
+        this.isContinuation = this.detectContinuation(userInput);
+        
+        const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
+            isContinuation: this.isContinuation,
+            hasAllParams: !this.needsUserContext,
+            riskLevel: this.currentTaskType === 'system_operation' ? 'medium' : 'low',
+            isDestructive: false,
+            isReversible: true
+        });
+        
+        const autonomyDecision = decideAutonomy(autonomyContext);
+        
+        this.logger.info('autonomy_decision', `[AUTONOMY] Decisão: ${autonomyDecision}`, {
+            intent: autonomyContext.intent,
+            decision: autonomyDecision,
+            hasAllParams: autonomyContext.hasAllParams,
+            riskLevel: autonomyContext.riskLevel
+        });
+        
+        // 🔴 CONFIRM: Ação destrutiva ou risco alto → confirmar
+        if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            this.logger.warn('autonomy_confirm_required', '[AUTONOMY] Ação requer confirmação');
+            return {
+                answer: t('autonomy.confirm_action', { action: this.currentTaskType }),
+                newMessages: []
+            };
+        }
+        
+        // 🟡 ASK: Falta informação → perguntar
+        if (autonomyDecision === AutonomyDecision.ASK) {
+            this.logger.info('autonomy_ask', '[AUTONOMY] Informação necessária', {
+                missing: this.needsUserContext ? 'context' : 'params'
+            });
+            return {
+                answer: t('content.ask_for_source'),
+                newMessages: []
+            };
+        }
+        
+        // 🟢 EXECUTE: Segue fluxo (short-circuit ou loop)
+        // A decisão de EXECUTE permite continuar...
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SHORT-CIRCUIT: content_generation NÃO precisa de loop
+        // "Se não precisa agir no mundo, não entra no loop."
+        // ═══════════════════════════════════════════════════════════════════
         if (this.currentTaskType === 'content_generation') {
             // Verificar se tem contexto suficiente
             if (this.needsUserContext) {
