@@ -125,8 +125,12 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
     'buscar URL': ['fetch_url'],
     'obter hora': ['get_system_time'],
     'instalar skill': ['write_skill_file', 'promote_skill_temp'],
+    'identificar nome': ['web_search'],
+    'verificar se já está instalada': ['list_directory'],
+    'buscar skill': ['web_search'],
     'auditar skill': ['run_skill_auditor'],
     'verificar skill': ['read_audit_log'],
+    'verificar instalação': ['list_directory'],
 };
 
 export type AgentMode = 'THINKING' | 'EXECUTION';
@@ -374,6 +378,14 @@ export class AgentLoop {
             };
             messages.push(workspaceHint);
         }
+
+        if (this.currentTaskType === 'skill_installation') {
+            const skillHint: MessagePayload = {
+                role: 'system',
+                content: `[SKILL INSTALLATION] Para instalar skills: use 'list_directory' para verificar se já existe, 'web_search' para buscar, e 'write_skill_file' para salvar. NÃO use fetch_url para instalação.`
+            };
+            messages.push(skillHint);
+        }
         
         messages = this.addPlanningGuidanceToMessages(messages, policy);
         
@@ -590,6 +602,14 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             } else {
                                 this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
                             }
+                        }
+                    }
+
+                    if (this.currentTaskType === 'skill_installation' && currentStepForValidation) {
+                        const mappedTool = this.mapStepToTool(currentStepForValidation.description);
+                        if (mappedTool && mappedTool !== toolName) {
+                            this.logger.info('skill_installation_tool_override', `[FORCE TOOL] ${toolName} → ${mappedTool} (skill_installation mode)`);
+                            response.tool_call.name = mappedTool;
                         }
                     }
                     
