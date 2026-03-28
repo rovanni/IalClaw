@@ -7,6 +7,7 @@ import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
+import { DecisionMemory, ToolDecision } from '../memory/DecisionMemory';
 
 export type AgentProgressEvent = {
     stage:
@@ -174,10 +175,12 @@ export class AgentLoop {
     private lowImprovementCount = 0;
     private readonly MIN_DELTA_THRESHOLD = 0.05;
     private readonly MAX_LOW_IMPROVEMENTS = 2;
+    private decisionMemory: DecisionMemory | null = null;
 
-    constructor(llm: LLMProvider, registry: SkillRegistry) {
+    constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
         this.llm = llm;
         this.registry = registry;
+        this.decisionMemory = decisionMemory || null;
     }
 
     public getProvider(): LLMProvider {
@@ -402,7 +405,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             ? plan.steps[plan.currentStepIndex]
                             : undefined;
                         const fallbackTool = fallbackStep?.tool 
-                            ? this.getFallbackToolForStep(fallbackStep)
+                            ? await this.getFallbackToolForStep(fallbackStep)
                             : undefined;
                         if (fallbackTool && plan) {
                             if (fallbackStep) {
@@ -466,7 +469,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         messages.push(loopMsg);
                         
                         const fallbackTool = currentStepForValidation 
-                            ? this.getFallbackToolForStep(currentStepForValidation)
+                            ? await this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
 
                         if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
@@ -479,7 +482,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     
                     if (ToolReliability.shouldAvoid(toolName, contextKey)) {
                         const fallbackTool = currentStepForValidation 
-                            ? this.getFallbackToolForStep(currentStepForValidation)
+                            ? await this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
 
                         if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
@@ -572,7 +575,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             }
                         }
                         
-                        this.registerExecutionMemory(
+                        await this.registerExecutionMemory(
                             execStep,
                             response.tool_call.name,
                             validation.success,
@@ -636,7 +639,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     
                     const currentStepForMem = this.executionContext.currentPlan?.steps[this.executionContext.currentPlan.currentStepIndex];
                     if (currentStepForMem) {
-                        this.registerExecutionMemory(
+                        await this.registerExecutionMemory(
                             currentStepForMem,
                             response.tool_call.name,
                             false,
@@ -858,12 +861,12 @@ private sanitizeUserFacingAnswer(answer: string): string {
         return currentPlan.steps[currentPlan.currentStepIndex];
     }
 
-    private getFallbackToolForStep(step: ExecutionStep): string | undefined {
+    private async getFallbackToolForStep(step: ExecutionStep): Promise<string | undefined> {
         const lowerDesc = step.description.toLowerCase();
         
         for (const [key, tools] of Object.entries(STEP_TOOL_MAPPING)) {
             if (lowerDesc.includes(key)) {
-                const ranked = this.rankToolsForStep(step, tools);
+                const ranked = await this.rankToolsForStep(step, tools);
 
                 for (const tool of ranked) {
                     if (this.executionContext.toolsFailed.has(tool)) continue;
@@ -888,15 +891,53 @@ private sanitizeUserFacingAnswer(answer: string): string {
         return true;
     }
 
-    private rankToolsForStep(step: ExecutionStep, tools: string[]): string[] {
+    private normalizeStep(step: string): string {
+        const s = step.toLowerCase();
+
+        if (s.includes("ler") || s.includes("read")) return "read";
+        if (s.includes("buscar") || s.includes("search")) return "search";
+        if (s.includes("salvar") || s.includes("write") || s.includes("criar")) return "write";
+        if (s.includes("converter") || s.includes("convert")) return "convert";
+        if (s.includes("listar") || s.includes("list")) return "list";
+        if (s.includes("deletar") || s.includes("remover") || s.includes("delete")) return "delete";
+
+        return "generic";
+    }
+
+    private getMemoryScore(tool: string, decisions: ToolDecision[]): number {
+        if (!decisions.length) return 0;
+
+        const relevant = decisions.filter(d => d.tool === tool);
+        if (relevant.length === 0) return 0;
+
+        const successRate = relevant.filter(d => d.success).length / relevant.length;
+        return successRate;
+    }
+
+    private async rankToolsForStep(step: ExecutionStep, tools: string[]): Promise<string[]> {
         const contextKey = `${this.currentTaskType || 'unknown'}:${step.description}`;
+        const normalizedStep = this.normalizeStep(step.description);
+
+        let pastDecisions: ToolDecision[] = [];
+        if (this.decisionMemory && this.currentTaskType) {
+            try {
+                pastDecisions = await this.decisionMemory.query(this.currentTaskType, normalizedStep, 10);
+            } catch (error) {
+                this.logger.warn('decision_memory_query_failed', `Failed to query decision memory: ${error}`);
+            }
+        }
 
         return tools
             .map(tool => {
                 const reliability = ToolReliability.score(tool, contextKey);
                 const compatible = this.isToolCompatible(step, tool) ? 1 : 0;
                 const failurePenalty = this.executionContext.toolsFailed.has(tool) ? -0.5 : 0;
-                const score = (reliability * 0.6) + (compatible * 0.4) + failurePenalty;
+
+                const memoryScore = pastDecisions.length > 0
+                    ? this.getMemoryScore(tool, pastDecisions)
+                    : 0;
+
+                const score = (reliability * 0.4) + (compatible * 0.3) + (memoryScore * 0.3) + failurePenalty;
                 return { tool, score };
             })
             .sort((a, b) => b.score - a.score)
@@ -916,7 +957,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
             return null;
         }
 
-        const fallbackTool = step.tool ? this.getFallbackToolForStep(step) : undefined;
+        const fallbackTool = step.tool ? await this.getFallbackToolForStep(step) : undefined;
 
         if (fallbackTool && fallbackTool !== step.tool) {
             this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${fallbackTool}`);
@@ -1382,7 +1423,7 @@ Considere:
         return 'outro';
     }
 
-    private registerExecutionMemory(step: ExecutionStep, tool: string, success: boolean, context: string = '') {
+    private async registerExecutionMemory(step: ExecutionStep, tool: string, success: boolean, context: string = '') {
         const entry: ExecutionMemoryEntry = {
             stepType: this.getStepType(step.description),
             tool,
@@ -1395,6 +1436,21 @@ Considere:
         
         if (this.executionMemory.length > this.MAX_MEMORY_ENTRIES) {
             this.executionMemory.shift();
+        }
+        
+        if (this.decisionMemory && this.currentTaskType) {
+            try {
+                const normalizedStep = this.normalizeStep(step.description);
+                await this.decisionMemory.store({
+                    taskType: this.currentTaskType,
+                    step: normalizedStep,
+                    tool,
+                    success,
+                    timestamp: Date.now()
+                });
+            } catch (error) {
+                this.logger.warn('decision_memory_store_failed', `Failed to store decision: ${error}`);
+            }
         }
         
         const status = success ? 'sucesso' : 'falha';

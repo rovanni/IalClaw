@@ -27,6 +27,7 @@ import { ProviderEmbeddingService } from './memory/EmbeddingService';
 import { MemoryService } from './memory/MemoryService';
 import { MemoryLifecycleManager } from './memory/MemoryLifecycleManager';
 import { MemoryType } from './memory/MemoryTypes';
+import { DecisionMemory } from './memory/DecisionMemory';
 import { setLanguage, t } from './i18n';
 import { resolveAppLanguage } from './config/languageConfig';
 
@@ -114,6 +115,7 @@ const registry = new SkillRegistry();
 const embeddingService = new ProviderEmbeddingService(provider);
 const memoryService = new MemoryService(dbManager.getDb(), embeddingService);
 const memoryLifecycle = new MemoryLifecycleManager(memoryService);
+const decisionMemory = new DecisionMemory(dbManager.getDb(), provider);
 
 // Carrega skills: internas direto, públicas somente após auditoria aprovada
 const skillsRoot = path.join(__dirname, '..', 'skills');
@@ -375,7 +377,7 @@ registry.register({
     }
 });
 
-const loop = new AgentLoop(provider, registry);
+const loop = new AgentLoop(provider, registry, decisionMemory);
 const inputHandler = new TelegramInputHandler();
 const outputHandler = new TelegramOutputHandler();
 

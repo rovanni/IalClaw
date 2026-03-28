@@ -5,7 +5,8 @@ export type MemoryType =
     | 'episodic'
     | 'semantic'
     | 'error_fix'
-    | 'skill_usage';
+    | 'skill_usage'
+    | 'tool_decision';
 
 export interface AgentMemoryContext {
     sessionId: string;

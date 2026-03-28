@@ -274,7 +274,8 @@ export class MemoryLifecycleManager {
             episodic: 0,
             semantic: 0.05,
             error_fix: 0.15,
-            skill_usage: 0.05
+            skill_usage: 0.05,
+            tool_decision: 0.12
         };
         return Math.max(0.4, Math.min(1, score + typeBonus[type]));
     }
