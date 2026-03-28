@@ -53,6 +53,7 @@ export type ExecutionContext = {
     pathsTried: Set<string>;
     toolsFailed: Map<string, number>;
     lastToolResult: string | null;
+    planTaskType: TaskType | null;
 };
 
 export type StepValidation = {
@@ -147,7 +148,8 @@ export class AgentLoop {
         currentPlan: null,
         pathsTried: new Set(),
         toolsFailed: new Map(),
-        lastToolResult: null
+        lastToolResult: null,
+        planTaskType: null
     };
     private executionMemory: ExecutionMemoryEntry[] = [];
     private readonly MAX_MEMORY_ENTRIES = 50;
@@ -229,8 +231,42 @@ export class AgentLoop {
         return "list_directory";
     }
 
+    private isPlanCompatibleWithInput(): boolean {
+        const plan = this.executionContext.currentPlan;
+        if (!plan || !this.currentTaskType) return false;
+
+        const hasPendingSteps = plan.steps.some(step => !step.completed && !step.failed);
+        if (!hasPendingSteps) {
+            this.logger.info('plan_completed', '[PLAN] Plano anterior já concluído, resetando para novo ciclo');
+            return false;
+        }
+
+        const isSameTaskType = this.executionContext.planTaskType === this.currentTaskType;
+        if (!isSameTaskType) {
+            this.logger.info('plan_incompatible', `[PLAN] Tipo incompatível: plano=${this.executionContext.planTaskType}, atual=${this.currentTaskType}`);
+            return false;
+        }
+
+        return true;
+    }
+
+    private resetExecutionState(): void {
+        this.executionContext.currentPlan = null;
+        this.executionContext.planTaskType = null;
+        this.executionContext.pathsTried.clear();
+        this.executionContext.toolsFailed.clear();
+        this.executionContext.lastToolResult = null;
+        this.logger.info('execution_state_reset', '[PLAN] Estado de execução resetado');
+    }
+
     private ensureMinimalPlan(): void {
-        if (this.executionContext.currentPlan && this.executionContext.currentPlan.steps.length > 0) return;
+        if (this.executionContext.currentPlan && this.executionContext.currentPlan.steps.length > 0) {
+            if (!this.isPlanCompatibleWithInput()) {
+                this.resetExecutionState();
+            } else {
+                return;
+            }
+        }
         
         if (!this.currentTaskType || this.currentTaskType === 'unknown' || this.currentTaskType === 'generic_task') {
             this.executionContext.currentPlan = {
@@ -241,6 +277,7 @@ export class AgentLoop {
                 triedPaths: [],
                 failedTools: new Map()
             };
+            this.executionContext.planTaskType = this.currentTaskType;
             return;
         }
         
@@ -261,6 +298,7 @@ export class AgentLoop {
                 triedPaths: [],
                 failedTools: new Map()
             };
+            this.executionContext.planTaskType = this.currentTaskType;
             
             this.logger.info('minimal_plan_created', `[PLAN] Plano mínimo criado para: ${this.currentTaskType}`);
         }
@@ -959,6 +997,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
         };
         
         this.executionContext.currentPlan = plan;
+        this.executionContext.planTaskType = this.currentTaskType;
         this.executionContext.pathsTried.clear();
         this.executionContext.toolsFailed.clear();
         
