@@ -2,12 +2,13 @@ import { LLMProvider, MessagePayload } from './ProviderFactory';
 import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
+import { SessionManager } from '../shared/SessionManager';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
 import { getTaskContextManager, TaskContext } from '../core/context';
 import { getPlanExecutionValidator, PlanExecutionValidator } from '../core/validation/PlanExecutionValidator';
-import { getDecisionHandler, DecisionHandler, DecisionRequest } from '../core/validation/DecisionHandler';
+import { getDecisionHandler, clearDecisionHandler, DecisionHandler, DecisionRequest } from '../core/validation/DecisionHandler';
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
@@ -197,8 +198,8 @@ export class AgentLoop {
     // Gerenciamento de contexto contínuo
     private taskContextManager = getTaskContextManager();
     private planValidator = getPlanExecutionValidator();
-    private decisionHandler = getDecisionHandler();
-    private chatId: string = 'default';  // ID padrão para contexto
+    private decisionHandler: DecisionHandler;
+    private chatId: string = 'default';
     
     /**
      * Detecta fonte de conteúdo no input (caminho de arquivo).
@@ -270,6 +271,32 @@ export class AgentLoop {
         this.llm = llm;
         this.registry = registry;
         this.decisionMemory = decisionMemory || null;
+        this.decisionHandler = getDecisionHandler('default');
+    }
+
+    public reset(): void {
+        this.executionContext = {
+            currentPlan: null,
+            pathsTried: new Set(),
+            toolsFailed: new Map(),
+            lastToolResult: null,
+            planTaskType: null
+        };
+        this.executionMemory = [];
+        this.stepValidations = [];
+        this.reclassificationAttempts = 0;
+        this.mode = 'THINKING';
+        this.disableFollowUpQuestions = false;
+        this.actionTaken = false;
+        this.refinementUsed = false;
+        this.previousConfidence = null;
+        this.lowImprovementCount = 0;
+        this.failSafe = false;
+        this.needsUserContext = false;
+        this.contextQuestion = undefined;
+        this.isContinuation = false;
+        this.lastStepResult = '';
+        ToolReliability.reset();
     }
 
     public getProvider(): LLMProvider {
@@ -411,6 +438,20 @@ export class AgentLoop {
     }
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
+        this.reset();
+        
+        const session = SessionManager.getCurrentSession();
+        this.chatId = session?.conversation_id || 'default';
+        this.decisionHandler = getDecisionHandler(this.chatId);
+        
+        try {
+            return await this.runInternal(initialMessages, policy);
+        } finally {
+            clearDecisionHandler(this.chatId);
+        }
+    }
+
+    private async runInternal(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
         // ═══════════════════════════════════════════════════════════════════
         // TASK CONTEXT: Gerenciamento de estado contínuo
         // "O agente não está pensando em continuidade, está reagindo por mensagem."
@@ -434,22 +475,31 @@ export class AgentLoop {
         
         // Verificar se contexto é VÁLIDO (recente + relevante)
         const isContextValid = this.taskContextManager.isContextValid(this.chatId, userInput);
+        const hasActiveTask = this.taskContextManager.hasActiveTask(this.chatId);
+        const hasValidPlan = this.executionContext.currentPlan !== null;
         
-        if (isContextValid) {
-            // Contexto válido → é continuação
+        // Verificar se última execução foi bem-sucedida
+        const lastExecutionFailed = this.executionContext.toolsFailed.size > 0;
+        
+        if (isContextValid && hasActiveTask && hasValidPlan && !lastExecutionFailed) {
+            // Contexto válido + tarefa ativa + plano válido + última execução OK → continuação
             const previousCtx = this.taskContextManager.get(this.chatId);
             this.isContinuation = true;
-            this.currentTaskType = previousCtx.type;
+            this.currentTaskType = previousCtx?.type || null;
             this.currentTaskConfidence = 1.0;
             
-            this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido', {
-                type: previousCtx.type,
-                hasSource: !!previousCtx.data.source
+            this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido com tarefa ativa', {
+                type: previousCtx?.type,
+                hasSource: !!previousCtx?.data.source
             });
         } else {
-            // Contexto inválido ou inexistente → nova tarefa
+            // Contexto inválido, sem tarefa ativa, sem plano, ou última execução falhou → nova tarefa
             this.isContinuation = false;
             this.evaluateModeTransition();
+            
+            if (lastExecutionFailed) {
+                this.logger.warn('previous_execution_failed', '[CONTEXT] Última execução falhou, resetando para nova tarefa');
+            }
         }
         
         this.ensureMinimalPlan();

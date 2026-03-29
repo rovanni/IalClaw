@@ -307,7 +307,11 @@ export function applyDiff(original: string, operations: DiffOperation[]): string
                     throw new Error('DIFF_OPERATION_MISSING_ANCHOR');
                 }
 
-                updated = updated.replace(operation.anchor, operation.content);
+                if (operation.content.includes(operation.anchor)) {
+                    throw new Error('DIFF_LOOP_DETECTED: replacement contains anchor');
+                }
+
+                updated = updated.split(operation.anchor).join(operation.content);
                 break;
             }
             case 'insert': {

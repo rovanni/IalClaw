@@ -2,6 +2,8 @@ import { ProviderFactory, LLMProvider, MessagePayload } from '../../engine/Provi
 import { buildPrompt, checkPromptSafety } from './promptBuilder';
 import { createLogger } from '../../shared/AppLogger';
 import { parseLlmJson } from '../../utils/parseLlmJson';
+import { tokenize } from '../core/tokenizer';
+import { normalize } from '../core/normalizer';
 
 export interface SemanticStructure {
     tokens: string[];
@@ -174,9 +176,6 @@ export class AutoTagger {
     }
 
     private generateFallback(doc: { id: string; title: string; content: string }): SemanticStructure {
-        const { tokenize } = require('../core/tokenizer');
-        const { normalize } = require('../core/normalizer');
-
         const allText = `${doc.title} ${doc.content}`;
         const tokens = tokenize(allText);
         const uniqueTokens = Array.from(new Set(tokens));

@@ -140,3 +140,11 @@ export const toolSchemas: Record<string, ToolSchema> = {
 };
 
 export type ToolName = keyof typeof toolSchemas;
+
+export function validateToolInput(toolName: ToolName, input: any): ValidationResult {
+    const schema = toolSchemas[toolName];
+    if (!schema) {
+        return { success: false, errors: [{ path: [], message: `Unknown tool: ${toolName}` }] };
+    }
+    return schema.safeParse(input);
+}

@@ -32,7 +32,7 @@ export const workspaceCreateProjectTool: ToolDefinition = {
         required: ['type', 'prompt']
     },
     execute: async (input: any, context?: any) => {
-        const trace_id = context?.trace_id || getContext().trace_id;
+        const trace_id = context?.trace_id || getContext()?.trace_id || 'no-trace-id';
         const normalizedInput = normalizeCreateProjectInput(input);
 
         emitDebug('tool', { name: 'workspace_create:start', trace_id, input: normalizedInput });
@@ -67,9 +67,12 @@ export const workspaceSaveArtifactTool: ToolDefinition = {
         required: ['project_id', 'filename', 'content']
     },
     execute: async (input: any, context?: any) => {
-        const trace_id = context?.trace_id || getContext().trace_id;
+        const trace_id = context?.trace_id || getContext()?.trace_id || 'no-trace-id';
 
         if (!input.project_id) return { success: false, error: 'project_id e obrigatorio' };
+        if (input.filename && input.filename.includes('..')) {
+            return { success: false, error: 'Path traversal não permitido' };
+        }
         if (!/^[a-z0-9\-]+-\d+$/.test(input.project_id)) {
             return { success: false, error: 'project_id invalido. Formato esperado: slug-timestamp' };
         }
@@ -113,7 +116,7 @@ export const workspaceApplyDiffTool: ToolDefinition = {
         required: ['project_id', 'operations', 'validation']
     },
     execute: async (input: any, context?: any) => {
-        const trace_id = context?.trace_id || getContext().trace_id;
+        const trace_id = context?.trace_id || getContext()?.trace_id || 'no-trace-id';
         const normalizedInput: WorkspaceApplyDiffInput = {
             project_id: input.project_id,
             filename: input.filename || input.filePath,
@@ -123,6 +126,9 @@ export const workspaceApplyDiffTool: ToolDefinition = {
 
         if (!normalizedInput.project_id) return { success: false, error: 'project_id e obrigatorio' };
         if (!normalizedInput.filename) return { success: false, error: 'filename e obrigatorio' };
+        if (normalizedInput.filename.includes('..')) {
+            return { success: false, error: 'Path traversal não permitido' };
+        }
         if (!/^[a-z0-9\-]+-\d+$/.test(normalizedInput.project_id)) {
             return { success: false, error: 'project_id invalido. Formato esperado: slug-timestamp' };
         }
@@ -163,7 +169,7 @@ export const workspaceApplyDiffTool: ToolDefinition = {
             });
 
             const updatedContent = applyDiff(currentContent, resolvedOperations);
-            if (!updatedContent || updatedContent.length < currentContent.length * 0.3) {
+            if (!updatedContent || (updatedContent.length < currentContent.length * 0.3 && currentContent.length > 100)) {
                 return { success: false, error: 'DIFF_RESULT_SUSPICIOUS' };
             }
 

@@ -58,11 +58,11 @@ function getOutputPath(projectId: string): string {
     return path.join(process.cwd(), 'workspace', 'projects', projectId, 'output');
 }
 
-async function runNodeProject(projectPath: string): Promise<RunProjectResult> {
+async function runNodeProject(projectPath: string, timeoutMs: number = 10000): Promise<RunProjectResult> {
     try {
         const { stdout, stderr } = await execFileAsync('node', ['index.js'], {
             cwd: projectPath,
-            timeout: 5000
+            timeout: timeoutMs
         });
 
         if (stderr && stderr.trim()) {
@@ -75,37 +75,42 @@ async function runNodeProject(projectPath: string): Promise<RunProjectResult> {
     }
 }
 
-function loadPuppeteer(): PuppeteerLike {
+function loadPuppeteer(): PuppeteerLike | null {
     try {
         return require('puppeteer') as PuppeteerLike;
     } catch {
-        throw new Error(t('tool.run.puppeteer_not_installed'));
+        return null;
     }
 }
 
-async function runHtmlProject(projectPath: string): Promise<RunProjectResult> {
+async function runHtmlProject(projectPath: string, timeoutMs: number = 10000): Promise<RunProjectResult> {
     const puppeteer = loadPuppeteer();
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    if (!puppeteer) {
+        return fail('Puppeteer não instalado. Execute: npm install puppeteer');
+    }
 
-    const page = await browser.newPage();
-    const runtimeErrors: string[] = [];
-
-    page.on('console', (msg: any) => {
-        if (typeof msg?.type === 'function' && msg.type() === 'error') {
-            runtimeErrors.push(msg.text());
-        }
-    });
-
-    page.on('pageerror', (err: any) => {
-        runtimeErrors.push(err.message || String(err));
-    });
-
+    let browser;
     try {
+        browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+
+        const page = await browser.newPage();
+        const runtimeErrors: string[] = [];
+
+        page.on('console', (msg: any) => {
+            if (typeof msg?.type === 'function' && msg.type() === 'error') {
+                runtimeErrors.push(msg.text());
+            }
+        });
+
+        page.on('pageerror', (err: any) => {
+            runtimeErrors.push(err.message || String(err));
+        });
+
         const fileUrl = 'file://' + path.join(projectPath, 'index.html');
-        await page.goto(fileUrl, { waitUntil: 'load', timeout: 5000 });
+        await page.goto(fileUrl, { waitUntil: 'load', timeout: timeoutMs });
 
         if (page.waitForTimeout) {
             await page.waitForTimeout(1000);
@@ -113,20 +118,21 @@ async function runHtmlProject(projectPath: string): Promise<RunProjectResult> {
             await page.waitForFunction(() => true, { timeout: 1000 });
         }
 
-        await browser.close();
-
         if (runtimeErrors.length > 0) {
             return fail(runtimeErrors.join('\n'));
         }
 
         return ok(t('tool.run.html_success'));
     } catch (err: any) {
-        await browser.close();
         return fail(err.message || t('tool.run.html_failed'));
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
     }
 }
 
-async function runProject(projectId: string): Promise<RunProjectResult> {
+async function runProject(projectId: string, timeoutMs: number = 10000): Promise<RunProjectResult> {
     const projectPath = getOutputPath(projectId);
 
     if (!fs.existsSync(projectPath)) {
@@ -136,11 +142,11 @@ async function runProject(projectId: string): Promise<RunProjectResult> {
     const files = fs.readdirSync(projectPath);
 
     if (files.includes('index.js')) {
-        return runNodeProject(projectPath);
+        return runNodeProject(projectPath, timeoutMs);
     }
 
     if (files.includes('index.html')) {
-        return runHtmlProject(projectPath);
+        return runHtmlProject(projectPath, timeoutMs);
     }
 
     return fail(t('tool.run.no_runnable_entry'));
@@ -152,7 +158,8 @@ export const workspaceRunProjectTool: ToolDefinition = {
     input_schema: {
         type: 'object',
         properties: {
-            project_id: { type: 'string' }
+            project_id: { type: 'string' },
+            timeout: { type: 'number', description: 'Timeout em milissegundos (padrão: 10000)' }
         },
         required: ['project_id']
     },
@@ -164,7 +171,8 @@ export const workspaceRunProjectTool: ToolDefinition = {
             project_id: input.project_id
         });
 
-        const result = await runProject(input.project_id);
+        const timeoutMs = input.timeout || 10000;
+        const result = await runProject(input.project_id, timeoutMs);
 
         if (!result.success) {
             debugBus.emit('tool:run:error', {

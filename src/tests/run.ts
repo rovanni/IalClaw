@@ -553,7 +553,8 @@ async function run() {
         current_project_id: 'demo-123',
         last_artifacts: [],
         conversation_history: [],
-        pending_actions: []
+        pending_actions: [],
+        lastAccessedAt: Date.now()
     });
     assert.equal(repairedActivePlan.success, true);
     assert.ok(repairedActivePlan.repairActions.includes('remove_workspace_create_project_for_active_session'));
@@ -574,7 +575,8 @@ async function run() {
         current_goal: 'criar app novo',
         last_artifacts: [],
         conversation_history: [],
-        pending_actions: []
+        pending_actions: [],
+        lastAccessedAt: Date.now()
     });
     assert.equal(repairedInactivePlan.success, true);
     assert.ok(repairedInactivePlan.repairActions.includes('inject_workspace_create_project'));

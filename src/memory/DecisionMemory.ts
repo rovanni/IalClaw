@@ -112,6 +112,7 @@ export class DecisionMemory {
     }
 
     private async queryWithoutEmbedding(taskType: string, step: string, topK: number): Promise<ToolDecision[]> {
+        const safeTaskType = String(taskType).replace(/["%_]/g, '');
         const rows = this.db.prepare(`
             SELECT content FROM nodes
             WHERE type = 'memory'
@@ -119,7 +120,7 @@ export class DecisionMemory {
             AND content LIKE ?
             ORDER BY modified DESC
             LIMIT ?
-        `).all(`%"taskType":"${taskType}"%`, topK) as Array<{ content: string }>;
+        `).all(`%"taskType":"${safeTaskType}"%`, topK) as Array<{ content: string }>;
 
         const results: ToolDecision[] = [];
         for (const row of rows) {
@@ -137,15 +138,18 @@ export class DecisionMemory {
     }
 
     async getToolHistory(tool: string, taskType?: string): Promise<{ success: number; failure: number; rate: number }> {
+        const safeTool = String(tool).replace(/["%_]/g, '');
+        const safeTaskType = taskType ? String(taskType).replace(/["%_]/g, '') : undefined;
+
         let query = `
             SELECT content FROM nodes
             WHERE type = 'memory' AND subtype = 'tool_decision' AND content LIKE ?
         `;
-        const params: string[] = [`%"tool":"${tool}"%`];
+        const params: string[] = [`%"tool":"${safeTool}"%`];
 
-        if (taskType) {
+        if (safeTaskType) {
             query += ` AND content LIKE ?`;
-            params.push(`%"taskType":"${taskType}"%`);
+            params.push(`%"taskType":"${safeTaskType}"%`);
         }
 
         const rows = this.db.prepare(query).all(...params) as Array<{ content: string }>;

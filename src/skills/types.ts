@@ -14,3 +14,10 @@ export type LoadedSkill = {
     /** Frases de ativação free-text carregadas do skill.json (invocation.freeText). */
     triggers: string[];
 };
+
+export type PendingSkillItem = {
+    index: number;
+    name: string;
+    description?: string;
+    source?: string;
+};

@@ -35,6 +35,7 @@ export interface SessionContext {
     pending_actions: PendingAction[];
     task_type?: string;
     task_confidence?: number;
+    lastAccessedAt?: number;
 }
 
 export type Session = SessionContext;
@@ -50,10 +51,13 @@ export class SessionManager {
                 language: 'pt-BR',
                 last_artifacts: [],
                 conversation_history: [],
-                pending_actions: []
+                pending_actions: [],
+                lastAccessedAt: Date.now()
             });
         }
-        return sessionStore.get(conversationId)!;
+        const session = sessionStore.get(conversationId)!;
+        session.lastAccessedAt = Date.now();
+        return session;
     }
 
     static runWithSession<T>(conversationId: string, callback: () => T | Promise<T>): T | Promise<T> {
@@ -81,7 +85,34 @@ export class SessionManager {
         session.last_error_fingerprint = undefined;
         session._tool_input_attempts = 0;
         session._input_history = [];
-        session.pending_actions = [];
+        session.pending_actions = session.pending_actions.filter(
+            action => Date.now() < action.expires_at
+        );
         return session;
     }
+
+    static cleanupOldSessions(maxAgeMs: number = 3600000): number {
+        const now = Date.now();
+        let removed = 0;
+
+        for (const [id, session] of sessionStore.entries()) {
+            const lastAccess = session.lastAccessedAt ?? 0;
+            if (now - lastAccess > maxAgeMs) {
+                sessionStore.delete(id);
+                removed++;
+            }
+        }
+
+        return removed;
+    }
+
+    static getSafeSession(conversationId: string = 'default'): SessionContext {
+        const session = this.getCurrentSession();
+        if (session) return session;
+        return this.getSession(conversationId);
+    }
 }
+
+setInterval(() => {
+    SessionManager.cleanupOldSessions();
+}, 300000);

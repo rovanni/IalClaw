@@ -62,23 +62,24 @@ export class AuditLog {
     private load(): void {
         this.entries.clear();
 
-        if (!fs.existsSync(this.logPath)) return;
+        try {
+            if (!fs.existsSync(this.logPath)) return;
 
-        const lines = fs.readFileSync(this.logPath, 'utf8')
-            .split('\n')
-            .map(l => l.trim())
-            .filter(Boolean);
+            const content = fs.readFileSync(this.logPath, 'utf8');
+            const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
 
-        for (const line of lines) {
-            try {
-                const entry: AuditEntry = JSON.parse(line);
-                if (entry.skill && entry.status) {
-                    // A última entrada vence em caso de múltiplas auditorias
-                    this.entries.set(entry.skill.toLowerCase(), entry);
+            for (const line of lines) {
+                try {
+                    const entry: AuditEntry = JSON.parse(line);
+                    if (entry.skill && entry.status) {
+                        this.entries.set(entry.skill.toLowerCase(), entry);
+                    }
+                } catch {
+                    // Linha malformada — ignorar silenciosamente
                 }
-            } catch {
-                // Linha malformada — ignorar silenciosamente
             }
+        } catch (err) {
+            console.warn('[AUDIT LOG] Failed to load audit log:', err instanceof Error ? err.message : 'unknown');
         }
     }
 }

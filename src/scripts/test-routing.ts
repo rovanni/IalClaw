@@ -7,7 +7,11 @@ import { AgentGateway } from '../engine/AgentGateway';
 dotenv.config();
 
 async function run() {
-    const dbManager = new DatabaseManager('db.sqlite');
+    const dbManager = DatabaseManager.getInstance('db.sqlite');
+    if (!dbManager.isReady()) {
+        console.error('Database not ready');
+        process.exit(1);
+    }
     const provider = ProviderFactory.getProvider();
     const memory = new CognitiveMemory(dbManager.getDb(), provider);
     const gateway = new AgentGateway(memory, provider);
@@ -39,8 +43,6 @@ async function run() {
     if (agentNodes.length === 0 && fallbackCount === queries.length) {
         console.warn('[Gateway Test] Banco sem identidades de gateway e todas as consultas foram roteadas para o fallback geral.');
     }
-
-    dbManager.close();
 }
 
 run().catch(console.error);

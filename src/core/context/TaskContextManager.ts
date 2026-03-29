@@ -42,18 +42,25 @@ export class TaskContextManager {
     
     /**
      * Retorna o contexto para um chat específico.
+     * Retorna null se não existir contexto (sem criação automática).
      */
-    get(chatId: string): TaskContext {
-        if (!this.contexts.has(chatId)) {
-            this.contexts.set(chatId, {
-                type: 'unknown',
-                data: {},
-                inProgress: false,
-                lastUpdated: Date.now(),
-                createdAt: Date.now()
-            });
-        }
-        return this.contexts.get(chatId)!;
+    get(chatId: string): TaskContext | null {
+        return this.contexts.get(chatId) ?? null;
+    }
+    
+    /**
+     * Cria um novo contexto para um chat.
+     */
+    create(chatId: string, type: TaskType = 'unknown'): TaskContext {
+        const ctx: TaskContext = {
+            type,
+            data: {},
+            inProgress: false,
+            lastUpdated: Date.now(),
+            createdAt: Date.now()
+        };
+        this.contexts.set(chatId, ctx);
+        return ctx;
     }
     
     /**
@@ -61,14 +68,16 @@ export class TaskContextManager {
      */
     hasActiveTask(chatId: string): boolean {
         const ctx = this.get(chatId);
-        return ctx.type !== 'unknown' && ctx.inProgress === false;
+        if (!ctx) return false;
+        return ctx.type !== 'unknown' && ctx.inProgress === true;
     }
     
     /**
      * Verifica se há execução em andamento.
      */
     isInProgress(chatId: string): boolean {
-        return this.get(chatId).inProgress;
+        const ctx = this.get(chatId);
+        return ctx?.inProgress ?? false;
     }
     
     /**
@@ -77,6 +86,11 @@ export class TaskContextManager {
      */
     isContextValid(chatId: string, input: string): boolean {
         const ctx = this.get(chatId);
+        
+        // Sem contexto → inválido
+        if (!ctx) {
+            return false;
+        }
         
         // Sem tipo → contexto inválido
         if (ctx.type === 'unknown') {
@@ -158,7 +172,10 @@ export class TaskContextManager {
      * Define status de execução.
      */
     setInProgress(chatId: string, value: boolean): void {
-        const ctx = this.get(chatId);
+        let ctx = this.get(chatId);
+        if (!ctx) {
+            ctx = this.create(chatId, 'unknown');
+        }
         ctx.inProgress = value;
         ctx.lastUpdated = Date.now();
         
@@ -227,7 +244,20 @@ export class TaskContextManager {
      * IMPORTANTE: Se for continuação, MANTÉM o tipo anterior.
      */
     update(chatId: string, input: string, classifiedType: TaskType): TaskContext {
-        const ctx = this.get(chatId);
+        let ctx = this.get(chatId);
+        
+        // Se não existe contexto, verificar se é continuação ou nova tarefa
+        if (!ctx) {
+            // Sem contexto anterior = nova tarefa
+            ctx = this.create(chatId, classifiedType);
+            ctx.data.task = input;
+            this.logger.info('new_task_created', '[CONTEXT] Contexto criado para nova tarefa', {
+                type: classifiedType,
+                inputPreview: input.slice(0, 50)
+            });
+            return ctx;
+        }
+        
         const isCont = this.isRealContinuation(ctx, input);
         
         if (isCont) {
@@ -268,7 +298,10 @@ export class TaskContextManager {
      * Define explicitamente a fonte de conteúdo.
      */
     setSource(chatId: string, source: string): void {
-        const ctx = this.get(chatId);
+        let ctx = this.get(chatId);
+        if (!ctx) {
+            ctx = this.create(chatId, 'unknown');
+        }
         ctx.data.source = source;
         ctx.lastUpdated = Date.now();
         
@@ -284,7 +317,7 @@ export class TaskContextManager {
     clearContext(chatId: string): void {
         const ctx = this.get(chatId);
         this.logger.info('context_cleared', '[CONTEXT] Contexto limpo', {
-            type: ctx.type
+            type: ctx?.type ?? 'none'
         });
         
         this.contexts.set(chatId, {
@@ -305,6 +338,11 @@ export class TaskContextManager {
      */
     checkNeedsSource(chatId: string): AskResult | null {
         const ctx = this.get(chatId);
+        
+        // Sem contexto → não precisa perguntar
+        if (!ctx) {
+            return null;
+        }
         
         // Se já tem fonte, não precisa perguntar
         if (ctx.data.source) {
@@ -327,15 +365,19 @@ export class TaskContextManager {
     /**
      * Retorna snapshot para debug.
      */
-    getSnapshot(chatId: string): TaskContext {
-        return { ...this.get(chatId) };
+    getSnapshot(chatId: string): TaskContext | null {
+        const ctx = this.get(chatId);
+        return ctx ? { ...ctx } : null;
     }
     
     /**
      * Estatísticas do contexto.
      */
-    getStats(chatId: string): { type: TaskType; hasSource: boolean; age: number } {
+    getStats(chatId: string): { type: TaskType; hasSource: boolean; age: number } | null {
         const ctx = this.get(chatId);
+        if (!ctx) {
+            return null;
+        }
         return {
             type: ctx.type,
             hasSource: !!ctx.data.source,

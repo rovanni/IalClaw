@@ -21,7 +21,8 @@ type InputAnalysis = {
 export class MemoryLifecycleManager {
     private memoryService: MemoryService;
     private logger = createLogger('MemoryLifecycleManager');
-    private topicFrequency = new Map<string, number>();
+    private topicFrequency = new Map<string, Map<string, number>>();
+    private readonly MAX_TOPIC_ENTRIES = 1000;
 
     private readonly explicitTriggers = [
         'lembre disso',
@@ -222,14 +223,29 @@ export class MemoryLifecycleManager {
         const topic = this.extractTopicKey(content);
         if (!topic) return false;
 
-        const key = `${context.sessionId}:${topic}`;
-        const current = this.topicFrequency.get(key) || 0;
+        const sessionId = context.sessionId || 'default';
+        let sessionMap = this.topicFrequency.get(sessionId);
+        if (!sessionMap) {
+            sessionMap = new Map();
+            this.topicFrequency.set(sessionId, sessionMap);
+        }
+
+        const current = sessionMap.get(topic) || 0;
         const updated = current + 1;
-        this.topicFrequency.set(key, updated);
+        sessionMap.set(topic, updated);
+
+        this.cleanupTopicFrequency();
 
         const firstKeyword = topic.split('|')[0] || '';
         const historicalHits = firstKeyword ? this.memoryService.countMemoriesContaining(firstKeyword) : 0;
         return updated >= 2 || historicalHits > 0;
+    }
+
+    private cleanupTopicFrequency(): void {
+        if (this.topicFrequency.size > this.MAX_TOPIC_ENTRIES) {
+            const entries = Array.from(this.topicFrequency.entries()).slice(-500);
+            this.topicFrequency = new Map(entries);
+        }
     }
 
     private extractTopicKey(content: string): string {

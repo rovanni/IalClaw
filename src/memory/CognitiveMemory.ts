@@ -407,34 +407,47 @@ export class CognitiveMemory {
         // In a full implementation we would create new Concept nodes and save their embeddings.
         // For this update, we just emulate the structural reinforcement.
 
-        const tx = this.db.transaction(() => {
-            for (const node of nodes_used) {
-                updateNode.run(node.id);
-                updateEdges.run(node.id, node.id);
-                this.recentlyUsedNodes.add(node.id);
-                this.markNodeUsage(node.id);
-            }
-            insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0);
-        });
-        tx();
+        try {
+            const tx = this.db.transaction(() => {
+                for (const node of nodes_used) {
+                    updateNode.run(node.id);
+                    updateEdges.run(node.id, node.id);
+                    this.recentlyUsedNodes.add(node.id);
+                    this.markNodeUsage(node.id);
+                }
+                insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0);
+            });
+            tx();
+        } catch (err) {
+            this.db.exec('ROLLBACK');
+            throw err;
+        }
 
         this.refreshRecentlyUsedCodeNeighbors();
 
         // Evict oldest entries to prevent unbounded growth
-        if (this.recentlyUsedNodes.size > 200) {
-            const first = this.recentlyUsedNodes.values().next().value;
-            if (first) this.recentlyUsedNodes.delete(first);
+        this.enforceMemoryBounds();
+    }
+
+    private enforceMemoryBounds(): void {
+        const MAX_RECENT_NODES = 200;
+        const MAX_ACCESS_MAP = 500;
+
+        if (this.recentlyUsedNodes.size > MAX_RECENT_NODES) {
+            const entries = Array.from(this.recentlyUsedNodes);
+            const toRemove = entries.slice(0, Math.floor(MAX_RECENT_NODES * 0.3));
+            toRemove.forEach(id => this.recentlyUsedNodes.delete(id));
         }
 
-        if (this.recentNodeLastAccessedAt.size > 500) {
-            const first = this.recentNodeLastAccessedAt.keys().next().value;
-            if (first) {
-                this.recentNodeLastAccessedAt.delete(first);
-                this.recentNodeAccessCount.delete(first);
-            }
+        if (this.recentNodeLastAccessedAt.size > MAX_ACCESS_MAP) {
+            const entries = Array.from(this.recentNodeLastAccessedAt.entries())
+                .sort((a, b) => a[1] - b[1])
+                .slice(0, Math.floor(MAX_ACCESS_MAP * 0.3));
+            entries.forEach(([key]) => {
+                this.recentNodeLastAccessedAt.delete(key);
+                this.recentNodeAccessCount.delete(key);
+            });
         }
-
-        this.refreshRecentlyUsedCodeNeighbors();
     }
 
     private buildConversationTitle(content: string): string {

@@ -1451,9 +1451,5 @@ Each step.tool must be one of: [${strictToolEnum}]`;
 }
 
 function getTraceIdSafe(): string | undefined {
-    try {
-        return getContext().trace_id;
-    } catch {
-        return undefined;
-    }
+    return getContext()?.trace_id;
 }

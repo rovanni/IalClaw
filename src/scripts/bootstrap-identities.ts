@@ -70,13 +70,17 @@ const DEFAULT_GATEWAY_IDENTITIES: GatewayIdentitySeed[] = [
 ];
 
 export async function bootstrapGatewayIdentities() {
-    const dbManager = new DatabaseManager('db.sqlite');
+    const dbManager = DatabaseManager.getInstance('db.sqlite');
     const db = dbManager.getDb();
     const provider = ProviderFactory.getProvider();
     const timestamp = new Date().toISOString();
 
     let inserted = 0;
     let updated = 0;
+
+    if (!dbManager.isReady()) {
+        throw new Error('Database not ready');
+    }
 
     try {
         for (const seed of DEFAULT_GATEWAY_IDENTITIES) {
@@ -135,8 +139,9 @@ export async function bootstrapGatewayIdentities() {
             total: totalAgents.total
         }));
         return { inserted, updated, totalAgents: totalAgents.total };
-    } finally {
-        dbManager.close();
+    } catch (error) {
+        console.error(t('script.bootstrap.identities.failed'), error);
+        throw error;
     }
 }
 

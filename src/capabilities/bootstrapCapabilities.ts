@@ -11,14 +11,21 @@ export async function bootstrapCapabilities(
         'node_execution'
     ];
 
-    for (const capability of allCapabilities) {
-        await skillManager.ensure(capability, 'strict-no-install');
-        if (!registry.get(capability)) {
-            registry.set(capability, {
-                available: false,
-                source: 'bootstrap',
-                checkedAt: Date.now()
-            });
-        }
+    const results = await Promise.allSettled(
+        allCapabilities.map(capability =>
+            skillManager.ensure(capability, 'strict-no-install')
+        )
+    );
+
+    for (let i = 0; i < allCapabilities.length; i++) {
+        const capability = allCapabilities[i];
+        const result = results[i];
+        const success = result.status === 'fulfilled' && result.value === true;
+
+        registry.set(capability, {
+            available: success,
+            source: 'bootstrap',
+            checkedAt: Date.now()
+        });
     }
 }

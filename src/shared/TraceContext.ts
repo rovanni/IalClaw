@@ -1,18 +1,13 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
-import { t } from '../i18n';
 
 export interface TraceStore {
     trace_id: string;
     agent_id: string;
 }
 
-// Cria um armazenamento isolado para cada requisição/fluxo assíncrono
 export const traceStorage = new AsyncLocalStorage<TraceStore>();
 
-/**
- * Envolve a execução principal. Tudo rodado aqui dentro compartilha o mesmo traceId.
- */
 export function runWithTrace<T>(callback: () => T, agent_id: string = 'system_core'): T {
     const currentStore = traceStorage.getStore();
     if (currentStore?.trace_id) {
@@ -23,10 +18,8 @@ export function runWithTrace<T>(callback: () => T, agent_id: string = 'system_co
     return traceStorage.run({ trace_id: traceId, agent_id }, callback);
 }
 
-export function getContext(): TraceStore {
-    const store = traceStorage.getStore();
-    if (!store?.trace_id) throw new Error(t('error.trace.missing_trace_id'));
-    return store;
+export function getContext(): TraceStore | undefined {
+    return traceStorage.getStore();
 }
 
 /**

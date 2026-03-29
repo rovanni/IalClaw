@@ -72,6 +72,7 @@ function restrictPaths(toolName: string, input: any): any {
 
 export async function executeToolCall(toolName: string, input: any) {
     const ctx = getContext();
+    const traceId = ctx?.trace_id;
     
     let safeInput = input && typeof input === 'object' ? input : {};
     
@@ -84,7 +85,7 @@ export async function executeToolCall(toolName: string, input: any) {
     const tool = toolRegistry.get(toolName);
 
     if (!tool) {
-        emitDebug('agent:error', { trace_id: ctx.trace_id, error: `Tool ${toolName} nao encontrada` });
+        emitDebug('agent:error', { trace_id: traceId, error: `Tool ${toolName} nao encontrada` });
         throw new Error(`Tool ${toolName} nao encontrada`);
     }
 
@@ -108,7 +109,7 @@ export async function executeToolCall(toolName: string, input: any) {
         };
 
         emitDebug('tool_input_error', {
-            trace_id: ctx.trace_id,
+            trace_id: traceId,
             ...errorPayload
         });
         emitDebug('thought', {
@@ -119,8 +120,8 @@ export async function executeToolCall(toolName: string, input: any) {
     }
 
     const start = Date.now();
-    emitDebug('tool_call', { trace_id: ctx.trace_id, tool: toolName, input: validatedInput });
-    emitDebug('agent:tool:start', { trace_id: ctx.trace_id, tool: toolName, input: validatedInput });
+    emitDebug('tool_call', { trace_id: traceId, tool: toolName, input: validatedInput });
+    emitDebug('agent:tool:start', { trace_id: traceId, tool: toolName, input: validatedInput });
 
     let result;
     try {
@@ -129,7 +130,7 @@ export async function executeToolCall(toolName: string, input: any) {
         result = { success: false, error: err.message };
     }
 
-    emitDebug('agent:tool:end', { trace_id: ctx.trace_id, tool: toolName, duration_ms: Date.now() - start, result });
+    emitDebug('agent:tool:end', { trace_id: traceId, tool: toolName, duration_ms: Date.now() - start, result });
 
     return result;
 }

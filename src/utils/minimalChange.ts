@@ -5,6 +5,10 @@ export function isMinimalChange(prevStep: any, newStep: any, issues: any[]): boo
         key => prevStep.input[key] !== newStep.input[key]
     );
 
+    if (!issues || issues.length === 0) {
+        return false;
+    }
+
     const allowedFields = issues.map((issue: any) => String(issue.path || '').split('.')[0]);
 
     return changedFields.every(field => allowedFields.includes(field));

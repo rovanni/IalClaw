@@ -15,13 +15,14 @@ export function tokenize(text: string, options: TokenizeOptions = {}): string[] 
         return [];
     }
 
-    const tokens = text
-        .toLowerCase()
+    let processedText = preserveCase ? text : text.toLowerCase();
+    
+    const tokens = processedText
         .replace(/[^\w\s\u00C0-\u00FF]/g, ' ')
         .split(/\s+/)
         .filter(token => token.length >= minLength && token.length <= maxLength);
 
-    return preserveCase ? tokens : tokens;
+    return tokens;
 }
 
 export function tokenizeWithPositions(text: string): Array<{ token: string; start: number; end: number }> {

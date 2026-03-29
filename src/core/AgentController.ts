@@ -313,6 +313,14 @@ export class AgentController {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
+        
+        if (!session) {
+            logger.warn('session_not_found', t('log.agent.session_not_found'), {
+                conversation_id: sessionId
+            });
+            return t('agent.session.not_found');
+        }
+        
         let effectiveUserQuery = userQuery;
         this.resolveSessionLanguage(userQuery, session);
 
@@ -325,6 +333,12 @@ export class AgentController {
                 command: userQuery.split(' ')[0],
                 duration_ms: Date.now() - startedAt
             });
+            await this.memory.learn({
+                query: userQuery,
+                nodes_used: [],
+                success: true,
+                response: commandResponse
+            }).catch(() => {});
             return commandResponse;
         }
 
@@ -337,6 +351,12 @@ export class AgentController {
                     const declined = t('agent.pending.cancelled');
                     this.memory.saveMessage(sessionId, 'user', userQuery);
                     this.memory.saveMessage(sessionId, 'assistant', declined);
+                    await this.memory.learn({
+                        query: userQuery,
+                        nodes_used: [],
+                        success: true,
+                        response: declined
+                    }).catch(() => {});
                     return declined;
                 }
 
@@ -433,6 +453,12 @@ export class AgentController {
             logger.info('session_directive_handled', t('log.agent.session_directive_handled'), {
                 duration_ms: Date.now() - startedAt
             });
+            await this.memory.learn({
+                query: effectiveUserQuery,
+                nodes_used: [],
+                success: true,
+                response: sessionDirectiveReply
+            }).catch(() => {});
             return sessionDirectiveReply;
         }
 

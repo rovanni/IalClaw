@@ -94,7 +94,7 @@ debugBus.on('tool:call', (data: any) => busLogger.debug('tool_call', `${data?.to
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
-const dbManager = new DatabaseManager('db.sqlite');
+const dbManager = DatabaseManager.getInstance('db.sqlite');
 logger.info('database_initialized', t('log.index.database_initialized'));
 startTraceRecorder();
 

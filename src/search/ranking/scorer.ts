@@ -74,11 +74,11 @@ export class Scorer {
 
                 switch (result.type) {
                     case 'title':
-                        scored.score += this.weights.titleMatch * this.calculateTermWeight(term.replace('title:', ''), queryTokens);
+                        scored.score += this.weights.titleMatch * this.calculateTermWeight(term.replace(/^title:/, ''), queryTokens);
                         scored.matchDetails.titleMatches++;
                         break;
                     case 'tag':
-                        scored.score += this.weights.tagMatch * this.calculateTermWeight(term.replace('tag:', ''), queryTokens);
+                        scored.score += this.weights.tagMatch * this.calculateTermWeight(term.replace(/^tag:/, ''), queryTokens);
                         scored.matchDetails.tagMatches++;
                         break;
                     case 'category':

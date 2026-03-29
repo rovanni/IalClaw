@@ -2,7 +2,7 @@ import { LLMProvider } from '../engine/ProviderFactory';
 import { createLogger } from '../shared/AppLogger';
 
 export interface EmbeddingService {
-    generate(text: string): Promise<number[]>;
+    generate(text: string): Promise<number[] | null>;
 }
 
 export class ProviderEmbeddingService implements EmbeddingService {
@@ -12,8 +12,9 @@ export class ProviderEmbeddingService implements EmbeddingService {
         this.provider = provider;
     }
 
-    async generate(text: string): Promise<number[]> {
-        return this.provider.embed(text);
+    async generate(text: string): Promise<number[] | null> {
+        const result = await this.provider.embed(text);
+        return result && result.length > 0 ? result : null;
     }
 }
 
@@ -27,7 +28,7 @@ export class OllamaEmbeddingService implements EmbeddingService {
         this.model = model || process.env.OLLAMA_MODEL || process.env.MODEL || 'llama3.2';
     }
 
-    async generate(text: string): Promise<number[]> {
+    async generate(text: string): Promise<number[] | null> {
         const response = await fetch(`${this.host}/api/embed`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -39,11 +40,8 @@ export class OllamaEmbeddingService implements EmbeddingService {
 
         if (!response.ok) {
             const body = await response.text();
-            this.logger.warn('embedding_request_failed', 'Falha ao gerar embedding via Ollama.', {
-                status: response.status,
-                body: body.slice(0, 400)
-            });
-            return [];
+            this.logger.error('embedding_failed', `Falha ao gerar embedding: status=${response.status}, body=${body.slice(0, 400)}`);
+            return null;
         }
 
         const data = await response.json() as {
@@ -54,9 +52,10 @@ export class OllamaEmbeddingService implements EmbeddingService {
         if (Array.isArray(data.embeddings) && Array.isArray(data.embeddings[0])) {
             return data.embeddings[0];
         }
-        if (Array.isArray(data.embedding)) {
+        if (Array.isArray(data.embedding) && data.embedding.length > 0) {
             return data.embedding;
         }
-        return [];
+        this.logger.error('embedding_empty', 'Embedding retornou array vazio');
+        return null;
     }
 }

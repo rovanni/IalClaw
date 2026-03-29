@@ -10,15 +10,20 @@ export type AppConfig = {
     [key: string]: unknown;
 };
 
+export function isLang(value: string): value is Lang {
+    return value === 'pt-BR' || value === 'en-US';
+}
+
 export function normalizeLanguage(input?: string | null): Lang {
-    const value = String(input || '').trim().toLowerCase();
+    const value = input ? String(input).trim() : '';
     if (value === 'pt' || value === 'pt-br') return 'pt-BR';
     if (value === 'en' || value === 'en-us') return 'en-US';
+    if (isLang(value)) return value;
     return LANGUAGE_FALLBACK;
 }
 
 export function getProjectRoot(): string {
-    return path.resolve(__dirname, '..', '..');
+    return process.cwd();
 }
 
 export function getConfigPath(projectRoot: string = getProjectRoot()): string {

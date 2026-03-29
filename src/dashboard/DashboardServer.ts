@@ -84,43 +84,44 @@ export class DashboardServer {
                 const { message, sessionId = 'web-session' } = req.body;
                 if (!message) return res.status(400).json({ error: 'Message payload required' });
 
-                const sessionKey = String(sessionId);
+                const sessionKey = String(sessionId || 'web-session');
                 const control = { cancelRequested: false };
                 this.webExecutionControl.set(sessionKey, control);
 
-                const answer = await this.controller.handleWebMessageWithOptions(sessionKey, message, {
-                    shouldStop: () => {
-                        const state = this.webExecutionControl.get(sessionKey);
-                        return Boolean(state?.cancelRequested);
-                    }
-                });
-                const mode = agentConfig.getExecutionMode();
-                const confidenceByMode: Record<string, number> = {
-                    strict: 0.96,
-                    balanced: 0.92,
-                    aggressive: 0.88
-                };
-                const traceId = getTraceId();
+                try {
+                    const answer = await this.controller.handleWebMessageWithOptions(sessionKey, message, {
+                        shouldStop: () => {
+                            const state = this.webExecutionControl.get(sessionKey);
+                            return Boolean(state?.cancelRequested);
+                        }
+                    });
+                    const mode = agentConfig.getExecutionMode();
+                    const confidenceByMode: Record<string, number> = {
+                        strict: 0.96,
+                        balanced: 0.92,
+                        aggressive: 0.88
+                    };
+                    const traceId = getTraceId();
 
-                res.json({
-                    response: answer,
-                    answer,
-                    trace_id: traceId !== 'no-trace-id' ? traceId : null,
-                    confidence: confidenceByMode[mode] ?? 0.9,
-                    mode
-                });
+                    res.json({
+                        response: answer,
+                        answer,
+                        trace_id: traceId !== 'no-trace-id' ? traceId : null,
+                        confidence: confidenceByMode[mode] ?? 0.9,
+                        mode
+                    });
+                } finally {
+                    this.webExecutionControl.delete(sessionKey);
+                }
             } catch (err: any) {
                 res.status(500).json({ error: err.message });
-            } finally {
-                const sessionKey = String(req.body?.sessionId || 'web-session');
-                this.webExecutionControl.delete(sessionKey);
             }
         });
 
         this.app.post('/api/chat/stop', (req, res) => {
             try {
                 const { sessionId = 'web-session' } = req.body || {};
-                const sessionKey = String(sessionId);
+                const sessionKey = String(sessionId || 'web-session');
                 const state = this.webExecutionControl.get(sessionKey) || { cancelRequested: false };
                 state.cancelRequested = true;
                 this.webExecutionControl.set(sessionKey, state);

@@ -11,7 +11,13 @@ function walk(dir: string): string[] {
 
     list.forEach(file => {
         const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
+        
+        let stat;
+        try {
+            stat = fs.statSync(filePath);
+        } catch {
+            return;
+        }
 
         if (stat.isDirectory()) {
             results = results.concat(walk(filePath));
@@ -34,9 +40,15 @@ function runValidationRules(files: string[]) {
     }
 
     files.forEach(file => {
-        const content = fs.readFileSync(file, 'utf-8');
+        let content;
+        try {
+            content = fs.readFileSync(file, 'utf-8');
+        } catch {
+            errors.push(t('tool.validate.file_read_error', { file: path.basename(file) }));
+            return;
+        }
 
-            if (content.trim().length < 20) {
+        if (content.trim().length < 20) {
             errors.push(t('tool.validate.file_too_small', { file: path.basename(file) }));
         }
 

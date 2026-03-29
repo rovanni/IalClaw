@@ -128,11 +128,15 @@ export class GraphAdapter implements GraphAdapterInterface {
         }
 
         try {
-            const tagNodePrefix = `search:${docId}:`;
-            
             for (const tag of tags) {
                 const tagNormalized = tag.toLowerCase().trim();
                 if (!tagNormalized) continue;
+
+                await this.memory.saveProjectNode({
+                    id: `search:${docId}:${tagNormalized}`,
+                    name: tagNormalized,
+                    description: `Tag de documento: ${docId}`
+                });
             }
         } catch (error) {
             console.warn('[GraphAdapter] syncTagsToGraph failed:', error);
@@ -142,6 +146,21 @@ export class GraphAdapter implements GraphAdapterInterface {
     async syncRelationsToGraph(relations: string[], docId: string): Promise<void> {
         if (this.fallbackMode || !this.memory) {
             return;
+        }
+
+        try {
+            for (const rel of relations) {
+                const relNormalized = rel.toLowerCase().trim();
+                if (!relNormalized) continue;
+
+                await this.memory.saveProjectNode({
+                    id: `search:rel:${docId}:${relNormalized}`,
+                    name: relNormalized,
+                    description: `Relação de documento: ${docId}`
+                });
+            }
+        } catch (error) {
+            console.warn('[GraphAdapter] syncRelationsToGraph failed:', error);
         }
     }
 

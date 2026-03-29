@@ -15,18 +15,6 @@ export interface SearchDocument {
     metadata?: Record<string, any>;
 }
 
-export interface SearchResult {
-    doc: SearchDocument;
-    score: number;
-    matchDetails: {
-        titleMatches: number;
-        contentMatches: number;
-        tagMatches: number;
-        categoryMatch: boolean;
-        keywordMatches: number;
-    };
-}
-
 export interface SearchOptions {
     limit?: number;
     offset?: number;
@@ -39,11 +27,7 @@ export interface SearchOptions {
     debug?: boolean;
 }
 
-export interface SearchResult extends SearchResultBase {
-    debugInfo?: SearchDebugInfo;
-}
-
-export interface SearchResultBase {
+export interface SearchResult {
     doc: SearchDocument;
     score: number;
     matchDetails: {
@@ -54,6 +38,7 @@ export interface SearchResultBase {
         keywordMatches: number;
         graphRelationMatches?: number;
     };
+    debugInfo?: SearchDebugInfo;
 }
 
 export interface SearchDebugInfo {
@@ -232,13 +217,13 @@ export class SearchEngine {
             return [];
         }
 
-        const scoredDocs = this.scorer.scoreDocuments(query, searchResults, this.index['documents']);
+        const scoredDocs = this.scorer.scoreDocuments(query, searchResults, this.index.getDocuments());
 
         const searchResultsFinal: SearchResult[] = scoredDocs
             .filter(scored => scored.score >= minScore)
             .slice(offset, offset + limit)
             .map(scored => {
-                const baseResult: SearchResultBase = {
+                const baseResult: SearchResult = {
                     doc: this.getSearchDocument(scored.doc),
                     score: scored.score,
                     matchDetails: scored.matchDetails

@@ -80,8 +80,6 @@ const logDirectory = path.join(process.cwd(), process.env.LOG_DIR || 'logs');
 const applicationLogPath = path.join(logDirectory, 'ialclaw.log');
 const errorLogPath = path.join(logDirectory, 'ialclaw-error.log');
 
-let initialized = false;
-
 function parseConsoleFormat(value?: string): 'pretty' | 'json' {
     const normalized = String(value || 'pretty').trim().toLowerCase();
     return normalized === 'json' ? 'json' : 'pretty';
@@ -97,12 +95,9 @@ function parseLevel(value?: string): LogLevel {
 }
 
 function ensureLogDirectory() {
-    if (initialized) {
-        return;
+    if (!fs.existsSync(logDirectory)) {
+        fs.mkdirSync(logDirectory, { recursive: true });
     }
-
-    fs.mkdirSync(logDirectory, { recursive: true });
-    initialized = true;
 }
 
 function normalizeError(error: unknown): SerializableLogValue {

@@ -122,6 +122,7 @@
   "tool.run.output_path_not_found": "Project output path not found",
   "tool.run.project_execution_failed": "Project execution failed",
   "tool.run.puppeteer_not_installed": "Puppeteer is not installed. Install it to execute HTML projects.",
+  "tool.validate.file_read_error": "Error reading file: {file}",
   "tool.validate.file_too_small": "File too small: {file}",
   "tool.validate.invalid_html": "Invalid HTML in {file}",
   "tool.validate.no_html_found": "No HTML file found",

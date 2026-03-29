@@ -6,6 +6,7 @@ import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 
 const logger = createLogger('SkillLoader');
+const MAX_SKILLS = 500;
 
 /**
  * Lê e parseia os SKILL.md disponíveis respeitando a separação interna/pública.
@@ -42,6 +43,11 @@ export class SkillLoader {
 
         // 3. skills/<nome>/ na raiz   — fallback de compatibilidade
         this.scanRootFallback();
+
+        if (this.loaded.length > MAX_SKILLS) {
+            logger.warn('too_many_skills', `Capped skills from ${this.loaded.length} to ${MAX_SKILLS}`);
+            this.loaded = this.loaded.slice(0, MAX_SKILLS);
+        }
 
         logger.info('skills_loaded', t('log.skills.loaded', { count: this.loaded.length }));
         return this.loaded;
@@ -172,7 +178,9 @@ export class SkillLoader {
             const triggers = this.loadTriggersFromSkillJson(filePath);
 
             return { name, description, argumentHint, body, sourcePath: filePath, origin, triggers };
-        } catch {
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'unknown';
+            logger.warn('skill_parse_failed', `Failed to parse ${filePath}: ${msg}`);
             return null;
         }
     }

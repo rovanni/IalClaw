@@ -19,6 +19,7 @@ export type Skill = {
 
 export class SkillManager {
     private skills: Skill[] = [];
+    private ongoingChecks = new Map<Capability, Promise<boolean>>();
 
     constructor(
         private registry: CapabilityRegistry,
@@ -54,13 +55,26 @@ export class SkillManager {
             return true;
         }
 
+        if (this.ongoingChecks.has(capability)) {
+            return this.ongoingChecks.get(capability)!;
+        }
+
         const skill = this.skills.find(candidate => candidate.provides.includes(capability));
         if (!skill) {
             emitDebug('skill_not_found', { capability });
             return false;
         }
 
-        const ok = await skill.check();
+        const checkPromise = (async () => {
+            try {
+                return await skill.check();
+            } finally {
+                this.ongoingChecks.delete(capability);
+            }
+        })();
+
+        this.ongoingChecks.set(capability, checkPromise);
+        const ok = await checkPromise;
         if (ok) {
             this.registry.set(capability, {
                 available: true,
@@ -158,23 +172,46 @@ export function createBrowserSkill(): Skill {
         id: 'browser',
         provides: ['browser_execution'],
         check: async () => {
+            let puppeteer;
             try {
-                const puppeteer = require('puppeteer');
-                const browser = await puppeteer.launch({
-                    headless: true,
-                    args: ['--no-sandbox', '--disable-setuid-sandbox']
-                });
+                puppeteer = require('puppeteer');
+            } catch {
+                emitDebug('puppeteer_not_installed', { capability: 'browser_execution' });
+                return false;
+            }
+
+            try {
+                const browser = await Promise.race([
+                    puppeteer.launch({
+                        headless: true,
+                        args: ['--no-sandbox', '--disable-setuid-sandbox']
+                    }),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('puppeteer_timeout')), 10000)
+                    )
+                ]);
                 await browser.close();
                 return true;
-            } catch {
+            } catch (err: any) {
+                emitDebug('capability_check_failed', {
+                    capability: 'browser_execution',
+                    stage: err.message === 'puppeteer_timeout' ? 'timeout' : 'check',
+                    error: err.message
+                });
                 return false;
             }
         },
         install: async () => {
             const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-            await execAsync(`${npmCommand} install puppeteer`, {
-                cwd: process.cwd()
-            });
+
+            await Promise.race([
+                execAsync(`${npmCommand} install puppeteer`, {
+                    cwd: process.cwd()
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('install_timeout')), 30000)
+                )
+            ]);
         }
     };
 }

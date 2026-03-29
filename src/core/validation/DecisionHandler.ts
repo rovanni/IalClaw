@@ -453,12 +453,16 @@ export class DecisionHandler {
     }
 }
 
-// Singleton
-let decisionHandlerInstance: DecisionHandler | null = null;
+// Map por sessão para isolar estado entre conversas diferentes
+const decisionHandlers = new Map<string, DecisionHandler>();
 
-export function getDecisionHandler(): DecisionHandler {
-    if (!decisionHandlerInstance) {
-        decisionHandlerInstance = new DecisionHandler();
+export function getDecisionHandler(sessionId: string): DecisionHandler {
+    if (!decisionHandlers.has(sessionId)) {
+        decisionHandlers.set(sessionId, new DecisionHandler());
     }
-    return decisionHandlerInstance;
+    return decisionHandlers.get(sessionId)!;
+}
+
+export function clearDecisionHandler(sessionId: string): void {
+    decisionHandlers.delete(sessionId);
 }

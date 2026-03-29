@@ -148,7 +148,12 @@ export class WorkspaceService {
             throw new Error(t('workspace.error.metadata_not_found', { projectId }));
         }
 
-        const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+        let data: ProjectMetadata;
+        try {
+            data = JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectMetadata;
+        } catch {
+            throw new Error(t('workspace.error.metadata_not_found', { projectId }));
+        }
         data.status = status;
         fs.writeFileSync(file, JSON.stringify(data, null, 2));
     }
@@ -159,7 +164,11 @@ export class WorkspaceService {
             return null;
         }
 
-        return JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectMetadata;
+        try {
+            return JSON.parse(fs.readFileSync(file, 'utf8')) as ProjectMetadata;
+        } catch {
+            return null;
+        }
     }
 
     public saveArtifact(projectId: string, filename: string, content: string | Buffer): string {
@@ -217,13 +226,15 @@ export class WorkspaceService {
             const outputPath = resolvePath(`/workspace/projects/${entry.name}/output`);
             let files_count = 0;
             if (fs.existsSync(outputPath)) {
-                const countFiles = (dir: string): number => {
+                const MAX_DEPTH = 10;
+                const countFiles = (dir: string, depth = 0): number => {
+                    if (depth > MAX_DEPTH) return 0;
                     let count = 0;
                     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
                         if (item.isFile()) {
                             count++;
                         } else if (item.isDirectory()) {
-                            count += countFiles(path.join(dir, item.name));
+                            count += countFiles(path.join(dir, item.name), depth + 1);
                         }
                     }
                     return count;

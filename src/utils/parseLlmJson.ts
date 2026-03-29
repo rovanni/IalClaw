@@ -224,6 +224,12 @@ function repairJsonCandidate(candidate: string): RepairState {
     value = pruned.value;
     prunedDanglingTail = pruned.changed;
 
+    const hasUnescapedQuotes = /"[^"\\]*(?:\\.[^"\\]*)*"[^"\\]*"/.test(value);
+
+    if (hasUnescapedQuotes) {
+        console.warn('[parseLlmJson] JSON com aspas não-escapadas detectado');
+    }
+
     const commaFree = value.replace(/,\s*(?=[}\]])/g, '');
     removedTrailingCommas = commaFree !== value;
     value = commaFree;

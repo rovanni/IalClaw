@@ -1,17 +1,23 @@
 import path from "path";
 
-const BASE_PATH = "/home/venus/ialclaw";
+const BASE_PATH = process.cwd();
 
 export function resolvePath(input: string): string {
   if (!input) return BASE_PATH;
-
-  if (input.startsWith("/workspace")) {
-    return path.join(BASE_PATH, input.replace("/workspace", "workspace"));
-  }
 
   if (path.isAbsolute(input)) {
     return input;
   }
 
-  return path.join(BASE_PATH, input);
+  const normalized = input.startsWith("/workspace") 
+    ? input.replace("/workspace", "workspace") 
+    : input;
+
+  const resolved = path.resolve(BASE_PATH, normalized);
+
+  if (!resolved.startsWith(BASE_PATH)) {
+    throw new Error('Path traversal detectado');
+  }
+
+  return resolved;
 }

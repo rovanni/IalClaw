@@ -36,6 +36,7 @@ export class AgentPlanner {
         bypassTemplates?: boolean;
     }): Promise<PlannerOutput> {
         const ctx = getContext();
+        const traceId = ctx?.trace_id;
         emitDebug('thought', { type: 'thought', content: '[PLANNER] Consultando o Grafo Cognitivo por projetos e padroes passados...' });
 
         if (!this.memory || typeof this.memory.retrieveWithTraversal !== 'function') {
@@ -210,7 +211,7 @@ export class AgentPlanner {
                 })
             };
         } catch (error: any) {
-            emitDebug('agent:error', { trace_id: ctx.trace_id, error: `Falha no planejamento: ${error.message}` });
+            emitDebug('agent:error', { trace_id: traceId, error: `Falha no planejamento: ${error.message}` });
             this.logger.error('planner_unexpected_failure', error, 'Falha inesperada durante a criacao do plano.', {
                 session_consistency: sessionConsistency,
                 file_target_confidence: fileTargetConfidence

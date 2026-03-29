@@ -105,7 +105,8 @@ ${memoryBlock}
         }
 
         const lines = nodes.map(n => {
-            return n.content ? `- ${n.name}: ${n.content}` : `- ${n.name}: ${n.content_preview}`;
+            const content = n.content || n.content_preview || n.name || 'Memória sem conteúdo';
+            return `- ${n.name}: ${content}`;
         });
         return lines.join('\n');
     }

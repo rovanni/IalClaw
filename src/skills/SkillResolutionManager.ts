@@ -1,11 +1,4 @@
-import { LoadedSkill } from './types';
-
-export type PendingSkillItem = {
-    index: number;
-    name: string;
-    description?: string;
-    source?: string;
-};
+import { LoadedSkill, PendingSkillItem } from './types';
 
 export type SkillSearchResult = {
     name: string;
@@ -75,7 +68,12 @@ export class SkillResolutionManager {
             return null;
         }
 
-        const indexMatch = trimmed.match(/^(?:essa|esse|a|o|numero|n)\s*[:\-]?\s*(\d+)/i);
+        const hasInstallVerb = /(?:instala|instalar|instale|adicione|adicionar|usar|usar|execute)\b/i.test(lower);
+        if (!hasInstallVerb) {
+            return null;
+        }
+
+        const indexMatch = trimmed.match(/^(?:instala|instalar|instale|adicione|adicionar|usar|execute)\s+(?:essa|esse|a|o|numero|n)?\s*[:\-]?\s*(\d+)/i);
         if (indexMatch) {
             const idx = parseInt(indexMatch[1], 10);
             const item = this.pendingSkillList.find(s => s.index === idx);
@@ -84,7 +82,7 @@ export class SkillResolutionManager {
             }
         }
 
-        const nameMatch = trimmed.match(/^(?:essa|esse|a|o)\s*[:\-]?\s*([a-zA-Z][a-zA-Z0-9_-]*)/i);
+        const nameMatch = trimmed.match(/^(?:instala|instalar|instale|adicione|adicionar|usar|execute)\s+(?:essa|esse|a|o)?\s*[:\-]?\s*([a-zA-Z][a-zA-Z0-9_-]*)/i);
         if (nameMatch) {
             const key = nameMatch[1].toLowerCase();
             const item = this.pendingSkillList.find(s => 

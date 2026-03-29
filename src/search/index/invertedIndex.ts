@@ -204,6 +204,10 @@ export class InvertedIndex {
         return this.documents.get(docId);
     }
 
+    getDocuments(): Map<string, IndexedDocument> {
+        return this.documents;
+    }
+
     getAllDocuments(): IndexedDocument[] {
         return Array.from(this.documents.values());
     }

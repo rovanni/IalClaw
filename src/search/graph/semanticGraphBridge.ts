@@ -35,9 +35,20 @@ export class SemanticGraphBridge {
     private enrichmentCache: Map<string, GraphEnrichmentResult> = new Map();
     private logger = createLogger('SemanticGraphBridge');
     private enabled: boolean = true;
+    private static readonly MAX_CACHE_SIZE = 1000;
 
     constructor(graphAdapter?: GraphAdapter) {
         this.graphAdapter = graphAdapter || getGraphAdapter();
+    }
+
+    private cleanupCache<K, V>(cache: Map<K, V>): void {
+        if (cache.size > SemanticGraphBridge.MAX_CACHE_SIZE) {
+            const entries = Array.from(cache.entries()).slice(-500);
+            cache.clear();
+            for (const [k, v] of entries) {
+                cache.set(k, v);
+            }
+        }
     }
 
     isEnabled(): boolean {
@@ -100,6 +111,7 @@ export class SemanticGraphBridge {
                     .slice(0, maxTerms);
 
                 this.expansionCache.set(cacheKey, validTerms);
+                this.cleanupCache(this.expansionCache);
 
                 for (const t of validTerms) {
                     allExpanded.add(t);
@@ -189,6 +201,7 @@ export class SemanticGraphBridge {
         };
 
         this.enrichmentCache.set(cacheKey, result);
+        this.cleanupCache(this.enrichmentCache);
         return result;
     }
 
@@ -255,6 +268,12 @@ export class SemanticGraphBridge {
         this.enrichmentCache.clear();
     }
 
+    reset(): void {
+        this.expansionCache.clear();
+        this.enrichmentCache.clear();
+        this.enabled = true;
+    }
+
     getCacheStats(): {
         expansionCacheSize: number;
         enrichmentCacheSize: number;
@@ -277,4 +296,11 @@ export function getSemanticGraphBridge(): SemanticGraphBridge {
         globalBridge = new SemanticGraphBridge();
     }
     return globalBridge;
+}
+
+export function resetSemanticGraphBridge(): void {
+    if (globalBridge) {
+        globalBridge.reset();
+    }
+    globalBridge = null;
 }

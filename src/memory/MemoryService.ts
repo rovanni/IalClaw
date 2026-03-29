@@ -36,6 +36,14 @@ export class MemoryService {
     public async upsertMemory(input: StoreMemoryInput): Promise<UpsertMemoryResult> {
         const now = new Date().toISOString();
         const embedding = await this.embeddingService.generate(input.content);
+
+        if (!embedding) {
+            this.logger.warn('embedding_unavailable', 'Embedding indisponível, usando fallback heurístico', {
+                content_preview: input.content.slice(0, 50)
+            });
+            return this.fallbackUpsert(input, now);
+        }
+
         const existing = this.findBestExistingMemory(input, embedding);
 
         if (existing) {
@@ -98,6 +106,12 @@ export class MemoryService {
         const limit = options?.limit ?? 6;
         const reinforce = options?.reinforce !== false;
         const queryEmbedding = await this.embeddingService.generate(query);
+        
+        if (!queryEmbedding) {
+            this.logger.warn('embedding_unavailable', 'Embedding indisponível para query, usando fallback');
+            return this.fallbackQuery(query, limit);
+        }
+
         const rows = this.db.prepare(`
             SELECT
                 n.id,
@@ -123,7 +137,8 @@ export class MemoryService {
         const ranked = rows
             .map((row) => {
                 const memoryEmbedding = this.safeParseEmbedding(row.embedding);
-                const similarity = this.normalizeSimilarity(this.cosineSimilarity(queryEmbedding, memoryEmbedding));
+                const simResult = this.cosineSimilarity(queryEmbedding, memoryEmbedding);
+                const similarity = simResult !== null ? this.normalizeSimilarity(simResult) : 0;
                 const relevance = Math.max(0, Math.min(1, (row.importance + row.score) / 2));
                 const connectionScore = Math.min(1, (row.edge_count || 0) / 6);
                 const graphScore = (connectionScore * 0.7) + (relevance * 0.3);
@@ -226,7 +241,8 @@ export class MemoryService {
         let best: { row: MemoryRow; score: number } | null = null;
         for (const row of candidates) {
             const currentEmbedding = this.safeParseEmbedding(row.embedding);
-            const similarity = this.normalizeSimilarity(this.cosineSimilarity(embedding, currentEmbedding));
+            const simResult = this.cosineSimilarity(embedding, currentEmbedding);
+            const similarity = simResult !== null ? this.normalizeSimilarity(simResult) : 0;
             const overlap = this.entityOverlapScore(row.content, input.entities);
             const contradiction = this.looksContradictory(row.content, input.content) ? 0.3 : 0;
             const candidateScore = similarity + overlap + contradiction;
@@ -424,8 +440,8 @@ export class MemoryService {
         return createHash('sha1').update(text).digest('hex').slice(0, 16);
     }
 
-    private cosineSimilarity(a: number[], b: number[]): number {
-        if (!a.length || !b.length) return 0;
+    private cosineSimilarity(a: number[], b: number[]): number | null {
+        if (!a.length || !b.length) return null;
         const len = Math.min(a.length, b.length);
         let dot = 0;
         let normA = 0;
@@ -435,11 +451,60 @@ export class MemoryService {
             normA += a[i] * a[i];
             normB += b[i] * b[i];
         }
-        if (!normA || !normB) return 0;
+        if (!normA || !normB) return null;
         return dot / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
     private normalizeSimilarity(value: number): number {
         return Math.max(0, Math.min(1, (value + 1) / 2));
+    }
+
+    private fallbackUpsert(input: StoreMemoryInput, now: string): UpsertMemoryResult {
+        const memoryId = this.buildMemoryId(input.type, input.content);
+        const name = this.buildMemoryName(input.type, input.entities);
+        const tags = JSON.stringify(this.buildTags(input.type, input.entities));
+
+        this.db.prepare(`
+            INSERT INTO nodes
+            (id, type, subtype, name, content, content_preview, importance, score, freshness, category, tags, auto_indexed, created_at, modified)
+            VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(
+            memoryId,
+            input.type,
+            name,
+            input.content,
+            input.content.slice(0, 280),
+            input.importance,
+            input.relevance,
+            1,
+            'memory_lifecycle',
+            tags,
+            now,
+            now
+        );
+
+        this.relinkEntities(memoryId, input.entities, input.context, now);
+        return { memoryId, action: 'inserted' };
+    }
+
+    private fallbackQuery(query: string, limit: number): MemoryQueryResult[] {
+        const normalizedQuery = query.toLowerCase();
+        const rows = this.db.prepare(`
+            SELECT id, subtype, content, importance, score
+            FROM nodes
+            WHERE type = 'memory' AND LOWER(content) LIKE ?
+            ORDER BY importance DESC, score DESC
+            LIMIT ?
+        `).all(`%${normalizedQuery}%`, limit) as Array<{ id: string; subtype: string; content: string; importance: number; score: number }>;
+
+        return rows.map(row => ({
+            id: row.id,
+            type: row.subtype as MemoryQueryResult['type'],
+            content: row.content,
+            similarity: 0,
+            graphScore: (row.importance + row.score) / 2,
+            finalScore: (row.importance + row.score) / 2,
+            importance: row.importance
+        }));
     }
 }
