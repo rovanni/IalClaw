@@ -14,8 +14,42 @@ export class DatabaseManager {
     constructor(dbPath: string = 'db.sqlite') {
         const resolvedDbPath = path.resolve(dbPath);
         dbLogger.info('db_path', `Banco de dados será criado/em: ${resolvedDbPath}`);
-        this.db = new Database(resolvedDbPath);
-        this.db.pragma('busy_timeout = 5000');
+
+
+        // Garante que o diretório existe
+        const dbDir = path.dirname(resolvedDbPath);
+        try {
+            if (!fs.existsSync(dbDir)) {
+                fs.mkdirSync(dbDir, { recursive: true });
+                dbLogger.info('db_dir_created', `Diretório do banco criado: ${dbDir}`);
+            }
+        } catch (dirErr) {
+            dbLogger.error('db_dir_create_failed', `Falha ao criar diretório do banco: ${dbDir}\nErro: ${dirErr}`);
+            throw dirErr;
+        }
+
+
+        // Verifica permissão de escrita e tenta corrigir automaticamente
+        try {
+            fs.accessSync(dbDir, fs.constants.W_OK);
+        } catch (permErr) {
+            try {
+                // Tenta ajustar permissão para leitura, escrita e execução para owner e grupo
+                fs.chmodSync(dbDir, 0o770);
+                fs.accessSync(dbDir, fs.constants.W_OK);
+            } catch (fixErr) {
+                throw new Error(`Permissão de escrita negada para o diretório do banco: ${dbDir}. Tentativa de correção falhou. Erro: ${fixErr}`);
+            }
+        }
+
+        try {
+            this.db = new Database(resolvedDbPath);
+            this.db.pragma('busy_timeout = 5000');
+        } catch (dbErr) {
+            dbLogger.error('db_open_failed', `Falha ao abrir/criar banco: ${resolvedDbPath}\nErro: ${dbErr}`);
+            throw dbErr;
+        }
+
         DatabaseManager.lastPath = resolvedDbPath;
         DatabaseManager.instance = this;
         this.initialize();
