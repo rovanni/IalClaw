@@ -1,5 +1,5 @@
 // ── Validation Module ────────────────────────────────────────────────────────────
-// Validação de execução de plano.
+// Validação de execução de plano e decisão interativa.
 
 export {
     PlanExecutionValidator,
@@ -8,3 +8,11 @@ export {
     type PlanValidationResult,
     type ProgressReport
 } from './PlanExecutionValidator';
+
+export {
+    DecisionHandler,
+    getDecisionHandler,
+    type DecisionOption,
+    type DecisionRequest,
+    type DecisionResult
+} from './DecisionHandler';
