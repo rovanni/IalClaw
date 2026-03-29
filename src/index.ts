@@ -87,6 +87,7 @@ function checkAndRunSetup(): void {
             }
         });
         return;
+        return;
     }
 }
 
@@ -176,7 +177,12 @@ function checkAndPromptDatabase(): void {
     const DB_PATH = path.resolve('db.sqlite');
     const dbExists = fs.existsSync(DB_PATH);
 
-    if (dbExists) return;
+    if (dbExists) {
+        const stats = fs.statSync(DB_PATH);
+        if (stats.size > 0) {
+            return;
+        }
+    }
 
     console.log('');
     console.log('\x1b[33m' + t('database.not_found') + '\x1b[0m');
@@ -197,6 +203,7 @@ function checkAndPromptDatabase(): void {
         console.log(t('database.creating'));
         console.log('');
     });
+    return;
 }
 
 checkAndPromptDatabase();
