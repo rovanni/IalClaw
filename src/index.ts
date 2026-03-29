@@ -175,27 +175,92 @@ const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_h
 
 function checkAndPromptDatabase(): void {
     const DB_PATH = path.resolve('db.sqlite');
+    const readlineSync = require('readline-sync');
 
     // Verifica se banco existe e é válido
     if (fs.existsSync(DB_PATH)) {
-        try {
-            const stats = fs.statSync(DB_PATH);
-            if (stats.size > 0) {
-                // Banco válido, verifica se pode abrir
-                try {
-                    const testDb = require('better-sqlite3')(DB_PATH);
-                    testDb.prepare('SELECT 1').get();
-                    testDb.close();
-                    return; // Banco OK
-                } catch {
-                    // Banco corrompido, remove
-                    fs.unlinkSync(DB_PATH);
+        const stats = fs.statSync(DB_PATH);
+        if (stats.size > 0) {
+            // Banco existe, verifica se pode abrir
+            try {
+                const testDb = require('better-sqlite3')(DB_PATH);
+                testDb.prepare('SELECT 1').get();
+                testDb.close();
+                return; // Banco OK
+            } catch (err: unknown) {
+                // Banco corrompido - AVISA O USUÁRIO PRIMEIRO
+                console.log('');
+                console.log('\x1b[31m═══════════════════════════════════════════════════════════════\x1b[0m');
+                console.log('\x1b[31m  ' + t('database.corrupted_title') + '\x1b[0m');
+                console.log('\x1b[31m═══════════════════════════════════════════════════════════════\x1b[0m');
+                console.log('');
+                console.log(`  ${t('database.file')}: ${DB_PATH}`);
+                console.log(`  ${t('database.size')}: ${(stats.size / 1024).toFixed(2)} KB`);
+                console.log(`  ${t('database.error')}: ${err instanceof Error ? err.message : 'Não foi possível abrir o banco'}`);
+                console.log('');
+                console.log('\x1b[33m  ' + t('database.corrupted_info') + '\x1b[0m');
+                console.log('');
+                console.log('  ' + t('database.options') + ':');
+                console.log('    [1] ' + t('database.corrupted_option1'));
+                console.log('    [2] ' + t('database.corrupted_option2'));
+                console.log('    [3] ' + t('database.corrupted_option3'));
+                console.log('    [4] ' + t('database.corrupted_option4'));
+                console.log('');
+
+                const choice = readlineSync.question('  ' + t('database.option')).trim() || '1';
+
+                if (choice === '4' || choice.toLowerCase() === 'sair' || choice.toLowerCase() === 'exit') {
+                    console.log('\n  ' + t('database.canceled'));
+                    process.exit(0);
                 }
-            } else {
-                fs.unlinkSync(DB_PATH);
+
+                if (choice === '2') {
+                    // Backup primeiro
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    const backupPath = `${DB_PATH}.corrompido.${timestamp}`;
+                    try {
+                        fs.copyFileSync(DB_PATH, backupPath);
+                        console.log(`\n  ${t('database.corrupted_backup_created', { path: backupPath })}`);
+                    } catch (backupErr: unknown) {
+                        console.log(`\n  ${t('database.corrupted_backup_error', { error: backupErr instanceof Error ? backupErr.message : 'Erro desconhecido' })}`);
+                        const confirm = readlineSync.question('  ' + t('database.corrupted_backup_confirm')).toLowerCase();
+                        if (confirm !== 's' && confirm !== 'sim' && confirm !== 'y' && confirm !== 'yes') {
+                            process.exit(0);
+                        }
+                    }
+                }
+
+                if (choice === '3') {
+                    // Tentar reparar
+                    console.log('\n  ' + t('database.corrupted_repairing'));
+                    try {
+                        const repairDb = require('better-sqlite3')(DB_PATH);
+                        repairDb.pragma('integrity_check');
+                        repairDb.close();
+                        console.log('  ' + t('database.corrupted_repair_success'));
+                        return;
+                    } catch (repairErr: unknown) {
+                        console.log(`  ${t('database.corrupted_repair_failed', { error: repairErr instanceof Error ? repairErr.message : 'Erro desconhecido' })}`);
+                        console.log('  ' + t('database.creating_new'));
+                    }
+                }
+
+                // choice 1 ou 2 ou reparo falhou - remove banco corrompido
+                try {
+                    fs.unlinkSync(DB_PATH);
+                    // Remove arquivos auxiliares
+                    const auxFiles = [`${DB_PATH}-journal`, `${DB_PATH}-wal`, `${DB_PATH}-shm`];
+                    for (const f of auxFiles) {
+                        if (fs.existsSync(f)) fs.unlinkSync(f);
+                    }
+                    console.log('  ' + t('database.corrupted_removed') + '\n');
+                } catch (removeErr: unknown) {
+                    console.log(`  ${t('database.corrupted_remove_error', { error: removeErr instanceof Error ? removeErr.message : 'Erro desconhecido' })}`);
+                    process.exit(1);
+                }
             }
-        } catch {
-            // Erro ao acessar, remove
+        } else {
+            // Arquivo vazio
             try { fs.unlinkSync(DB_PATH); } catch { /* ignore */ }
         }
     }
@@ -204,8 +269,6 @@ function checkAndPromptDatabase(): void {
     console.log('');
     console.log('\x1b[33m' + t('database.not_found') + '\x1b[0m');
     console.log('');
-
-    const readlineSync = require('readline-sync');
     
     const answer = readlineSync.question(t('database.create_prompt'));
     
@@ -216,7 +279,6 @@ function checkAndPromptDatabase(): void {
     
     console.log(t('database.creating'));
     console.log('');
-    // Não faz mais nada - o DatabaseManager vai criar automaticamente
 }
 
 checkAndPromptDatabase();

@@ -28,23 +28,48 @@ export class DatabaseManager {
             throw dirErr;
         }
 
-
-        // Verifica permissão de escrita e tenta corrigir automaticamente
+        // Corrige permissões automaticamente (Linux/macOS)
         try {
+            const stats = fs.statSync(dbDir);
+            const mode = stats.mode & 0o777;
+            if (mode !== 0o755 && mode !== 0o775 && mode !== 0o777) {
+                fs.chmodSync(dbDir, 0o755);
+                dbLogger.info('db_dir_perm_fixed', `Permissões do diretório corrigidas para 755: ${dbDir}`);
+            }
             fs.accessSync(dbDir, fs.constants.W_OK);
         } catch (permErr) {
             try {
-                // Tenta ajustar permissão para leitura, escrita e execução para owner e grupo
-                fs.chmodSync(dbDir, 0o770);
+                fs.chmodSync(dbDir, 0o755);
                 fs.accessSync(dbDir, fs.constants.W_OK);
+                dbLogger.info('db_dir_perm_fixed', `Permissões corrigidas: ${dbDir}`);
             } catch (fixErr) {
                 throw new Error(`Permissão de escrita negada para o diretório do banco: ${dbDir}. Tentativa de correção falhou. Erro: ${fixErr}`);
             }
         }
 
+        // Remove arquivos de banco corrompidos (journal, wal, etc)
+        const corruptedFiles = [
+            resolvedDbPath,
+            `${resolvedDbPath}-journal`,
+            `${resolvedDbPath}-wal`,
+            `${resolvedDbPath}-shm`,
+        ];
+        for (const filePath of corruptedFiles) {
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    dbLogger.info('db_corrupted_file_removed', `Arquivo corrompido removido: ${filePath}`);
+                }
+            } catch (removeErr) {
+                dbLogger.warn('db_file_remove_failed', `Não foi possível remover ${filePath}: ${removeErr}`);
+            }
+        }
+
         try {
             this.db = new Database(resolvedDbPath);
-            this.db.pragma('busy_timeout = 5000');
+            this.db.pragma('journal_mode = WAL');
+            this.db.pragma('busy_timeout = 10000');
+            this.db.pragma('synchronous = NORMAL');
         } catch (dbErr) {
             dbLogger.error('db_open_failed', `Falha ao abrir/criar banco: ${resolvedDbPath}\nErro: ${dbErr}`);
             throw dbErr;
