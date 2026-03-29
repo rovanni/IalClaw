@@ -32,6 +32,7 @@ import { DecisionMemory } from './memory/DecisionMemory';
 import { setLanguage, t } from './i18n';
 import { resolveAppLanguage } from './config/languageConfig';
 import { OnboardingService } from './services/OnboardingService';
+import { isDuplicateMessage } from './utils/messageDedup';
 
 
 function parseEnvFile(envPath: string): Record<string, string> {
