@@ -55,7 +55,22 @@ export class DatabaseManager {
 
         try {
             const schema = fs.readFileSync(schemaPath, 'utf-8');
-            this.db.exec(schema);
+            const allStatements = schema.split(';').filter(s => s.trim().length > 0);
+
+            const pragmas = allStatements.filter(s => s.trim().toUpperCase().startsWith('PRAGMA'));
+            const otherStatements = allStatements.filter(s => !s.trim().toUpperCase().startsWith('PRAGMA'));
+
+            for (const pragma of pragmas) {
+                this.db.pragma(pragma.split('=')[1].trim());
+            }
+
+            const createTables = this.db.transaction(() => {
+                for (const stmt of otherStatements) {
+                    this.db.prepare(stmt).run();
+                }
+            });
+
+            createTables();
 
             const result = this.db
                 .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'")

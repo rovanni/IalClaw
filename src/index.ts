@@ -173,23 +173,34 @@ debugBus.on('tool:call', (data: any) => busLogger.debug('tool_call', `${data?.to
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
-let shouldCreateDb = false;
-
 function checkAndPromptDatabase(): void {
     const DB_PATH = path.resolve('db.sqlite');
-    const dbExists = fs.existsSync(DB_PATH);
 
-    if (dbExists) {
+    // Verifica se banco existe e é válido
+    if (fs.existsSync(DB_PATH)) {
         try {
             const stats = fs.statSync(DB_PATH);
             if (stats.size > 0) {
-                return;
+                // Banco válido, verifica se pode abrir
+                try {
+                    const testDb = require('better-sqlite3')(DB_PATH);
+                    testDb.prepare('SELECT 1').get();
+                    testDb.close();
+                    return; // Banco OK
+                } catch {
+                    // Banco corrompido, remove
+                    fs.unlinkSync(DB_PATH);
+                }
+            } else {
+                fs.unlinkSync(DB_PATH);
             }
         } catch {
+            // Erro ao acessar, remove
             try { fs.unlinkSync(DB_PATH); } catch { /* ignore */ }
         }
     }
 
+    // Banco não existe ou foi removido - pergunta
     console.log('');
     console.log('\x1b[33m' + t('database.not_found') + '\x1b[0m');
     console.log('');
@@ -205,7 +216,7 @@ function checkAndPromptDatabase(): void {
     
     console.log(t('database.creating'));
     console.log('');
-    shouldCreateDb = true;
+    // Não faz mais nada - o DatabaseManager vai criar automaticamente
 }
 
 checkAndPromptDatabase();
