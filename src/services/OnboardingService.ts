@@ -1,0 +1,333 @@
+import Database from 'better-sqlite3';
+import { createLogger } from '../shared/AppLogger';
+import path from 'path';
+import os from 'os';
+
+export interface UserProfile {
+    user_id: string;
+    name: string | null;
+    expertise: string | null;
+    goals: string | null;
+    response_style: 'concise' | 'detailed' | 'adaptive';
+    learning_mode: 'enabled' | 'disabled' | 'feedback-only';
+    autonomy_level: 'conservative' | 'balanced' | 'confident';
+    workspace_path: string | null;
+    integrations: string | null;
+    language_preference: 'system' | 'english-tech' | 'dynamic';
+    onboarding_completed: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface OnboardingState {
+    step: number;
+    userId: string;
+    data: Partial<UserProfile>;
+}
+
+const ONBOARDING_STEPS = [
+    {
+        id: 'name',
+        question: 'Olá! 🐙 *Bem-vindo ao IalClaw*!\n\nPara eu lembrar de você, *qual o seu nome* e como gostaria de ser chamado(a)?',
+        parseMode: 'Markdown' as const,
+        saveField: 'name'
+    },
+    {
+        id: 'expertise',
+        question: 'Prazer, {name}! 🌟\n\n*Com o que você trabalha ou estuda?* (opcional)\n\nEx: Desenvolvedor, Pesquisador, Estudante de Direito, Designer...',
+        parseMode: 'Markdown' as const,
+        saveField: 'expertise'
+    },
+    {
+        id: 'goals',
+        question: `Entendido! 🚀\n\n*Quais são seus principais objetivos ao usar o IalClaw?* (escolha uma ou mais opções)
+
+1️⃣ 🧑‍💻 Desenvolvimento de código e automação
+2️⃣ 📚 Pesquisa e organização de conhecimento
+3️⃣ 📝 Criação de conteúdo e escrita
+4️⃣ 🗂️ Gestão de tarefas e produtividade
+5️⃣ 🔍 Busca e análise de informações
+6️⃣ 🎓 Aprendizado e tutoria
+7️⃣ Outro (responda com sua opção)`,
+        parseMode: 'Markdown' as const,
+        saveField: 'goals'
+    },
+    {
+        id: 'response_style',
+        question: `Ótimo! 📋\n\n*Qual estilo de resposta você prefere?*
+
+⚡ *Conciso* - Respostas diretas ao ponto
+📖 *Detalhado* - Explicações completas com contexto
+🎯 *Adaptativo* - O agente decide conforme a complexidade
+
+(Responda com o número ou nome)`,
+        parseMode: 'Markdown' as const,
+        saveField: 'response_style'
+    },
+    {
+        id: 'learning_mode',
+        question: `Certo! 🧠\n\n*Você deseja que o IalClaw aprenda com suas interações para melhorar sugestões futuras?*
+
+✅ Sim, ativar memória de aprendizado
+❌ Não, manter apenas sessão atual
+🔄 Parcial - Aprender apenas com feedback explícito
+
+(Responda com o número)`,
+        parseMode: 'Markdown' as const,
+        saveField: 'learning_mode'
+    },
+    {
+        id: 'autonomy_level',
+        question: `Perfeito! 🎛️\n\n*Qual nível de autonomia você permite ao agente?*
+
+🔒 *Conservador* - Sempre perguntar antes de executar ações
+⚖️ *Balanceado* - Autonomia para tarefas rotineiras
+🚀 *Confiante* - Executar quando tiver alta confiança
+
+(Responda com o número ou nome)`,
+        parseMode: 'Markdown' as const,
+        saveField: 'autonomy_level'
+    }
+];
+
+export class OnboardingService {
+    private db: Database.Database;
+    private logger = createLogger('OnboardingService');
+    private states: Map<string, OnboardingState> = new Map();
+    private defaultWorkspace: string;
+
+    constructor(db: Database.Database) {
+        this.db = db;
+        this.defaultWorkspace = path.join(os.homedir(), 'ialclaw', 'workspace');
+        this.ensureTable();
+    }
+
+    private ensureTable(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS user_profile (
+                user_id TEXT PRIMARY KEY,
+                name TEXT,
+                expertise TEXT,
+                goals TEXT,
+                response_style TEXT DEFAULT 'adaptive',
+                learning_mode TEXT DEFAULT 'feedback-only',
+                autonomy_level TEXT DEFAULT 'balanced',
+                workspace_path TEXT,
+                integrations TEXT,
+                language_preference TEXT DEFAULT 'system',
+                onboarding_completed INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        `);
+    }
+
+    public isOnboardingCompleted(userId: string): boolean {
+        const row = this.db.prepare('SELECT onboarding_completed FROM user_profile WHERE user_id = ?').get(userId) as { onboarding_completed: number } | undefined;
+        return row?.onboarding_completed === 1;
+    }
+
+    public getUserProfile(userId: string): UserProfile | null {
+        return this.db.prepare('SELECT * FROM user_profile WHERE user_id = ?').get(userId) as UserProfile | null;
+    }
+
+    public startOnboarding(userId: string): { question: string; parseMode: 'Markdown' | 'HTML' } | null {
+        if (this.isOnboardingCompleted(userId)) {
+            return null;
+        }
+
+        const state: OnboardingState = {
+            step: 0,
+            userId,
+            data: {}
+        };
+
+        this.states.set(userId, state);
+        return this.getQuestionForStep(0, state.data);
+    }
+
+    public processOnboardingAnswer(userId: string, answer: string): { question?: string; parseMode: 'Markdown' | 'HTML'; completed?: boolean; welcomeMessage?: string } | null {
+        const state = this.states.get(userId);
+
+        if (!state) {
+            if (!this.isOnboardingCompleted(userId)) {
+                return this.startOnboarding(userId);
+            }
+            return null;
+        }
+
+        const currentStep = ONBOARDING_STEPS[state.step];
+        const fieldName = currentStep.saveField;
+
+        if (fieldName === 'response_style') {
+            state.data[fieldName] = this.parseResponseStyle(answer);
+        } else if (fieldName === 'learning_mode') {
+            state.data[fieldName] = this.parseLearningMode(answer);
+        } else if (fieldName === 'autonomy_level') {
+            state.data[fieldName] = this.parseAutonomyLevel(answer);
+        } else if (fieldName === 'goals') {
+            state.data[fieldName] = this.parseGoals(answer);
+        } else {
+            (state.data as any)[fieldName] = answer.trim();
+        }
+
+        state.step++;
+
+        if (state.step >= ONBOARDING_STEPS.length) {
+            this.completeOnboarding(state);
+            const welcomeMsg = this.generateWelcomeMessage(state.data);
+            this.states.delete(userId);
+            return { completed: true, welcomeMessage: welcomeMsg, parseMode: 'Markdown' };
+        }
+
+        const nextQuestion = this.getQuestionForStep(state.step, state.data);
+        if (nextQuestion) {
+            return { ...nextQuestion, completed: false };
+        }
+
+        return null;
+    }
+
+    public getOnboardingState(userId: string): OnboardingState | undefined {
+        return this.states.get(userId);
+    }
+
+    public cancelOnboarding(userId: string): void {
+        this.states.delete(userId);
+    }
+
+    public resetOnboarding(userId: string): void {
+        this.db.prepare('UPDATE user_profile SET onboarding_completed = 0 WHERE user_id = ?').run(userId);
+        this.states.delete(userId);
+    }
+
+    private getQuestionForStep(step: number, data: Partial<UserProfile>): { question: string; parseMode: 'Markdown' | 'HTML' } | null {
+        if (step >= ONBOARDING_STEPS.length) return null;
+
+        const stepConfig = ONBOARDING_STEPS[step];
+        let question = stepConfig.question;
+
+        if (data.name) {
+            question = question.replace('{name}', data.name);
+        }
+
+        return {
+            question,
+            parseMode: stepConfig.parseMode
+        };
+    }
+
+    private parseResponseStyle(answer: string): 'concise' | 'detailed' | 'adaptive' {
+        const normalized = answer.toLowerCase().trim();
+        if (normalized === '1' || normalized.includes('conciso')) return 'concise';
+        if (normalized === '2' || normalized.includes('detalhado')) return 'detailed';
+        return 'adaptive';
+    }
+
+    private parseLearningMode(answer: string): 'enabled' | 'disabled' | 'feedback-only' {
+        const normalized = answer.toLowerCase().trim();
+        if (normalized === '1' || normalized.includes('sim')) return 'enabled';
+        if (normalized === '2' || normalized.includes('não') || normalized.includes('nao')) return 'disabled';
+        return 'feedback-only';
+    }
+
+    private parseAutonomyLevel(answer: string): 'conservative' | 'balanced' | 'confident' {
+        const normalized = answer.toLowerCase().trim();
+        if (normalized === '1' || normalized.includes('conservador')) return 'conservative';
+        if (normalized === '2' || normalized.includes('balanceado')) return 'balanced';
+        return 'confident';
+    }
+
+    private parseGoals(answer: string): string {
+        const goals: string[] = [];
+        const normalized = answer.toLowerCase();
+
+        if (normalized.includes('1') || normalized.includes('código') || normalized.includes('codigo') || normalized.includes('desenvolvimento')) {
+            goals.push('desenvolvimento_codigo');
+        }
+        if (normalized.includes('2') || normalized.includes('pesquisa') || normalized.includes('conhecimento')) {
+            goals.push('pesquisa_conhecimento');
+        }
+        if (normalized.includes('3') || normalized.includes('conteúdo') || normalized.includes('conteudo') || normalized.includes('escrita')) {
+            goals.push('criacao_conteudo');
+        }
+        if (normalized.includes('4') || normalized.includes('tarefa') || normalized.includes('produtividade')) {
+            goals.push('gestao_tarefas');
+        }
+        if (normalized.includes('5') || normalized.includes('busca') || normalized.includes('análise') || normalized.includes('analise')) {
+            goals.push('busca_analise');
+        }
+        if (normalized.includes('6') || normalized.includes('aprendizado') || normalized.includes('tutoria')) {
+            goals.push('aprendizado_tutoria');
+        }
+        if (normalized.includes('7') || normalized.includes('outro')) {
+            goals.push('outro');
+        }
+
+        if (goals.length === 0) {
+            goals.push('geral');
+        }
+
+        return JSON.stringify(goals);
+    }
+
+    private completeOnboarding(state: OnboardingState): void {
+        const now = new Date().toISOString();
+
+        this.db.prepare(`
+            INSERT OR REPLACE INTO user_profile
+            (user_id, name, expertise, goals, response_style, learning_mode, autonomy_level, workspace_path, language_preference, onboarding_completed, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(
+            state.userId,
+            state.data.name || null,
+            state.data.expertise || null,
+            state.data.goals || null,
+            state.data.response_style || 'adaptive',
+            state.data.learning_mode || 'feedback-only',
+            state.data.autonomy_level || 'balanced',
+            this.defaultWorkspace,
+            'system',
+            now,
+            now
+        );
+
+        this.logger.info('onboarding_completed', 'Onboarding concluído', { userId: state.userId });
+    }
+
+    private generateWelcomeMessage(data: Partial<UserProfile>): string {
+        const name = data.name || 'Usuário';
+        const styleText = data.response_style === 'concise' ? 'concisa' : data.response_style === 'detailed' ? 'detalhada' : 'adaptativa';
+        const learningText = data.learning_mode === 'enabled' ? 'ativada' : data.learning_mode === 'disabled' ? 'desativada' : 'parcial';
+        const autonomyText = data.autonomy_level === 'conservative' ? 'conservador' : data.autonomy_level === 'confident' ? 'confiante' : 'balanceado';
+
+        let suggestionText = 'me ajude com uma tarefa';
+        if (data.goals) {
+            try {
+                const goals = JSON.parse(data.goals);
+                if (goals.includes('desenvolvimento_codigo')) {
+                    suggestionText = 'crie um script para automatizar algo';
+                } else if (goals.includes('pesquisa_conhecimento')) {
+                    suggestionText = 'pesquise sobre um tema';
+                } else if (goals.includes('criacao_conteudo')) {
+                    suggestionText = 'ajude-me a escrever um texto';
+                }
+            } catch {
+                // ignore
+            }
+        }
+
+        return `✨ *Pronto, ${name}!* 
+
+Configurei o IalClaw para você:
+• 🎯 Estilo de resposta: *${styleText}*
+• 🧠 Aprendizado: *${learningText}*
+• 🎛️ Autonomia: *${autonomyText}*
+• 📁 Workspace: \`${this.defaultWorkspace}\`
+
+_Dica: Digite /help para ver os comandos disponíveis_
+_ou /profile para ver/editar seu perfil_
+
+Vamos começar? Me peça: "${suggestionText}" 🚀`;
+    }
+}

@@ -132,6 +132,23 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
   updated_at TEXT
 );
 
+-- User Profile (Onboarding)
+CREATE TABLE IF NOT EXISTS user_profile (
+  user_id TEXT PRIMARY KEY,
+  name TEXT,
+  expertise TEXT,
+  goals TEXT,
+  response_style TEXT DEFAULT 'adaptive',
+  learning_mode TEXT DEFAULT 'feedback-only',
+  autonomy_level TEXT DEFAULT 'balanced',
+  workspace_path TEXT,
+  integrations TEXT,
+  language_preference TEXT DEFAULT 'system',
+  onboarding_completed INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);

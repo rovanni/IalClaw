@@ -31,6 +31,7 @@ import { MemoryType } from './memory/MemoryTypes';
 import { DecisionMemory } from './memory/DecisionMemory';
 import { setLanguage, t } from './i18n';
 import { resolveAppLanguage } from './config/languageConfig';
+import { OnboardingService } from './services/OnboardingService';
 
 
 dotenv.config({ debug: false });
@@ -396,8 +397,9 @@ registry.register({
     }
 });
 
+const onboardingService = new OnboardingService(dbManager.getDb());
 const loop = new AgentLoop(provider, registry, decisionMemory);
-const inputHandler = new TelegramInputHandler();
+const inputHandler = new TelegramInputHandler(onboardingService);
 const outputHandler = new TelegramOutputHandler();
 
 const controller = new AgentController(
@@ -423,11 +425,66 @@ if (hasTelegramBotToken) {
     bot = new Bot(BOT_TOKEN!);
 
     bot.command('start', async (ctx) => {
-        await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nPara que eu crie o seu _Núcleo Principal de Identidade_ e lembre de você em nossas sessões, **qual o seu nome e como gostaria de ser chamado?**", { parse_mode: 'Markdown' });
+        if (!ctx.from) return;
+        const userId = ctx.from.id;
+
+        const onboardingResult = inputHandler.checkOnboarding(userId);
+        if (onboardingResult?.isOnboarding && onboardingResult.question) {
+            await ctx.reply(onboardingResult.question, { parse_mode: onboardingResult.parseMode });
+        } else if (onboardingResult?.isOnboarding) {
+            await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nVamos começar o onboarding! Qual o seu nome?", { parse_mode: 'Markdown' });
+        } else {
+            await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nBem-vindo de volta! Como posso ajudar?", { parse_mode: 'Markdown' });
+        }
+    });
+
+    bot.command('profile', async (ctx) => {
+        if (!ctx.from) return;
+        const profile = onboardingService.getUserProfile(String(ctx.from.id));
+        
+        if (profile?.onboarding_completed) {
+            await ctx.reply(
+                `👤 *Seu Perfil*\n\n` +
+                `• Nome: ${profile.name || 'Não definido'}\n` +
+                `• Área: ${profile.expertise || 'Não informada'}\n` +
+                `• Estilo: ${profile.response_style}\n` +
+                `• Aprendizado: ${profile.learning_mode}\n` +
+                `• Autonomia: ${profile.autonomy_level}\n\n` +
+                `_Digite /reset-onboarding para reconfigurar_`,
+                { parse_mode: 'Markdown' }
+            );
+        } else {
+            await ctx.reply("Onboarding não completado. Digite /start para começar!");
+        }
+    });
+
+    bot.command('reset-onboarding', async (ctx) => {
+        if (!ctx.from) return;
+        onboardingService.resetOnboarding(String(ctx.from.id));
+        const result = inputHandler.checkOnboarding(ctx.from.id);
+        if (result?.isOnboarding && result.question) {
+            await ctx.reply("🔄 *Onboarding resetado!*\n\n" + result.question, { parse_mode: result.parseMode });
+        }
     });
 
     bot.on('message', async (ctx) => {
-        if (ctx.message?.text === '/start') return;
+        if (ctx.message?.text === '/start' || ctx.message?.text === '/profile' || ctx.message?.text === '/reset-onboarding') return;
+        if (!ctx.from) return;
+
+        const userId = ctx.from.id;
+        const onboardingState = onboardingService.getOnboardingState(String(userId));
+
+        if (onboardingState || !onboardingService.isOnboardingCompleted(String(userId))) {
+            const result = inputHandler.processOnboardingAnswer(userId, ctx.message?.text || '');
+            
+            if (result?.isOnboarding && result.question) {
+                await ctx.reply(result.question, { parse_mode: result.parseMode });
+            } else if (result?.completed && result.welcomeMessage) {
+                await ctx.reply(result.welcomeMessage, { parse_mode: 'Markdown' });
+            }
+            return;
+        }
+
         await controller.handleMessage(ctx);
     });
 
@@ -443,6 +500,8 @@ if (hasTelegramBotToken) {
         { command: 'help', description: 'Ver comandos disponíveis' },
         { command: 'status', description: 'Ver estado da sessão atual' },
         { command: 'start', description: 'Mensagem de boas-vindas' },
+        { command: 'profile', description: 'Ver seu perfil' },
+        { command: 'reset-onboarding', description: 'Refazer o onboarding' },
     ]).catch((err) => {
         logger.warn('set_commands_failed', t('log.index.set_commands_failed'), { error: String(err) });
     });

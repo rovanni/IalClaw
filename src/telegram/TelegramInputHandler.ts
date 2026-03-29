@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
+import { OnboardingService } from '../services/OnboardingService';
 
 export type CognitiveInputPayload = {
     text: string;
@@ -10,13 +11,23 @@ export type CognitiveInputPayload = {
     requires_audio_reply: boolean;
 };
 
+export type OnboardingPayload = {
+    isOnboarding: boolean;
+    question?: string;
+    parseMode?: 'Markdown' | 'HTML';
+    completed?: boolean;
+    welcomeMessage?: string;
+};
+
 export class TelegramInputHandler {
     private allowedUsers: Set<number>;
     private logger = createLogger('TelegramInputHandler');
+    private onboardingService: OnboardingService | null = null;
 
-    constructor() {
+    constructor(onboardingService?: OnboardingService) {
         const ids = process.env.TELEGRAM_ALLOWED_USER_IDS || '';
         this.allowedUsers = new Set(ids.split(',').map(id => parseInt(id.trim())));
+        this.onboardingService = onboardingService || null;
         this.logger.info('configured', t('log.telegram.input.configured'), {
             allowed_users_count: Array.from(this.allowedUsers).filter((id) => !Number.isNaN(id)).length
         });
@@ -25,6 +36,53 @@ export class TelegramInputHandler {
     public isUserAllowed(ctx: Context): boolean {
         if (!ctx.from) return false;
         return this.allowedUsers.has(ctx.from.id);
+    }
+
+    public checkOnboarding(userId: string | number): OnboardingPayload | null {
+        if (!this.onboardingService) return null;
+
+        const uid = String(userId);
+        const state = this.onboardingService.getOnboardingState(uid);
+
+        if (state) {
+            return { isOnboarding: true };
+        }
+
+        if (!this.onboardingService.isOnboardingCompleted(uid)) {
+            const result = this.onboardingService.startOnboarding(uid);
+            if (result) {
+                return {
+                    isOnboarding: true,
+                    question: result.question,
+                    parseMode: result.parseMode
+                };
+            }
+        }
+
+        return null;
+    }
+
+    public processOnboardingAnswer(userId: string | number, answer: string): OnboardingPayload | null {
+        if (!this.onboardingService) return null;
+
+        const uid = String(userId);
+        const result = this.onboardingService.processOnboardingAnswer(uid, answer);
+
+        if (!result) return null;
+
+        if (result.completed) {
+            return {
+                isOnboarding: false,
+                completed: true,
+                welcomeMessage: result.welcomeMessage
+            };
+        }
+
+        return {
+            isOnboarding: true,
+            question: result.question,
+            parseMode: result.parseMode
+        };
     }
 
     public async processUpdate(ctx: Context): Promise<CognitiveInputPayload | null> {
