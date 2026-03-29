@@ -11,7 +11,7 @@ export class DatabaseManager {
     private static instance: DatabaseManager | null = null;
     private static lastPath: string | null = null;
 
-    constructor(dbPath: string = 'db.sqlite') {
+    constructor(dbPath: string = 'ialclaw.sqlite') {
         const resolvedDbPath = path.resolve(dbPath);
         dbLogger.info('db_path', `Banco de dados será criado/em: ${resolvedDbPath}`);
 
@@ -47,23 +47,23 @@ export class DatabaseManager {
             }
         }
 
-        // Remove arquivos de banco corrompidos (journal, wal, etc)
-        const corruptedFiles = [
-            resolvedDbPath,
-            `${resolvedDbPath}-journal`,
-            `${resolvedDbPath}-wal`,
-            `${resolvedDbPath}-shm`,
-        ];
-        for (const filePath of corruptedFiles) {
-            try {
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    dbLogger.info('db_corrupted_file_removed', `Arquivo corrompido removido: ${filePath}`);
+        // Remove APENAS arquivos auxiliares corrompidos (journal, wal, shm)
+                // NÃO remove o arquivo principal do banco (ialclaw.sqlite)
+                const auxiliaryFiles = [
+                    `${resolvedDbPath}-journal`,
+                    `${resolvedDbPath}-wal`,
+                    `${resolvedDbPath}-shm`,
+                ];
+                for (const filePath of auxiliaryFiles) {
+                    try {
+                        if (fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                            dbLogger.info('db_auxiliary_file_removed', `Arquivo auxiliar removido: ${filePath}`);
+                        }
+                    } catch (removeErr) {
+                        dbLogger.warn('db_file_remove_failed', `Não foi possível remover ${filePath}: ${removeErr}`);
+                    }
                 }
-            } catch (removeErr) {
-                dbLogger.warn('db_file_remove_failed', `Não foi possível remover ${filePath}: ${removeErr}`);
-            }
-        }
 
         try {
             this.db = new Database(resolvedDbPath);
@@ -80,7 +80,7 @@ export class DatabaseManager {
         this.initialize();
     }
 
-    public static getInstance(dbPath: string = 'db.sqlite'): DatabaseManager {
+    public static getInstance(dbPath: string = 'ialclaw.sqlite'): DatabaseManager {
         const resolvedPath = path.resolve(dbPath);
         const shouldReplace =
             !DatabaseManager.instance ||

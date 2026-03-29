@@ -41,7 +41,7 @@
     "done.step3": "3. Valide o Router Cerebro de teste rodando:",
     "done.step4": "4. Se tudo passar, execute:",
 
-    "step.backup": "Realizando backup de seguranca (db.sqlite e .env)...",
+    "step.backup": "Realizando backup de seguranca (ialclaw.sqlite e .env)...",
     "step.backup_done": "Backup concluido com sucesso.",
 
     "step.fetch": "Baixando a versao mais recente do repositorio...",
@@ -153,7 +153,7 @@
     "done.step3": "3. Validate test Cerebro Router by running:",
     "done.step4": "4. If everything passes, run:",
 
-    "step.backup": "Performing security backup (db.sqlite and .env)...",
+    "step.backup": "Performing security backup (ialclaw.sqlite and .env)...",
     "step.backup_done": "Backup completed successfully.",
 
     "step.fetch": "Fetching latest version from repository...",

@@ -174,7 +174,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
 function checkAndPromptDatabase(): void {
-    const DB_PATH = path.resolve('db.sqlite');
+    const DB_PATH = path.resolve('ialclaw.sqlite');
     const readlineSync = require('readline-sync');
 
     // Verifica se banco existe e é válido
@@ -283,7 +283,7 @@ function checkAndPromptDatabase(): void {
 
 checkAndPromptDatabase();
 
-const dbManager = DatabaseManager.getInstance('db.sqlite');
+const dbManager = DatabaseManager.getInstance('ialclaw.sqlite');
 logger.info('database_initialized', t('log.index.database_initialized'));
 startTraceRecorder();
 
@@ -601,6 +601,12 @@ if (hasTelegramBotToken) {
         const profile = onboardingService.getUserProfile(String(userId));
         const assistantName = profile?.assistant_name || 'IalClaw';
 
+        // Se o usuário já completou o onboarding, não precisa fazer novamente
+        if (profile?.onboarding_completed === 1) {
+            await ctx.reply(`🧠 *Olá! Eu sou o ${assistantName}*, seu Agente Cognitivo com memória persistente.\n\nBem-vindo de volta, ${profile.name || 'amigo'}! Como posso ajudar?`, { parse_mode: 'Markdown' });
+            return;
+        }
+
         const onboardingResult = inputHandler.checkOnboarding(userId);
         if (onboardingResult?.isOnboarding && onboardingResult.question) {
             await ctx.reply(onboardingResult.question, { parse_mode: onboardingResult.parseMode });
@@ -646,6 +652,14 @@ if (hasTelegramBotToken) {
         if (!ctx.from) return;
 
         const userId = ctx.from.id;
+        const userProfile = onboardingService.getUserProfile(String(userId));
+
+        // Se o usuário já completou o onboarding, processa a mensagem normalmente
+        if (userProfile?.onboarding_completed === 1) {
+            await controller.handleMessage(ctx);
+            return;
+        }
+
         const onboardingState = onboardingService.getOnboardingState(String(userId));
 
         if (onboardingState || !onboardingService.isOnboardingCompleted(String(userId))) {

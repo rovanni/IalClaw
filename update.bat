@@ -38,7 +38,7 @@ set "MSG_FALLBACK=Realizando backup de seguranca (db.sqlite e .env)..."
 call:echo_step "1/5" "%MSG%"
 
 if not exist "backups" mkdir backups
-if exist "db.sqlite" copy /y "db.sqlite" "backups\db_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.sqlite" >nul
+if exist "ialclaw.sqlite" copy /y "ialclaw.sqlite" "backups\ialclaw_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.sqlite" >nul
 if exist ".env" copy /y ".env" "backups\.env_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%" >nul
 
 set "MSG=step.backup.ok"

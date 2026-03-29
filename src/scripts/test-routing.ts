@@ -7,7 +7,7 @@ import { AgentGateway } from '../engine/AgentGateway';
 dotenv.config();
 
 async function run() {
-    const dbManager = DatabaseManager.getInstance('db.sqlite');
+    const dbManager = DatabaseManager.getInstance('ialclaw.sqlite');
     if (!dbManager.isReady()) {
         console.error('Database not ready');
         process.exit(1);

@@ -70,7 +70,7 @@ const DEFAULT_GATEWAY_IDENTITIES: GatewayIdentitySeed[] = [
 ];
 
 export async function bootstrapGatewayIdentities() {
-    const dbManager = DatabaseManager.getInstance('db.sqlite');
+    const dbManager = DatabaseManager.getInstance('ialclaw.sqlite');
     const db = dbManager.getDb();
     const provider = ProviderFactory.getProvider();
     const timestamp = new Date().toISOString();

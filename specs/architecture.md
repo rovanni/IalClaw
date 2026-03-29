@@ -88,7 +88,7 @@ graph TB
     end
 
     subgraph "Persistence Layer"
-        DB[(SQLite - db.sqlite)]
+        DB[(SQLite - ialclaw.sqlite)]
         DocsR[DocumentRepository]
         GraphR[GraphRepository]
         MsgR[MessageRepository]
@@ -340,7 +340,7 @@ graph TB
     end
 
     subgraph "Persistence Layer"
-        DB[(SQLite - db.sqlite)]
+        DB[(SQLite - ialclaw.sqlite)]
         DocsR[DocumentRepository]
         GraphR[GraphRepository]
         MsgR[MessageRepository]

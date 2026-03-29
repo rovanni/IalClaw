@@ -17,7 +17,7 @@ set "IALCLAW_T[app.style]=estilo:"
 set "IALCLAW_T[app.folder]=pasta:"
 set "IALCLAW_T[app.style.upgrade]=upgrade assistido"
 
-set "IALCLAW_T[step.backup.title]=Realizando backup de seguranca (db.sqlite e .env)..."
+set "IALCLAW_T[step.backup.title]=Realizando backup de seguranca (ialclaw.sqlite e .env)..."
 set "IALCLAW_T[step.backup.ok]=Backup concluido com sucesso."
 set "IALCLAW_T[step.backup.created]=Stash criado com sucesso."
 
@@ -66,7 +66,7 @@ set "IALCLAW_T[app.style]=style:"
 set "IALCLAW_T[app.folder]=folder:"
 set "IALCLAW_T[app.style.upgrade]=assisted upgrade"
 
-set "IALCLAW_T[step.backup.title]=Creating security backup (db.sqlite and .env)..."
+set "IALCLAW_T[step.backup.title]=Creating security backup (ialclaw.sqlite and .env)..."
 set "IALCLAW_T[step.backup.ok]=Backup completed successfully."
 set "IALCLAW_T[step.backup.created]=Stash created successfully."
 

@@ -10,6 +10,13 @@ CREATE TABLE IF NOT EXISTS app_config (
   updated_at TEXT
 );
 
+-- Database Identity
+INSERT OR IGNORE INTO app_config (key, value, updated_at) 
+VALUES ('db_name', 'ialclaw', datetime('now'));
+
+INSERT OR IGNORE INTO app_config (key, value, updated_at) 
+VALUES ('db_version', '1.0.0', datetime('now'));
+
 -- Episodic Memory
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,

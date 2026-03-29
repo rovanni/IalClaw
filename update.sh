@@ -57,7 +57,7 @@ print_banner
 print_step "1" "$(t 'step.backup')"
 mkdir -p backups
 BACKUP_DATE=$(date +"%Y%m%d_%H%M%S")
-[ -f "db.sqlite" ] && cp "db.sqlite" "backups/db_backup_$BACKUP_DATE.sqlite"
+[ -f "ialclaw.sqlite" ] && cp "ialclaw.sqlite" "backups/ialclaw_backup_$BACKUP_DATE.sqlite"
 [ -f ".env" ] && cp ".env" "backups/.env_backup_$BACKUP_DATE"
 print_success "$(t 'step.backup_done')"
 echo ""

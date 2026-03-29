@@ -11,7 +11,7 @@ let isShuttingDown = false;
 
 function initDatabase(): boolean {
     try {
-        const dbPath = path.join(process.cwd(), 'db.sqlite');
+        const dbPath = path.join(process.cwd(), 'ialclaw.sqlite');
         db = new Database(dbPath);
 
         db.exec(`

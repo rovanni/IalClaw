@@ -60,6 +60,16 @@ export function classificarEntrada(input: string): Partial<UserProfile> {
         result['__skip__'] = true;
     }
 
+    // Se nenhum campo foi preenchido e não é intenção de pular, assume que é uma resposta direta
+    // Isso evita o loop infinito quando o usuário responde algo simples como "oi"
+    const skipWords = ['pular', 'skip', 'depois', 'next', 'proxima', 'próxima'];
+    const isSkipIntent = skipWords.some(w => resposta.includes(w));
+    
+    if (Object.keys(result).length === 0 && !isSkipIntent && resposta.length >= 2 && resposta.length <= 50) {
+        // Trata como nome válido (primeira pergunta do onboarding)
+        result.name = input.trim();
+    }
+
     return result;
 }
 import Database from 'better-sqlite3';
