@@ -198,6 +198,29 @@ export class AgentLoop {
     private taskContextManager = getTaskContextManager();
     private planValidator = getPlanExecutionValidator();
     private decisionHandler = getDecisionHandler();
+    private chatId: string = 'default';  // ID padrão para contexto
+    
+    /**
+     * Detecta fonte de conteúdo no input (caminho de arquivo).
+     */
+    private detectSource(input: string): string | null {
+        const filePathMatch = input.match(/\/[\w\-\.\/]+\.\w+/i);
+        if (filePathMatch) {
+            return filePathMatch[0];
+        }
+        
+        const usarMatch = input.match(/usar\s+(?:o\s+)?(?:arquivo\s+)?([^\s,;.]+)/i);
+        if (usarMatch) {
+            return usarMatch[1];
+        }
+        
+        const utilizarMatch = input.match(/utilizar\s+(?:o\s+)?([^\s,;.]+)/i);
+        if (utilizarMatch) {
+            return utilizarMatch[1];
+        }
+        
+        return null;
+    }
 
     /**
      * Verifica se tem todos os parâmetros necessários para o tipo de tarefa.
@@ -397,39 +420,49 @@ export class AgentLoop {
         this.evaluateModeTransition();
         this.ensureMinimalPlan();
         
-        // Detectar continuação e gerenciar contexto
-        this.isContinuation = this.taskContextManager.isContinuation(userInput);
+        // ═══════════════════════════════════════════════════════════════════
+        // TASK CONTEXT: Atualizar contexto e detectar continuação
+        // "O agente não está pensando em continuidade, está reagindo por mensagem."
+        // ═══════════════════════════════════════════════════════════════════
         
-        // Se é continuação, manter tipo anterior e adicionar fonte
-        if (this.isContinuation && this.taskContextManager.hasActiveTask()) {
-            const existingContext = this.taskContextManager.getContext();
-            if (existingContext) {
-                // IMPORTANTE: NÃO mudar o tipo em continuação
-                this.currentTaskType = existingContext.type;
-                this.currentTaskConfidence = 1.0; // Confiança total
-                this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - mantendo tipo', {
-                    type: existingContext.type,
-                    hasSource: !!existingContext.source
-                });
-            }
+        // Verificar se há execução em andamento
+        if (this.taskContextManager.isInProgress(this.chatId)) {
+            this.logger.warn('task_in_progress', '[CONTEXT] Tarefa em andamento, aguarde');
+            return {
+                answer: t('context.task_in_progress'),
+                newMessages: []
+            };
+        }
+        
+        // Atualizar contexto (detecta continuação automaticamente)
+        const taskCtx = this.taskContextManager.update(this.chatId, userInput, this.currentTaskType || 'unknown');
+        
+        // Se é continuação, manter tipo anterior
+        if (taskCtx.type !== 'unknown' && taskCtx.type !== this.currentTaskType) {
+            // Continuação detectada: usar tipo do contexto
+            this.currentTaskType = taskCtx.type;
+            this.currentTaskConfidence = 1.0;
+            this.isContinuation = true;
+            
+            this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - mantendo tipo', {
+                type: taskCtx.type,
+                hasSource: !!taskCtx.data.source
+            });
         } else {
-            // Nova tarefa: limpar contexto anterior
-            this.taskContextManager.clearContext();
-            this.taskContextManager.startTask(this.currentTaskType || 'unknown', userInput);
+            this.isContinuation = false;
         }
         
         // Detectar fonte de conteúdo e adicionar ao contexto
-        const detectedSource = this.taskContextManager.detectSource(userInput);
-        if (detectedSource && this.taskContextManager.hasActiveTask()) {
-            this.taskContextManager.setSource(detectedSource);
+        const detectedSource = this.detectSource(userInput);
+        if (detectedSource) {
+            this.taskContextManager.setSource(this.chatId, detectedSource);
         }
         
         // ═══════════════════════════════════════════════════════════════════
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
         // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
-        const taskContext = this.taskContextManager.getContext();
-        const hasAllParams = taskContext?.source ? true : this.hasRequiredParams(userInput, this.currentTaskType);
+        const hasAllParams = taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType);
         const riskLevel = this.detectRiskLevel(this.currentTaskType, userInput);
         
         const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
