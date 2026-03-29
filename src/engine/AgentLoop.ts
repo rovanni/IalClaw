@@ -432,34 +432,23 @@ export class AgentLoop {
             };
         }
         
-        // Obter contexto ANTERIOR (antes de classificar)
-        const previousCtx = this.taskContextManager.get(this.chatId);
+        // Verificar se contexto é VÁLIDO (recente + relevante)
+        const isContextValid = this.taskContextManager.isContextValid(this.chatId, userInput);
         
-        // Verificar se é continuação ANTES de classificar
-        const existingTaskType = previousCtx.type !== 'unknown' ? previousCtx.type : null;
-        
-        // Se contexto tem tipo válido, é possível continuação
-        if (existingTaskType) {
+        if (isContextValid) {
+            // Contexto válido → é continuação
+            const previousCtx = this.taskContextManager.get(this.chatId);
             this.isContinuation = true;
-            this.logger.info('continuation_check_before_classify', '[CONTEXT] Contexto anterior encontrado', {
-                type: existingTaskType,
+            this.currentTaskType = previousCtx.type;
+            this.currentTaskConfidence = 1.0;
+            
+            this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido', {
+                type: previousCtx.type,
                 hasSource: !!previousCtx.data.source
             });
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════
-        // CLASSIFICAÇÃO: Só classificar se NÃO for continuação
-        // ═══════════════════════════════════════════════════════════════════
-        
-        if (this.isContinuation && existingTaskType) {
-            // Continuação: usar tipo do contexto
-            this.currentTaskType = existingTaskType;
-            this.currentTaskConfidence = 1.0;
-            this.logger.info('continuation_using_context_type', '[CONTEXT] Usando tipo do contexto', {
-                type: existingTaskType
-            });
         } else {
-            // Nova tarefa: classificar
+            // Contexto inválido ou inexistente → nova tarefa
+            this.isContinuation = false;
             this.evaluateModeTransition();
         }
         

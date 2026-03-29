@@ -32,8 +32,9 @@ export class TaskContextManager {
     private contexts = new Map<string, TaskContext>();
     private logger = createLogger('TaskContextManager');
     
-    // Tempo de inatividade antes de considerar nova tarefa (15 minutos)
-    private readonly INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+    // Tempo de inatividade antes de considerar nova tarefa (5 minutos para continuidade)
+    private readonly CONTEXT_TTL_MS = 5 * 60 * 1000;  // 5 minutos
+    private readonly INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;  // 15 minutos
     
     // ═══════════════════════════════════════════════════════════════════════
     // GESTÃO DE ESTADO
@@ -68,6 +69,89 @@ export class TaskContextManager {
      */
     isInProgress(chatId: string): boolean {
         return this.get(chatId).inProgress;
+    }
+    
+    /**
+     * Verifica se o contexto ainda é válido (recente + relevante).
+     * Combina tempo e heurística de relevância.
+     */
+    isContextValid(chatId: string, input: string): boolean {
+        const ctx = this.get(chatId);
+        
+        // Sem tipo → contexto inválido
+        if (ctx.type === 'unknown') {
+            return false;
+        }
+        
+        const now = Date.now();
+        const timeSinceLast = now - ctx.lastUpdated;
+        const isRecent = timeSinceLast < this.CONTEXT_TTL_MS;
+        
+        // Se não é recente, contexto inválido
+        if (!isRecent) {
+            this.logger.info('context_expired', '[CONTEXT] Contexto expirado por tempo', {
+                timeSinceLast,
+                ttlMs: this.CONTEXT_TTL_MS
+            });
+            return false;
+        }
+        
+        // Verificar relevância do input
+        const isRelevant = this.isRelevantToContext(input, ctx);
+        
+        if (!isRelevant) {
+            this.logger.info('context_not_relevant', '[CONTEXT] Input não é relevante para o contexto', {
+                inputPreview: input.slice(0, 50),
+                contextType: ctx.type
+            });
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Verifica se o input é relevante para o contexto atual.
+     * Heurística simples (sem embeddings).
+     */
+    private isRelevantToContext(input: string, ctx: TaskContext): boolean {
+        const text = input.toLowerCase().trim();
+        
+        // Input curto = provável follow-up
+        const isShortInput = text.length < 20;
+        
+        // Pistas de continuação
+        const continuationHints = [
+            '?', 'deu certo', 'funcionou', 'e agora', 'próximo', 
+            'ok', 'certo', 'sim', 'não', 'pronto', 'resultado',
+            'teste', 'testar', 'melhorar', 'ajustar', 'finalizar',
+            'continua', 'continuar', 'ainda', 'mais'
+        ];
+        
+        const hasHint = continuationHints.some(h => text.includes(h));
+        
+        // Referência à tarefa atual
+        const taskKeywords = this.getTaskKeywords(ctx.type);
+        const hasTaskReference = taskKeywords.some(kw => text.includes(kw));
+        
+        // Regra: curto OU tem pista OU tem referência à tarefa
+        return isShortInput || hasHint || hasTaskReference;
+    }
+    
+    /**
+     * Retorna palavras-chave relacionadas ao tipo de tarefa.
+     */
+    private getTaskKeywords(type: TaskType): string[] {
+        const keywordMap: Record<string, string[]> = {
+            'content_generation': ['slide', 'slides', 'aula', 'conteúdo', 'texto', 'artigo', 'resumo'],
+            'file_conversion': ['arquivo', 'converter', 'formato', 'pdf', 'html', 'md'],
+            'file_search': ['arquivo', 'buscar', 'encontrar', 'procurar', 'pasta'],
+            'system_operation': ['comando', 'executar', 'rodar', 'instalar', 'configurar'],
+            'skill_installation': ['skill', 'instalar', 'adicionar', 'módulo'],
+            'information_request': ['qual', 'como', 'quando', 'onde', 'por que', 'o que']
+        };
+        
+        return keywordMap[type] || [];
     }
     
     /**
