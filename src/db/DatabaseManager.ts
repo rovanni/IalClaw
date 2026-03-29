@@ -12,9 +12,11 @@ export class DatabaseManager {
     private static lastPath: string | null = null;
 
     constructor(dbPath: string = 'db.sqlite') {
-        this.db = new Database(dbPath);
+        const resolvedDbPath = path.resolve(dbPath);
+        dbLogger.info('db_path', `Banco de dados será criado/em: ${resolvedDbPath}`);
+        this.db = new Database(resolvedDbPath);
         this.db.pragma('busy_timeout = 5000');
-        DatabaseManager.lastPath = path.resolve(dbPath);
+        DatabaseManager.lastPath = resolvedDbPath;
         DatabaseManager.instance = this;
         this.initialize();
     }
@@ -47,7 +49,8 @@ export class DatabaseManager {
 
     private initialize() {
         const schemaPath = path.resolve(__dirname, 'schema.sql');
-        
+        dbLogger.info('schema_path', `Arquivo de schema esperado em: ${schemaPath}`);
+
         if (!fs.existsSync(schemaPath)) {
             dbLogger.error('schema_not_found', `Schema file not found at ${schemaPath}`);
             throw new Error(`Schema file not found: ${schemaPath}`);
@@ -61,12 +64,21 @@ export class DatabaseManager {
             const otherStatements = allStatements.filter(s => !s.trim().toUpperCase().startsWith('PRAGMA'));
 
             for (const pragma of pragmas) {
-                const pragmaValue = pragma.split('=')[1].trim();
-                this.db.pragma(pragmaValue);
+                const pragmaValue = pragma.split('=')[1]?.trim();
+                if (pragmaValue) {
+                    this.db.pragma(pragmaValue);
+                } else {
+                    dbLogger.warn('pragma_parse_failed', `Não foi possível interpretar PRAGMA: ${pragma}`);
+                }
             }
 
             for (const stmt of otherStatements) {
-                this.db.prepare(stmt).run();
+                try {
+                    this.db.prepare(stmt).run();
+                } catch (stmtErr) {
+                    dbLogger.error('stmt_failed', `Erro ao executar statement: ${stmt}\nErro: ${stmtErr}`);
+                    throw stmtErr;
+                }
             }
 
             const result = this.db
