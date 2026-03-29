@@ -1,0 +1,23 @@
+{
+    "skill_name": "file-manipulator",
+    "evals": [
+        {
+            "id": 0,
+            "prompt": "Rename all .txt files in the 'test_workspace/logs' directory to have a prefix 'old_'.",
+            "expected_output": "All .txt files in test_workspace/logs should be renamed to old_*.txt",
+            "files": []
+        },
+        {
+            "id": 1,
+            "prompt": "In the 'test_workspace/config' directory, replace all occurrences of 'localhost' with '127.0.0.1' in all .yaml files.",
+            "expected_output": "All .yaml files in test_workspace/config should have 'localhost' replaced with '127.0.0.1'",
+            "files": []
+        },
+        {
+            "id": 2,
+            "prompt": "Create a backup of the 'test_workspace/data' directory, then delete all files in it.",
+            "expected_output": "A backup directory should exist and the data directory should be empty.",
+            "files": []
+        }
+    ]
+}
