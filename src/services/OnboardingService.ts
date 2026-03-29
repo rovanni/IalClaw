@@ -7,6 +7,7 @@ import os from 'os';
 export interface UserProfile {
     user_id: string;
     name: string | null;
+    assistant_name: string | null;
     expertise: string | null;
     goals: string | null;
     response_style: 'concise' | 'detailed' | 'adaptive';
@@ -34,8 +35,14 @@ const ONBOARDING_STEPS = [
         saveField: 'name'
     },
     {
+        id: 'assistant_name',
+        question: (data: any) => t('onboarding.assistant_name', { name: data.name || '' }),
+        parseMode: 'Markdown' as const,
+        saveField: 'assistant_name'
+    },
+    {
         id: 'expertise',
-        question: (data: any) => t('onboarding.prazer', { name: data.name || '' }),
+        question: (data: any) => t('onboarding.prazer', { name: data.name || '', assistantName: data.assistant_name || t('onboarding.default_assistant_name') }),
         parseMode: 'Markdown' as const,
         saveField: 'expertise'
     },
@@ -82,6 +89,7 @@ export class OnboardingService {
             CREATE TABLE IF NOT EXISTS user_profile (
                 user_id TEXT PRIMARY KEY,
                 name TEXT,
+                assistant_name TEXT,
                 expertise TEXT,
                 goals TEXT,
                 response_style TEXT DEFAULT 'adaptive',
@@ -95,6 +103,10 @@ export class OnboardingService {
                 updated_at TEXT
             )
         `);
+        
+        try {
+            this.db.exec(`ALTER TABLE user_profile ADD COLUMN assistant_name TEXT`);
+        } catch {}
     }
 
     public isOnboardingCompleted(userId: string): boolean {
@@ -249,11 +261,12 @@ export class OnboardingService {
 
         this.db.prepare(`
             INSERT OR REPLACE INTO user_profile
-            (user_id, name, expertise, goals, response_style, learning_mode, autonomy_level, workspace_path, language_preference, onboarding_completed, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            (user_id, name, assistant_name, expertise, goals, response_style, learning_mode, autonomy_level, workspace_path, language_preference, onboarding_completed, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         `).run(
             state.userId,
             state.data.name || null,
+            state.data.assistant_name || null,
             state.data.expertise || null,
             state.data.goals || null,
             state.data.response_style || 'adaptive',
@@ -270,6 +283,7 @@ export class OnboardingService {
 
     private generateWelcomeMessage(data: Partial<UserProfile>): string {
         const name = data.name || t('onboarding.default_name');
+        const assistantName = data.assistant_name || t('onboarding.default_assistant_name');
         const styleText = data.response_style === 'concise' ? t('onboarding.style.concise') : data.response_style === 'detailed' ? t('onboarding.style.detailed') : t('onboarding.style.adaptive');
         const learningText = data.learning_mode === 'enabled' ? t('onboarding.learning.enabled') : data.learning_mode === 'disabled' ? t('onboarding.learning.disabled') : t('onboarding.learning.partial');
         const autonomyText = data.autonomy_level === 'conservative' ? t('onboarding.autonomy.conservative') : data.autonomy_level === 'confident' ? t('onboarding.autonomy.confident') : t('onboarding.autonomy.balanced');
@@ -292,6 +306,7 @@ export class OnboardingService {
 
         return t('onboarding.pronto', {
             name,
+            assistantName,
             styleText,
             learningText,
             autonomyText,

@@ -10,6 +10,7 @@ import { SessionManager } from '../shared/SessionManager';
 import { createLogger } from '../shared/AppLogger';
 import { getTraceId } from '../shared/TraceContext';
 import { normalizeLanguage, resolveAppLanguage } from '../config/languageConfig';
+import { OnboardingService, UserProfile } from '../services/OnboardingService';
 
 const dashLogger = createLogger('Dashboard');
 
@@ -17,11 +18,13 @@ export class DashboardServer {
     private app: express.Express;
     private db: Database.Database;
     private controller?: AgentController;
+    private onboardingService?: OnboardingService;
     private webExecutionControl = new Map<string, { cancelRequested: boolean }>();
     private server?: Server;
 
-    constructor(db: Database.Database) {
+    constructor(db: Database.Database, onboardingService?: OnboardingService) {
         this.db = db;
+        this.onboardingService = onboardingService;
         this.app = express();
         this.app.use(cors());
         this.app.use(express.json());
@@ -85,6 +88,43 @@ export class DashboardServer {
             try {
                 const { message, sessionId = 'web-session' } = req.body;
                 if (!message) return res.status(400).json({ error: 'Message payload required' });
+
+                // Verificar onboarding para web chat
+                const webUserId = 'web-user';
+                if (this.onboardingService && !this.onboardingService.isOnboardingCompleted(webUserId)) {
+                    const onboardingState = this.onboardingService.getOnboardingState(webUserId);
+                    
+                    if (!onboardingState) {
+                        const result = this.onboardingService.startOnboarding(webUserId);
+                        if (result) {
+                            return res.json({
+                                response: result.question,
+                                answer: result.question,
+                                isOnboarding: true,
+                                parseMode: result.parseMode
+                            });
+                        }
+                    } else {
+                        const result = this.onboardingService.processOnboardingAnswer(webUserId, message);
+                        if (result) {
+                            if (result.completed && result.welcomeMessage) {
+                                return res.json({
+                                    response: result.welcomeMessage,
+                                    answer: result.welcomeMessage,
+                                    isOnboarding: false,
+                                    onboardingCompleted: true
+                                });
+                            } else if (result.question) {
+                                return res.json({
+                                    response: result.question,
+                                    answer: result.question,
+                                    isOnboarding: true,
+                                    parseMode: result.parseMode
+                                });
+                            }
+                        }
+                    }
+                }
 
                 const sessionKey = String(sessionId || 'web-session');
                 const control = { cancelRequested: false };

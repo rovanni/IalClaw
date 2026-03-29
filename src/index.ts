@@ -295,7 +295,8 @@ setInterval(() => dreamer.dream(), 1000 * 60 * 60 * 24);
 
 // Iniciar Dashboard Web
 import { DashboardServer } from './dashboard/DashboardServer';
-const dashboard = new DashboardServer(dbManager.getDb());
+const onboardingService = new OnboardingService(dbManager.getDb());
+const dashboard = new DashboardServer(dbManager.getDb(), onboardingService);
 
 const provider = ProviderFactory.getProvider();
 const memory = new CognitiveMemory(dbManager.getDb(), provider);
@@ -566,7 +567,6 @@ registry.register({
     }
 });
 
-const onboardingService = new OnboardingService(dbManager.getDb());
 const loop = new AgentLoop(provider, registry, decisionMemory);
 const inputHandler = new TelegramInputHandler(onboardingService);
 const outputHandler = new TelegramOutputHandler();
