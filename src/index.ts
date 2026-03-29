@@ -34,6 +34,64 @@ import { resolveAppLanguage } from './config/languageConfig';
 import { OnboardingService } from './services/OnboardingService';
 
 
+function parseEnvFile(envPath: string): Record<string, string> {
+    if (!fs.existsSync(envPath)) return {};
+    const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+    const env: Record<string, string> = {};
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const [key, ...rest] = trimmed.split('=');
+        env[key.trim()] = rest.join('=').trim();
+    }
+    return env;
+}
+
+function checkAndRunSetup(): void {
+    const envPath = path.resolve('.env');
+    const envVars = parseEnvFile(envPath);
+    
+    const requiredVars = ['MODEL', 'USE_OLLAMA'];
+    const missing = requiredVars.filter(v => !envVars[v] || envVars[v] === 'your_bot_token_here');
+    
+    if (missing.length > 0 || !fs.existsSync(envPath)) {
+        const envLang = parseEnvFile(envPath).APP_LANG || 'pt-BR';
+        const isEnglish = envLang.includes('en');
+        
+        console.log('');
+        console.log('\x1b[33m' + (isEnglish ? '⚠️  Incomplete configuration or .env not found!' : '⚠️  Configuração incompleta ou .env não encontrado!') + '\x1b[0m');
+        console.log('');
+        
+        const readline = require('readline').createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        const prompt = isEnglish ? 'Do you want to run interactive setup? (y/n): ' : 'Deseja executar o setup interativo? (s/n): ';
+        
+        readline.question(prompt, (answer: string) => {
+            readline.close();
+
+            if (answer.toLowerCase() === 's' || answer.toLowerCase() === 'sim' || answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+                console.log(isEnglish ? '\n▶️  Running setup...\n' : '\n▶️  Executando setup...\n');
+                const { execSync } = require('child_process');
+                try {
+                    execSync('npx ts-node src/scripts/setup.ts', { stdio: 'inherit', cwd: process.cwd() });
+                } catch {
+                    console.log(isEnglish ? '❌ Error running setup. Run manually: npx ts-node src/scripts/setup.ts' : '❌ Erro ao executar setup. Execute manualmente: npx ts-node src/scripts/setup.ts');
+                }
+                process.exit(0);
+            } else {
+                console.log(isEnglish ? '❌ Exiting. Run "npx ts-node src/scripts/setup.ts" to configure.' : '❌ Encerrando. Execute "npx ts-node src/scripts/setup.ts" para configurar.');
+                process.exit(0);
+            }
+        });
+        return;
+    }
+}
+
+checkAndRunSetup();
+
 dotenv.config({ debug: false });
 setLanguage(resolveAppLanguage());
 
