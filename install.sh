@@ -46,22 +46,23 @@ fi
 echo "Baixando IalClaw..."
 
 if [ ! -d "ialclaw" ]; then
+    echo "Clonando repositorio..."
     git clone "$REPO_URL" ialclaw
-    cd ialclaw
-else
-    if [ -d "ialclaw/.git" ]; then
-        cd ialclaw
-        GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
-        if [ -n "$GIT_STATUS" ]; then
-            echo "[ERRO] Alteracoes locais detectadas."
-            echo "Resolva com: cd ialclaw && git stash && git pull"
-            exit 1
-        fi
-        git pull --ff-only
-    else
-        echo "[ERRO] Pasta ialclaw existe mas nao e um repositorio git."
+fi
+
+cd ialclaw || { echo "[ERRO] Nao foi possivel entrar na pasta ialclaw"; exit 1; }
+
+echo "Entrando na pasta: $(pwd)"
+
+if [ -d ".git" ]; then
+    GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
+    if [ -n "$GIT_STATUS" ]; then
+        echo "[ERRO] Alteracoes locais detectadas."
+        echo "Resolva com: git stash && git pull"
         exit 1
     fi
+    echo "Atualizando repositorio..."
+    git pull --ff-only
 fi
 
 source "./i18n.sh"
