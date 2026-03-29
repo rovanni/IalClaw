@@ -458,6 +458,11 @@ export class AgentLoop {
         // "O agente não está pensando em continuidade, está reagindo por mensagem."
         // ═══════════════════════════════════════════════════════════════════
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
+        const simpleCommandResponse = this.handleSimpleCommands(userInput);
+        if (simpleCommandResponse) {
+            return simpleCommandResponse;
+        }
+        
         this.setOriginalInput(userInput);
         
         // ═══════════════════════════════════════════════════════════════════
@@ -577,6 +582,29 @@ export class AgentLoop {
                 return { answer: t('file.ask_search_query'), newMessages: [] };
             }
             
+            // Tratamento especial para comandos simples ou perguntas informativas
+            const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
+            if (userInput.startsWith('/help')) {
+                return {
+                    answer: 'Comandos disponíveis:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+                    newMessages: []
+                };
+            }
+
+            if (userInput.startsWith('/status')) {
+                return {
+                    answer: 'O estado atual da sessão está ativo e funcional.',
+                    newMessages: []
+                };
+            }
+
+            if (/só tem esses comandos\?|quais comandos existem\?/i.test(userInput)) {
+                return {
+                    answer: 'Os comandos disponíveis são:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+                    newMessages: []
+                };
+            }
+
             // Fallback genérico
             return { answer: t('autonomy.ask_context'), newMessages: [] };
         }
@@ -1712,7 +1740,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             }));
 
             this.executionContext.currentPlan.steps = newSteps;
-            this.executionContext.currentPlan.currentStepIndex = 0;
+            this.executionContext.currentStepIndex = 0;
 
             this.logger.info('plan_adjusted', `[PLAN] Plano ajustado para: ${newClassification.type}`);
         }
@@ -2485,5 +2513,42 @@ FORMATO DE SAÍDA:
             total: stats.totalSteps,
             score: stats.totalSteps > 0 ? stats.validSteps / stats.totalSteps : 0
         };
+    }
+
+    /**
+     * Trata comandos simples e perguntas informativas.
+     * Retorna uma resposta direta se o input corresponder a um comando conhecido.
+     */
+    private handleSimpleCommands(userInput: string): { answer: string; newMessages: any[] } | null {
+        const commandResponses: Record<string, string> = {
+            '/help': 'Comandos disponíveis:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+            '/status': 'O estado atual da sessão está ativo e funcional.'
+        };
+
+        // Verificar comandos exatos
+        if (commandResponses[userInput]) {
+            return { answer: commandResponses[userInput], newMessages: [] };
+        }
+
+        // Verificar perguntas informativas
+        if (/só tem esses comandos\?|quais comandos existem\?/i.test(userInput)) {
+            return {
+                answer: 'Os comandos disponíveis são:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+                newMessages: []
+            };
+        }
+
+        return null; // Não é um comando simples
+    }
+
+    /**
+     * Gera o caminho completo para criação de arquivos e pastas dentro da pasta workspace.
+     * Organiza os itens por categoria.
+     */
+    private generateWorkspacePath(category: string, itemName: string): string {
+        const basePath = 'workspace';
+        const sanitizedCategory = category.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const sanitizedItemName = itemName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        return `${basePath}/${sanitizedCategory}/${sanitizedItemName}`;
     }
 }
