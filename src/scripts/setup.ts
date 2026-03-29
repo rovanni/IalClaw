@@ -34,23 +34,35 @@ async function runSetup() {
         finalLang = "pt-BR";
     }
 
-    const ollamaHost = await question("1. Qual o endereço do Ollama? [Padrão: http://127.0.0.1:11434]: ");
+
+    // Pergunta se deseja usar o Ollama
+    let useOllama = await question("1. Deseja utilizar o Ollama local? (s/n) [padrão: s]: ");
+    useOllama = useOllama.trim().toLowerCase();
+    const finalUseOllama = (useOllama === "n" || useOllama === "nao" || useOllama === "não") ? "false" : "true";
+
+    const ollamaHost = await question("2. Qual o endereço do Ollama? [Padrão: http://127.0.0.1:11434]: ");
     const finalOllamaHost = ollamaHost.trim() || "http://127.0.0.1:11434";
 
-    const model = await question("2. Qual modelo de IA deseja usar? [Padrão: glm-5:cloud]: ");
+    const ollamaBin = await question("3. Caminho do binário do Ollama (deixe em branco para 'ollama'): ");
+    const finalOllamaBin = ollamaBin.trim() || "ollama";
+
+    const model = await question("4. Qual modelo de IA deseja usar? [Padrão: glm-5:cloud]: ");
     const finalModel = model.trim() || "glm-5:cloud";
 
     console.log("\n[DICA] Para criar um Bot no Telegram, fale com o @BotFather e copie o Token gerado.");
     console.log("[DICA] Se quiser usar apenas o dashboard web local por enquanto, deixe em branco.");
-    const telegramToken = await question("3. Cole aqui o TELEGRAM_BOT_TOKEN (opcional): ");
+    const telegramToken = await question("5. Cole aqui o TELEGRAM_BOT_TOKEN (opcional): ");
 
     console.log("\n[DICA] O IalClaw é privado e seguro. Apenas você pode falar com ele.");
     console.log("[DICA] Para descobrir seu ID, mande um 'Oi' para o bot @userinfobot no Telegram.");
-    const telegramId = await question("4. Cole aqui o seu ID do Telegram (opcional, ex: 8071707790): ");
+    const telegramId = await question("6. Cole aqui o seu ID do Telegram (opcional, ex: 8071707790): ");
+
 
     const envContent = `# Configurações do Provedor (Ollama local)
 APP_LANG=${finalLang}
+USE_OLLAMA=${finalUseOllama}
 OLLAMA_HOST=${finalOllamaHost}
+OLLAMA_BIN=${finalOllamaBin}
 
 # Modelo Principal
 MODEL=${finalModel}

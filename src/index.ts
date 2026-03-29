@@ -6,6 +6,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
+import { isOllamaEnabled, isOllamaRunning, startOllama } from './utils/ollamaCheck';
 import { DatabaseManager } from './db/DatabaseManager';
 import { CognitiveMemory } from './memory/CognitiveMemory';
 import { ContextBuilder } from './memory/ContextBuilder';
@@ -31,8 +32,26 @@ import { DecisionMemory } from './memory/DecisionMemory';
 import { setLanguage, t } from './i18n';
 import { resolveAppLanguage } from './config/languageConfig';
 
+
 dotenv.config({ debug: false });
 setLanguage(resolveAppLanguage());
+
+// ── Checagem e inicialização automática do Ollama ──────────────────────────
+(async () => {
+    if (await isOllamaEnabled()) {
+        if (!(await isOllamaRunning())) {
+            console.log('⚠️ Ollama não detectado, iniciando...');
+            if (await startOllama()) {
+                console.log('✅ Ollama iniciado com sucesso');
+            } else {
+                console.error('❌ Falha ao iniciar Ollama');
+                process.exit(1);
+            }
+        } else {
+            console.log('✅ Ollama já está rodando');
+        }
+    }
+})();
 
 function getDisplayVersion(): string {
     const pkg = require('../package.json');
