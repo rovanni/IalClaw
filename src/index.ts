@@ -437,11 +437,30 @@ if (hasTelegramBotToken) {
     });
 }
 
+let shutdownInFlight = false;
+
+async function shutdown(signal: 'SIGINT' | 'SIGTERM') {
+    if (shutdownInFlight) {
+        return;
+    }
+
+    shutdownInFlight = true;
+    logger.info('shutdown_started', `Recebido ${signal}. Encerrando servicos...`);
+
+    try {
+        bot?.stop();
+        await dashboard.stop();
+    } catch (error: any) {
+        logger.warn('shutdown_partial_failure', `Falha ao encerrar servicos: ${String(error?.message || error)}`);
+    } finally {
+        dbManager.close();
+        process.exit(0);
+    }
+}
+
 process.once('SIGINT', () => {
-    bot?.stop();
-    dbManager.close();
+    void shutdown('SIGINT');
 });
 process.once('SIGTERM', () => {
-    bot?.stop();
-    dbManager.close();
+    void shutdown('SIGTERM');
 });

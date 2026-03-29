@@ -2,6 +2,7 @@ import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
 import cors from 'cors';
+import { Server } from 'http';
 import { AgentController } from '../core/AgentController';
 import { agentConfig, isExecutionMode } from '../core/executor/AgentConfig';
 import { debugBus } from '../shared/DebugBus';
@@ -17,6 +18,7 @@ export class DashboardServer {
     private db: Database.Database;
     private controller?: AgentController;
     private webExecutionControl = new Map<string, { cancelRequested: boolean }>();
+    private server?: Server;
 
     constructor(db: Database.Database) {
         this.db = db;
@@ -343,8 +345,31 @@ export class DashboardServer {
     }
 
     public start(port: number = 3000) {
-        this.app.listen(port, () => {
+        if (this.server) {
+            return;
+        }
+
+        this.server = this.app.listen(port, () => {
             dashLogger.info('server_started', `Graph Visualization rodando em http://localhost:${port}`);
         });
+    }
+
+    public async stop(): Promise<void> {
+        if (!this.server) {
+            return;
+        }
+
+        await new Promise<void>((resolve, reject) => {
+            this.server?.close((error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+
+                resolve();
+            });
+        });
+
+        this.server = undefined;
     }
 }

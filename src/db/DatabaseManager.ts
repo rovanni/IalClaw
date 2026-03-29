@@ -8,28 +8,40 @@ const dbLogger = createLogger('DatabaseManager');
 export class DatabaseManager {
     private db: Database.Database;
     private ready = false;
-    private static instance: DatabaseManager;
+    private static instance: DatabaseManager | null = null;
+    private static lastPath: string | null = null;
 
     constructor(dbPath: string = 'db.sqlite') {
-        const instanceKey = `db_${path.resolve(dbPath)}`;
-        
-        if (DatabaseManager.instance && (DatabaseManager as any)._lastPath === instanceKey) {
-            this.db = DatabaseManager.instance.db;
-            this.ready = DatabaseManager.instance.ready;
-            return;
-        }
-
         this.db = new Database(dbPath);
         this.db.pragma('busy_timeout = 5000');
-        (DatabaseManager as any)._lastPath = instanceKey;
+        DatabaseManager.lastPath = path.resolve(dbPath);
         DatabaseManager.instance = this;
         this.initialize();
     }
 
     public static getInstance(dbPath: string = 'db.sqlite'): DatabaseManager {
-        if (!DatabaseManager.instance) {
+        const resolvedPath = path.resolve(dbPath);
+        const shouldReplace =
+            !DatabaseManager.instance ||
+            DatabaseManager.lastPath !== resolvedPath ||
+            !DatabaseManager.instance.isOpen();
+
+        if (shouldReplace) {
+            if (
+                DatabaseManager.instance &&
+                DatabaseManager.lastPath !== resolvedPath &&
+                DatabaseManager.instance.isOpen()
+            ) {
+                DatabaseManager.instance.close();
+            }
+
             DatabaseManager.instance = new DatabaseManager(dbPath);
         }
+
+        if (!DatabaseManager.instance) {
+            throw new Error('DatabaseManager instance could not be created.');
+        }
+
         return DatabaseManager.instance;
     }
 
@@ -69,9 +81,20 @@ export class DatabaseManager {
         return this.ready;
     }
 
+    public isOpen(): boolean {
+        return Boolean(this.db?.open);
+    }
+
     public close() {
         if (this.db && this.db.open) {
             this.db.close();
+        }
+
+        this.ready = false;
+
+        if (DatabaseManager.instance === this) {
+            DatabaseManager.instance = null;
+            DatabaseManager.lastPath = null;
         }
     }
 }
