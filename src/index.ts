@@ -173,14 +173,20 @@ debugBus.on('tool:call', (data: any) => busLogger.debug('tool_call', `${data?.to
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const hasTelegramBotToken = Boolean(BOT_TOKEN && BOT_TOKEN !== 'your_bot_token_here');
 
+let shouldCreateDb = false;
+
 function checkAndPromptDatabase(): void {
     const DB_PATH = path.resolve('db.sqlite');
     const dbExists = fs.existsSync(DB_PATH);
 
     if (dbExists) {
-        const stats = fs.statSync(DB_PATH);
-        if (stats.size > 0) {
-            return;
+        try {
+            const stats = fs.statSync(DB_PATH);
+            if (stats.size > 0) {
+                return;
+            }
+        } catch {
+            try { fs.unlinkSync(DB_PATH); } catch { /* ignore */ }
         }
     }
 
@@ -188,22 +194,18 @@ function checkAndPromptDatabase(): void {
     console.log('\x1b[33m' + t('database.not_found') + '\x1b[0m');
     console.log('');
 
-    const readline = require('readline').createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-
-    readline.question(t('database.create_prompt'), (answer: string) => {
-        readline.close();
-
-        if (answer.toLowerCase() !== 's' && answer.toLowerCase() !== 'sim' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-            console.log(t('database.skip_start'));
-            process.exit(0);
-        }
-        console.log(t('database.creating'));
-        console.log('');
-    });
-    return;
+    const readlineSync = require('readline-sync');
+    
+    const answer = readlineSync.question(t('database.create_prompt'));
+    
+    if (answer.toLowerCase() !== 's' && answer.toLowerCase() !== 'sim' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+        console.log(t('database.skip_start'));
+        process.exit(0);
+    }
+    
+    console.log(t('database.creating'));
+    console.log('');
+    shouldCreateDb = true;
 }
 
 checkAndPromptDatabase();
