@@ -61,16 +61,13 @@ export class DatabaseManager {
             const otherStatements = allStatements.filter(s => !s.trim().toUpperCase().startsWith('PRAGMA'));
 
             for (const pragma of pragmas) {
-                this.db.pragma(pragma.split('=')[1].trim());
+                const pragmaValue = pragma.split('=')[1].trim();
+                this.db.pragma(pragmaValue);
             }
 
-            const createTables = this.db.transaction(() => {
-                for (const stmt of otherStatements) {
-                    this.db.prepare(stmt).run();
-                }
-            });
-
-            createTables();
+            for (const stmt of otherStatements) {
+                this.db.prepare(stmt).run();
+            }
 
             const result = this.db
                 .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'")
