@@ -1,5 +1,7 @@
+
+# Forçar nome do repositório em minúsculo para compatibilidade Linux
 param (
-    [string]$RepoUrl = "https://github.com/rovanni/IalClaw.git"
+    [string]$RepoUrl = "https://github.com/rovanni/ialclaw.git"
 )
 
 $ErrorActionPreference = "Stop"

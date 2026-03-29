@@ -2,7 +2,9 @@
 clear
 set -e
 
-REPO_URL=${1:-"https://github.com/rovanni/IalClaw.git"}
+
+# Forçar nome do repositório em minúsculo para compatibilidade Linux
+REPO_URL=${1:-"https://github.com/rovanni/ialclaw.git"}
 
 echo "=========================================="
 echo "    Instalando IalClaw Cognitive Agent    "
