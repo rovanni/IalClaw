@@ -14,6 +14,6 @@ export function emitDebug(type: string, payload: any) {
 }
 
 // Sempre remova listeners não mais necessários para evitar vazamento
-public removeDebugListener(type: string, listener: (...args: any[]) => void) {
+export function removeDebugListener(type: string, listener: (...args: any[]) => void) {
     debugBus.removeListener(type, listener);
 }
