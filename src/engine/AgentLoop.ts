@@ -180,9 +180,9 @@ export class AgentLoop {
     private actionTaken: boolean = false;
     private refinementUsed: boolean = false;
     private readonly QUALITY_THRESHOLD = 0.5;
-    
+
     private readonly MODE_TRANSITION_CONFIDENCE = 0.75;
-    
+
     // Delta detection for marginal improvement
     private previousConfidence: number | null = null;
     private lowImprovementCount = 0;
@@ -190,18 +190,18 @@ export class AgentLoop {
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
     private failSafe: boolean = false;
-    
+
     // Detecção de intenção incompleta
     private needsUserContext: boolean = false;
     private contextQuestion: string | undefined;
     private isContinuation: boolean = false;  // É continuação de tarefa anterior?
-    
+
     // Gerenciamento de contexto contínuo
     private taskContextManager = getTaskContextManager();
     private planValidator = getPlanExecutionValidator();
     private decisionHandler: DecisionHandler;
     private chatId: string = 'default';
-    
+
     /**
      * Detecta fonte de conteúdo no input (caminho de arquivo).
      */
@@ -210,17 +210,17 @@ export class AgentLoop {
         if (filePathMatch) {
             return filePathMatch[0];
         }
-        
+
         const usarMatch = input.match(/usar\s+(?:o\s+)?(?:arquivo\s+)?([^\s,;.]+)/i);
         if (usarMatch) {
             return usarMatch[1];
         }
-        
+
         const utilizarMatch = input.match(/utilizar\s+(?:o\s+)?([^\s,;.]+)/i);
         if (utilizarMatch) {
             return utilizarMatch[1];
         }
-        
+
         return null;
     }
 
@@ -230,17 +230,23 @@ export class AgentLoop {
     private hasRequiredParams(input: string, type: TaskType | null): boolean {
         // content_generation precisa de fonte de conteúdo
         if (type === 'content_generation') {
+            // EXCEÇÃO: se o input pede scan/indexação ou varredura, não exige fonte imediata
+            // (o agente pode começar listando o diretório raiz ou projeto)
+            if (/\b(varredura|varedura|scan|indexar|mapear|listar)\b/i.test(input)) {
+                return true;
+            }
+
             const hasSource = /\b(usar|utilizar|com|arquivo|conte[úu]do)\b/i.test(input) ||
-                              /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
+                /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
             return hasSource;
         }
-        
+
         // file_conversion precisa de arquivo fonte e destino
         if (type === 'file_conversion') {
             const hasSource = /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
             return hasSource;
         }
-        
+
         // Outros tipos não precisam de parâmetros especiais
         return true;
     }
@@ -254,16 +260,16 @@ export class AgentLoop {
             /delete/i, /remove/i, /drop/i, /truncate/i,
             /rm\s+/i, /del\s+/i, /uninstall/i, /purge/i
         ];
-        
+
         if (highRiskPatterns.some(p => p.test(input))) {
             return 'high';
         }
-        
+
         // Médio risco: operações de sistema
         if (type === 'system_operation') {
             return 'medium';
         }
-        
+
         // Baixo risco: geração de conteúdo, informações
         return 'low';
     }
@@ -306,10 +312,10 @@ export class AgentLoop {
 
     private evaluateModeTransition(): void {
         if (this.mode === 'EXECUTION') return;
-        
+
         const confidence = this.currentTaskConfidence;
         const classified = this.currentTaskType !== null && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task';
-        
+
         if (confidence >= this.MODE_TRANSITION_CONFIDENCE && classified) {
             this.mode = 'EXECUTION';
             this.disableFollowUpQuestions = true;
@@ -332,7 +338,7 @@ export class AgentLoop {
 
     private getDefaultToolForInput(input: string): string {
         const text = input.toLowerCase();
-        
+
         if (text.includes("converter")) return "file.convert";
         if (text.includes("criar") || text.includes("gerar")) return "write_file";
         if (text.includes("buscar") || text.includes("procurar")) return "search_file";
@@ -341,7 +347,7 @@ export class AgentLoop {
         if (text.includes("listar")) return "list_directory";
         if (text.includes("deletar") || text.includes("remover")) return "delete_file";
         if (text.includes("web") || text.includes("pesquisar")) return "web_search";
-        
+
         return "list_directory";
     }
 
@@ -381,7 +387,7 @@ export class AgentLoop {
                 return;
             }
         }
-        
+
         // Se não há tipo definido, usa plano mínimo genérico
         if (!this.currentTaskType || this.currentTaskType === 'unknown') {
             const forcedPlan = getForcedPlanForTaskType('unknown');
@@ -402,7 +408,7 @@ export class AgentLoop {
             this.logger.warn('minimal_plan_unknown', '[PLAN] Tipo desconhecido - usando plano mínimo');
             return;
         }
-        
+
         // generic_task AGORA TEM PLANO ÚTIL (não é mais "processar entrada")
         const forcedPlan = getForcedPlanForTaskType(this.currentTaskType);
         if (forcedPlan) {
@@ -412,7 +418,7 @@ export class AgentLoop {
                 completed: false,
                 failed: false
             }));
-            
+
             this.executionContext.currentPlan = {
                 goal: this.originalInput,
                 steps,
@@ -422,29 +428,29 @@ export class AgentLoop {
                 failedTools: new Map()
             };
             this.executionContext.planTaskType = this.currentTaskType;
-            
+
             this.logger.info('minimal_plan_created', `[PLAN] Plano mínimo criado para: ${this.currentTaskType}`);
         }
     }
 
     private executeNextStep(plan: ExecutionPlan): void {
         if (plan.currentStepIndex >= plan.steps.length) return;
-        
+
         const step = plan.steps[plan.currentStepIndex];
         if (!step.tool) {
             step.tool = this.mapStepToTool(step.description);
         }
-        
+
         this.logger.info('forced_step_execution', `[EXECUTE] Forçando execução do step: ${step.description} (tool: ${step.tool || 'none'})`);
     }
 
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string, newMessages: MessagePayload[] }> {
         this.reset();
-        
+
         const session = SessionManager.getCurrentSession();
         this.chatId = session?.conversation_id || 'default';
         this.decisionHandler = getDecisionHandler(this.chatId);
-        
+
         try {
             return await this.runInternal(initialMessages, policy);
         } finally {
@@ -462,14 +468,14 @@ export class AgentLoop {
         if (simpleCommandResponse) {
             return simpleCommandResponse;
         }
-        
+
         this.setOriginalInput(userInput);
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // TASK CONTEXT: Verificar continuação ANTES de classificar
         // "O agente não está pensando em continuidade, está reagindo por mensagem."
         // ═══════════════════════════════════════════════════════════════════
-        
+
         // Verificar se há execução em andamento
         if (this.taskContextManager.isInProgress(this.chatId)) {
             this.logger.warn('task_in_progress', '[CONTEXT] Tarefa em andamento, aguarde');
@@ -478,22 +484,22 @@ export class AgentLoop {
                 newMessages: []
             };
         }
-        
+
         // Verificar se contexto é VÁLIDO (recente + relevante)
         const isContextValid = this.taskContextManager.isContextValid(this.chatId, userInput);
         const hasActiveTask = this.taskContextManager.hasActiveTask(this.chatId);
         const hasValidPlan = this.executionContext.currentPlan !== null;
-        
+
         // Verificar se última execução foi bem-sucedida
         const lastExecutionFailed = this.executionContext.toolsFailed.size > 0;
-        
+
         if (isContextValid && hasActiveTask && hasValidPlan && !lastExecutionFailed) {
             // Contexto válido + tarefa ativa + plano válido + última execução OK → continuação
             const previousCtx = this.taskContextManager.get(this.chatId);
             this.isContinuation = true;
             this.currentTaskType = previousCtx?.type || null;
             this.currentTaskConfidence = 1.0;
-            
+
             this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido com tarefa ativa', {
                 type: previousCtx?.type,
                 hasSource: !!previousCtx?.data.source
@@ -502,30 +508,30 @@ export class AgentLoop {
             // Contexto inválido, sem tarefa ativa, sem plano, ou última execução falhou → nova tarefa
             this.isContinuation = false;
             this.evaluateModeTransition();
-            
+
             if (lastExecutionFailed) {
                 this.logger.warn('previous_execution_failed', '[CONTEXT] Última execução falhou, resetando para nova tarefa');
             }
         }
-        
+
         this.ensureMinimalPlan();
-        
+
         // Atualizar contexto com tipo final
         const taskCtx = this.taskContextManager.update(this.chatId, userInput, this.currentTaskType || 'unknown');
-        
+
         // Detectar fonte de conteúdo e adicionar ao contexto
         const detectedSource = this.detectSource(userInput);
         if (detectedSource) {
             this.taskContextManager.setSource(this.chatId, detectedSource);
         }
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
         // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
         const hasAllParams = taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType);
         const riskLevel = this.detectRiskLevel(this.currentTaskType, userInput);
-        
+
         const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
             isContinuation: this.isContinuation,
             hasAllParams: hasAllParams,
@@ -533,9 +539,9 @@ export class AgentLoop {
             isDestructive: false,
             isReversible: true
         });
-        
+
         const autonomyDecision = decideAutonomy(autonomyContext);
-        
+
         // Log da decisão (essencial para debug)
         this.logger.info('autonomy_decision', `[AUTONOMY] Decisão: ${autonomyDecision}`, {
             intent: autonomyContext.intent,
@@ -545,7 +551,7 @@ export class AgentLoop {
             isContinuation: autonomyContext.isContinuation,
             taskType: this.currentTaskType
         });
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // 🔴 CONFIRM: Ação destrutiva ou risco alto → confirmar
         // ═══════════════════════════════════════════════════════════════════
@@ -559,7 +565,7 @@ export class AgentLoop {
                 newMessages: []
             };
         }
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // 🟡 ASK: Falta informação → perguntar (específico por tipo)
         // ═══════════════════════════════════════════════════════════════════
@@ -568,39 +574,44 @@ export class AgentLoop {
                 taskType: this.currentTaskType,
                 missing: !hasAllParams ? 'params' : 'context'
             });
-            
+
             // Mensagem específica por tipo de tarefa
             if (this.currentTaskType === 'content_generation') {
                 return { answer: t('content.ask_for_source'), newMessages: [] };
             }
-            
+
             if (this.currentTaskType === 'file_conversion') {
                 return { answer: t('file.ask_for_source'), newMessages: [] };
             }
-            
+
             if (this.currentTaskType === 'file_search') {
                 return { answer: t('file.ask_search_query'), newMessages: [] };
             }
-            
+
             // Tratamento especial para comandos simples ou perguntas informativas
             const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
             if (userInput.startsWith('/help')) {
                 return {
-                    answer: 'Comandos disponíveis:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+                    answer: t('agent.command.help'),
                     newMessages: []
                 };
             }
 
             if (userInput.startsWith('/status')) {
+                const ctx = this.taskContextManager.get(this.chatId);
                 return {
-                    answer: 'O estado atual da sessão está ativo e funcional.',
+                    answer: t('agent.command.status', {
+                        sessionId: this.chatId,
+                        project: ctx?.data.source || 'Nenhum',
+                        messages: initialMessages.length
+                    }),
                     newMessages: []
                 };
             }
 
             if (/só tem esses comandos\?|quais comandos existem\?/i.test(userInput)) {
                 return {
-                    answer: 'Os comandos disponíveis são:\n/new - Reiniciar conversa\n/help - Ver comandos\n/status - Ver estado da sessão',
+                    answer: t('agent.command.help'),
                     newMessages: []
                 };
             }
@@ -608,7 +619,7 @@ export class AgentLoop {
             // Fallback genérico
             return { answer: t('autonomy.ask_context'), newMessages: [] };
         }
-        
+
         // 🟢 EXECUTE: Segue fluxo (short-circuit ou loop)
         // A decisão de EXECUTE permite continuar...
 
@@ -627,7 +638,7 @@ export class AgentLoop {
                     newMessages: []
                 };
             }
-            
+
             // Executar diretamente, sem loop (mesmo com failSafe)
             this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)', {
                 mode: 'cognitive_direct',
@@ -678,15 +689,15 @@ export class AgentLoop {
 
         let messages = [...initialMessages];
         const newMessages: MessagePayload[] = [];
-        
+
         if (this.failSafe) {
             this.logger.warn('fail_safe_mode', '[FAIL-SAFE] Modo de execução garantida ativado');
         }
-        
+
         this.evaluateModeTransition();
-        
+
         this.ensureMinimalPlan();
-        
+
         if (this.currentTaskType && ['file_conversion', 'file_search', 'content_generation'].includes(this.currentTaskType)) {
             const workspaceHint: MessagePayload = {
                 role: 'system',
@@ -702,9 +713,9 @@ export class AgentLoop {
             };
             messages.push(skillHint);
         }
-        
+
         messages = this.addPlanningGuidanceToMessages(messages, policy);
-        
+
         const progressCb = typeof policy?.progress?.onEvent === 'function'
             ? policy.progress.onEvent as ((event: AgentProgressEvent) => Promise<void> | void)
             : undefined;
@@ -747,7 +758,7 @@ export class AgentLoop {
         }
 
         const effectiveMaxIter = this.failSafe ? Math.min(maxIter, 3) : maxIter;
-        
+
         for (let i = 0; i < effectiveMaxIter; i++) {
             if (await stopIfRequested()) {
                 return { answer: t('loop.stopped_by_user'), newMessages };
@@ -768,22 +779,22 @@ export class AgentLoop {
                 break;
             }
 
-this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
+            this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                 iteration: i + 1,
                 message_count: messages.length,
                 tool_calls_count: toolCallsCount
             });
             await emitProgress({ stage: 'iteration_started', iteration: i + 1 });
-            
+
             if (this.executionContext.currentPlan) {
                 this.logCurrentPlan();
                 await emitProgress({ stage: 'executing_step', iteration: i + 1 });
             }
-            
+
             await emitProgress({ stage: 'llm_started', iteration: i + 1 });
             const response = await this.llm.generate(messages, toolsDefinition);
             await emitProgress({ stage: 'llm_completed', iteration: i + 1 });
-            
+
             if (!this.executionContext.currentPlan && response.final_answer) {
                 const plan = this.createPlanFromLLMResponse(response, messages);
                 if (plan) {
@@ -806,12 +817,12 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             tool_name: response.tool_call.name,
                             repeat_count: toolRepeatCount
                         });
-                        
+
                         const plan = this.executionContext.currentPlan;
                         const fallbackStep = plan && plan.currentStepIndex < plan.steps.length
                             ? plan.steps[plan.currentStepIndex]
                             : undefined;
-                        const fallbackTool = fallbackStep?.tool 
+                        const fallbackTool = fallbackStep?.tool
                             ? await this.getFallbackToolForStep(fallbackStep)
                             : undefined;
                         if (fallbackTool && plan) {
@@ -820,7 +831,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                                 this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${fallbackTool}`);
                             }
                         }
-                        
+
                         const loopMsg: MessagePayload = {
                             role: 'system',
                             content: `MUDANÇA FORÇADA:_tool=${response.tool_call.name}_repetida_2x._Tente_ferramenta_diferente_ou_mude_estratégia._Plano_atual=${this.executionContext.currentPlan?.goal}`
@@ -846,7 +857,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     continue; // Pushes model to finalize answer
                 }
 
-                    toolCallsCount++;
+                toolCallsCount++;
                 try {
                     const plan = this.executionContext.currentPlan;
                     const currentStepForValidation = plan && plan.currentStepIndex < plan.steps.length
@@ -856,7 +867,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         safeMode: policy?.security?.safeMode ?? false,
                         currentPlan: plan ?? undefined
                     };
-                    
+
                     if (currentStepForValidation) {
                         const stepValidation = StepValidator.validate(currentStepForValidation, validationContext);
                         if (!stepValidation.plausible || stepValidation.risk === "high") {
@@ -874,8 +885,8 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         this.logger.warn('tool_loop_prevented', `[LOOP] Tool já falhou: ${toolName}`);
                         const loopMsg: MessagePayload = { role: 'tool', content: `[LOOP] Tool ${toolName} already failed, selecting alternative` };
                         messages.push(loopMsg);
-                        
-                        const fallbackTool = currentStepForValidation 
+
+                        const fallbackTool = currentStepForValidation
                             ? await this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
 
@@ -886,9 +897,9 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             continue;
                         }
                     }
-                    
+
                     if (!this.failSafe && await this.checkMemoryBlock(toolName)) {
-                        const fallbackTool = currentStepForValidation 
+                        const fallbackTool = currentStepForValidation
                             ? await this.getFallbackToolForStep(currentStepForValidation)
                             : undefined;
 
@@ -899,16 +910,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.warn('memory_block_override', `[MEMORY] Tool ${toolName} com histórico ruim, mas executando mesmo assim`);
                         }
                     }
-                    
+
                     if (this.failSafe && await this.checkMemoryBlock(toolName)) {
                         this.logger.warn('fail_safe_override', '[FAIL-SAFE] Ignorando bloqueio de memória');
                     }
-                    
+
                     if (ToolReliability.shouldAvoid(toolName, contextKey)) {
                         if (this.failSafe) {
                             this.logger.warn('fail_safe_tool_override', `[FAIL-SAFE] Ignorando bloqueio de tool: ${toolName}`);
                         } else {
-                            const fallbackTool = currentStepForValidation 
+                            const fallbackTool = currentStepForValidation
                                 ? await this.getFallbackToolForStep(currentStepForValidation)
                                 : undefined;
 
@@ -928,14 +939,14 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             response.tool_call.name = mappedTool;
                         }
                     }
-                    
+
                     this.logger.info('tool_call_started', t('log.loop.tool_call_started'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name,
                         tool_calls_count: toolCallsCount
                     });
                     await emitProgress({ stage: 'tool_started', iteration: i + 1, tool_name: response.tool_call.name });
-                    
+
                     const execToolName = response.tool_call.name;
                     if (!execToolName || execToolName.trim() === '') {
                         if (this.failSafe) {
@@ -953,17 +964,17 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
 
                     let result = await this.registry.executeTool(execToolName, response.tool_call.args);
-                    
+
                     const execPlan = this.executionContext.currentPlan;
                     const execStep = execPlan && execPlan.currentStepIndex < execPlan.steps.length
                         ? execPlan.steps[execPlan.currentStepIndex]
                         : undefined;
-                    
+
                     const evaluation = ResultEvaluator.evaluate(result);
                     const recordContext = `${this.currentTaskType || 'unknown'}:${execStep?.description || ''}`;
-                    
+
                     ToolReliability.record(execToolName, evaluation.success, recordContext);
-                    
+
                     if (evaluation.success && evaluation.quality > 0.8) {
                         this.logger.info('reinforce_tool', `[LEARNING] Tool reforçada por alto qualidade: ${execToolName} (quality=${evaluation.quality.toFixed(2)})`);
                     }
@@ -973,12 +984,12 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     } else {
                         this.recordToolFailure(execToolName);
                     }
-                    
+
                     if (evaluation.quality < this.QUALITY_THRESHOLD && !this.refinementUsed) {
                         this.refinementUsed = true;
-                        
+
                         const refinedResult = await this.retryWithBetterParams(execStep, response.tool_call.args);
-                        
+
                         if (refinedResult) {
                             this.logger.info('refinement_success', '[REFINE] Active refinement completed successfully');
                             result = refinedResult;
@@ -988,7 +999,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             this.logger.warn('refinement_failed', '[REFINE] Active refinement failed, using original result');
                         }
                     }
-                    
+
                     toolEvidence.push(String(result).slice(0, 2000));
                     consecutiveToolFailures = 0;
 
@@ -1009,21 +1020,21 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                         result_length: result.length
                     });
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: execToolName });
-                    
+
                     if (execStep) {
                         const validation = this.validateStepResult(execStep, result, execToolName);
                         this.logValidation(execStep, validation);
-                        
+
                         this.stepValidations.push(validation.confidence);
                         this.actionTaken = true;
-                        
+
                         if (!validation.success) {
                             this.markCurrentStepFailed(validation.reason);
-                            
+
                             if (this.shouldReclassify(consecutiveToolFailures)) {
                                 messages = this.reclassifyAndAdjustPlan(messages);
                             }
-                            
+
                             if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
@@ -1034,7 +1045,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                                 messages = this.adjustPlanAfterFailure(messages, execStep, validation);
                             }
                         }
-                        
+
                         await this.registerExecutionMemory(
                             execStep,
                             execToolName,
@@ -1042,11 +1053,11 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             validation.reason
                         );
                     }
-                    
+
                     if (response.tool_call.args?.path) {
                         this.recordPathTried(response.tool_call.args.path);
                     }
-                    
+
                     this.lastStepResult = result;
                     if (evaluation.success) {
                         this.advanceToNextStep();
@@ -1055,7 +1066,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     const stepCount = this.executionContext.currentPlan?.currentStepIndex || 0;
                     const lastSuccessful = evaluation.success;
                     const globalConf = this.getGlobalConfidence(this.stepValidations);
-                    
+
                     if (this.mode === 'EXECUTION' && !lastSuccessful && globalConf < this.GLOBAL_CONFIDENCE_THRESHOLD) {
                         const fallbackHint: MessagePayload = {
                             role: 'system',
@@ -1089,16 +1100,16 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     }
 
                     continue;
-} catch (error: any) {
+                } catch (error: any) {
                     this.logger.error('tool_call_failed', error, t('log.loop.tool_call_failed'), {
                         iteration: i + 1,
                         tool_name: response.tool_call.name
                     });
                     await emitProgress({ stage: 'tool_failed', iteration: i + 1, tool_name: response.tool_call.name });
-                    
+
                     this.recordToolFailure(response.tool_call.name);
                     this.markCurrentStepFailed(error.message);
-                    
+
                     const currentStepForMem = this.executionContext.currentPlan?.steps[this.executionContext.currentPlan.currentStepIndex];
                     if (currentStepForMem) {
                         await this.registerExecutionMemory(
@@ -1108,7 +1119,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                             `Exceção: ${error.message}`
                         );
                     }
-                    
+
                     const errMsg: MessagePayload = { role: 'tool', content: t('loop.tool_execution_error', { message: error.message }) };
                     messages.push(errMsg);
                     newMessages.push(errMsg);
@@ -1173,20 +1184,20 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
             this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
             const defaultTool = this.getDefaultToolForInput(userInput);
             this.logger.info('fail_safe_tool_attempt', `[FAIL-SAFE] Tentando ferramenta: ${defaultTool}`);
-            
+
             if (this.executionContext.currentPlan && this.executionContext.currentPlan.currentStepIndex < this.executionContext.currentPlan.steps.length) {
                 const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex];
                 if (!currentStep.tool) {
                     currentStep.tool = this.mapStepToTool(currentStep.description) || defaultTool;
                 }
-                
+
                 try {
                     this.logger.info('fail_safe_forced_execution', `[FAIL-SAFE] Forçando execução: ${currentStep.tool} para step "${currentStep.description}"`);
                     const forcedResult = await this.registry.executeTool(currentStep.tool, {});
                     const toolMsg: MessagePayload = { role: 'tool', content: forcedResult };
                     newMessages.push(toolMsg);
                     toolCallsCount++;
-                    
+
                     if (forcedResult && forcedResult.length > 0 && !forcedResult.toLowerCase().includes('erro')) {
                         this.advanceToNextStep();
                         const directAnswer = `Executei a ação: ${currentStep.description}. Resultado: ${forcedResult.slice(0, 500)}`;
@@ -1200,7 +1211,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                     this.logger.error('fail_safe_forced_error', forcedError as Error, '[FAIL-SAFE] Falha na execução forçada');
                 }
             }
-            
+
             const directAnswer = `Vou tentar resolver diretamente: ${userInput}`;
             const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
             newMessages.push(finalMsg);
@@ -1226,7 +1237,7 @@ this.logger.debug('iteration_started', t('log.loop.iteration_started'), {
                 duration_ms: duration,
                 answer_length: sanitized.length
             });
-await emitProgress({ stage: 'completed', duration_ms: duration });
+            await emitProgress({ stage: 'completed', duration_ms: duration });
             this.logMemoryStats();
             return { answer: sanitized, newMessages };
         } catch (fallbackError: any) {
@@ -1235,14 +1246,14 @@ await emitProgress({ stage: 'completed', duration_ms: duration });
             });
             await emitProgress({ stage: 'failed' });
             this.logMemoryStats();
-            
+
             if (this.failSafe) {
                 const failSafeAnswer = `Vou tentar resolver diretamente: ${userInput}`;
                 const failSafeMsg: MessagePayload = { role: 'assistant', content: failSafeAnswer };
                 newMessages.push(failSafeMsg);
                 return { answer: failSafeAnswer, newMessages };
             }
-            
+
             return { answer: t('loop.fallback.default_answer'), newMessages };
         }
     }
@@ -1284,7 +1295,7 @@ await emitProgress({ stage: 'completed', duration_ms: duration });
         return `${answer.trimEnd()}${suffix}`;
     }
 
-private sanitizeUserFacingAnswer(answer: string): string {
+    private sanitizeUserFacingAnswer(answer: string): string {
         let cleaned = answer;
 
         // Remove vazamento de marcadores internos de tool-call e residuos XML-like do parser.
@@ -1303,14 +1314,14 @@ private sanitizeUserFacingAnswer(answer: string): string {
 
     private createPlanFromLLMResponse(response: any, messages: MessagePayload[]): ExecutionPlan | null {
         const content = response.final_answer || '';
-        
+
         const goalMatch = content.match(/goal[:\s]+["']?([^"\n]+)["']?/i);
         const stepsMatch = content.match(/steps[:\s]*\n?((?:\d+[.)]\s*[^"\n]+\n?)+)/i);
-        
+
         if (!goalMatch || !stepsMatch) {
             return null;
         }
-        
+
         const goal = goalMatch[1].trim();
         const stepLines = stepsMatch[1].split('\n').filter((l: string) => l.trim());
         const steps: ExecutionStep[] = stepLines.map((line: string, idx: number) => {
@@ -1323,7 +1334,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
                 failed: false
             };
         });
-        
+
         const plan: ExecutionPlan = {
             goal,
             steps,
@@ -1332,30 +1343,30 @@ private sanitizeUserFacingAnswer(answer: string): string {
             triedPaths: [],
             failedTools: new Map()
         };
-        
+
         this.executionContext.currentPlan = plan;
         this.executionContext.planTaskType = this.currentTaskType;
         this.executionContext.pathsTried.clear();
         this.executionContext.toolsFailed.clear();
-        
+
         this.logger.info('plan_created', `[PLAN] Goal: ${goal}`, {
             step_count: steps.length,
             steps: steps.map((s: ExecutionStep) => s.description).join(' → ')
         });
-        
+
         return plan;
     }
 
     private mapStepToTool(stepDescription: string): string | undefined {
         const lowerDesc = stepDescription.toLowerCase();
-        
+
         for (const [key, tools] of Object.entries(STEP_TOOL_MAPPING)) {
             if (lowerDesc.includes(key)) {
                 const bestFromMemory = this.getBestToolForStep(stepDescription, tools);
                 if (bestFromMemory) {
                     return bestFromMemory;
                 }
-                
+
                 for (const tool of tools) {
                     const failCount = this.executionContext.toolsFailed.get(tool) || 0;
                     if (failCount < 2) {
@@ -1377,7 +1388,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
 
     private async getFallbackToolForStep(step: ExecutionStep): Promise<string | undefined> {
         const lowerDesc = step.description.toLowerCase();
-        
+
         for (const [key, tools] of Object.entries(STEP_TOOL_MAPPING)) {
             if (lowerDesc.includes(key)) {
                 const ranked = await this.rankToolsForStep(step, tools);
@@ -1436,7 +1447,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
         }, 0);
 
         const totalWeight = relevant.reduce((acc, d) => acc + this.getTemporalWeight(d.timestamp), 0);
-        
+
         if (totalWeight === 0) return 0;
         return weighted / totalWeight;
     }
@@ -1446,7 +1457,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
 
         try {
             const history = await this.decisionMemory.getToolHistory(toolName, this.currentTaskType);
-            
+
             if (history.failure >= 3 && history.rate < 0.3) {
                 this.logger.warn('memory_block', `[MEMORY] Tool bloqueada por histórico ruim: ${toolName} (falhas=${history.failure}, rate=${history.rate.toFixed(2)})`);
                 return true;
@@ -1454,7 +1465,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
         } catch (error) {
             this.logger.warn('memory_block_check_failed', `Falha ao verificar bloqueio por memória: ${error}`);
         }
-        
+
         return false;
     }
 
@@ -1578,7 +1589,7 @@ private sanitizeUserFacingAnswer(answer: string): string {
     private recordToolFailure(toolName: string) {
         const count = (this.executionContext.toolsFailed.get(toolName) || 0) + 1;
         this.executionContext.toolsFailed.set(toolName, count);
-        
+
         if (this.executionContext.currentPlan) {
             this.executionContext.currentPlan.failedTools.set(toolName, count);
         }
@@ -1596,21 +1607,21 @@ private sanitizeUserFacingAnswer(answer: string): string {
     private logCurrentPlan() {
         const plan = this.executionContext.currentPlan;
         if (!plan) return;
-        
+
         let logMsg = `[PLAN] ${plan.goal}\n`;
         plan.steps.forEach((step, idx) => {
             const marker = idx === plan.currentStepIndex ? '→ ' : idx < plan.currentStepIndex ? '✓ ' : '  ';
             const status = step.completed ? '✓' : step.failed ? '✗' : '';
             logMsg += `${marker}[STEP ${step.id}] ${step.description} ${status}\n`;
         });
-        
+
         this.logger.debug('plan_progress', logMsg);
     }
 
     private addPlanningGuidanceToMessages(messages: MessagePayload[], policy?: any): MessagePayload[] {
         const taskType = policy?.taskType;
         const taskConfidence = policy?.taskConfidence;
-        
+
         let taskGuidance = '';
         if (taskType && taskConfidence && taskConfidence > 0.5) {
             switch (taskType) {
@@ -1665,7 +1676,7 @@ SEMPRE verifique se o resultado de cada ação atende ao objetivo antes de conti
 Evite loops usando o histórico de caminhos já tentados: ${Array.from(this.executionContext.pathsTried).join(', ') || 'nenhum'}
 Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFailed.entries()).map(([k, v]) => `${k}(${v}x)`).join(', ') || 'nenhuma'}${taskGuidance}`
         };
-        
+
         return [...messages, guidance];
     }
 
@@ -1747,7 +1758,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 
         this.stepValidations = [];
         this.resetDeltaDetection();
-        
+
         const hint: MessagePayload = {
             role: 'system',
             content: `[TAREFA RECLASSIFICADA] O tipo de tarefa foi corrigido de "${oldType}" para "${newClassification.type}". Novo plano aplicado. Continue a execução com esta nova orientação.`
@@ -1763,18 +1774,18 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             this.logger.info('task_type_preserved', `[PRESERVE] Tipo forçado preservado: ${this.currentTaskType}`);
             return;
         }
-        
+
         this.originalInput = input;
-        
+
         const intentClear = this.isUserIntentClear(input);
         const classification = classifyTask(input);
-        
+
         this.failSafe = intentClear || classification.type === 'unknown' || classification.type === 'generic_task';
-        
+
         if (this.failSafe) {
             this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: intentClear=${intentClear}, type=${classification.type}`);
         }
-        
+
         if (this.failSafe && (classification.type === 'unknown' || classification.confidence === 0)) {
             this.logger.warn('fail_safe_classification', '[FAIL-SAFE] Classificação ignorada - definindo como generic_task');
             this.currentTaskType = 'generic_task';
@@ -1784,7 +1795,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         } else {
             this.currentTaskType = classification.type;
             this.currentTaskConfidence = classification.confidence;
-            
+
             if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
                 this.mode = 'EXECUTION';
                 this.disableFollowUpQuestions = true;
@@ -1817,13 +1828,13 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
     private hasPendingSteps(): boolean {
         const plan = this.executionContext.currentPlan;
         if (!plan) return false;
-        
+
         return plan.steps.some(step => !step.completed && !step.failed);
     }
 
     private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): { shouldStop: boolean; reason: string } {
         const hasPending = this.hasPendingSteps();
-        
+
         if (hasPending && this.failSafe) {
             this.logger.info('fail_safe_prevents_stop', `[FAIL-SAFE] Impedindo parada - há steps pendentes (failSafe=true)`);
             return { shouldStop: false, reason: 'fail_safe_prevents_stop_has_pending_steps' };
@@ -1843,9 +1854,9 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         }
 
         if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful && !hasPending) {
-            return { 
-                shouldStop: true, 
-                reason: `global_confidence=${globalConfidence.toFixed(2)}_threshold=${this.GLOBAL_CONFIDENCE_THRESHOLD}` 
+            return {
+                shouldStop: true,
+                reason: `global_confidence=${globalConfidence.toFixed(2)}_threshold=${this.GLOBAL_CONFIDENCE_THRESHOLD}`
             };
         }
 
@@ -1854,9 +1865,9 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             if (recentValidations.length >= 2) {
                 const avgRecent = recentValidations.reduce((a, b) => a + b, 0) / recentValidations.length;
                 if (avgRecent < 0.4) {
-                    return { 
-                        shouldStop: true, 
-                        reason: `over_execution_detected_avg_recent=${avgRecent.toFixed(2)}` 
+                    return {
+                        shouldStop: true,
+                        reason: `over_execution_detected_avg_recent=${avgRecent.toFixed(2)}`
                     };
                 }
             }
@@ -1897,9 +1908,9 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 
         if (this.lowImprovementCount >= this.MAX_LOW_IMPROVEMENTS) {
             console.log(`[STOP] low improvement detected (${this.lowImprovementCount} steps)`);
-            return { 
-                shouldStop: true, 
-                reason: `low_improvement_delta_count=${this.lowImprovementCount}` 
+            return {
+                shouldStop: true,
+                reason: `low_improvement_delta_count=${this.lowImprovementCount}`
             };
         }
 
@@ -1925,23 +1936,23 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 3. Usar o LLM para processar conteúdo diretamente (sem ferramenta)
 4. Pedir mais informações ao usuário`
         };
-        
+
         return [...messages, hint];
     }
 
     private validateStepResult(step: ExecutionStep, result: string, toolName: string): StepValidation {
         const lowerDesc = step.description.toLowerCase();
         const resultLower = result.toLowerCase();
-        
+
         if (resultLower.includes('erro:') || resultLower.includes('error:') || resultLower.includes('failed')) {
             return { success: false, confidence: 1.0, reason: `Erro na execução: ${result.slice(0, 100)}`, needsLlm: false };
         }
-        
+
         if (lowerDesc.includes('localizar') || lowerDesc.includes('buscar arquivo') || lowerDesc.includes('procurar')) {
-            const found = !resultLower.includes('não encontrado') && 
-                         !resultLower.includes('not found') && 
-                         !resultLower.includes('não localizei') &&
-                         result.length > 10;
+            const found = !resultLower.includes('não encontrado') &&
+                !resultLower.includes('not found') &&
+                !resultLower.includes('não localizei') &&
+                result.length > 10;
             return {
                 success: found,
                 confidence: found ? 0.9 : 0.95,
@@ -1949,7 +1960,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('ler arquivo') || lowerDesc.includes('ler conteúdo')) {
             const hasContent = result.length > 0 && !resultLower.includes('erro');
             return {
@@ -1959,11 +1970,11 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('salvar') || lowerDesc.includes('escrever') || lowerDesc.includes('criar arquivo')) {
-            const saved = resultLower.includes('salvo') || 
-                         resultLower.includes('success') || 
-                         resultLower.includes('criado');
+            const saved = resultLower.includes('salvo') ||
+                resultLower.includes('success') ||
+                resultLower.includes('criado');
             return {
                 success: saved,
                 confidence: saved ? 0.9 : 0.8,
@@ -1971,11 +1982,11 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('criar diretório') || lowerDesc.includes('criar pasta')) {
-            const created = resultLower.includes('criado') || 
-                           resultLower.includes('success') ||
-                           resultLower.includes('já existe');
+            const created = resultLower.includes('criado') ||
+                resultLower.includes('success') ||
+                resultLower.includes('já existe');
             return {
                 success: created,
                 confidence: created ? 0.9 : 0.8,
@@ -1983,7 +1994,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('listar') || lowerDesc.includes('list directory')) {
             const hasList = result.includes('📁') || result.includes('📄') || result.length > 5;
             return {
@@ -1993,11 +2004,11 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('deletar') || lowerDesc.includes('remover')) {
-            const deleted = resultLower.includes('removido') || 
-                          resultLower.includes('deletado') ||
-                          resultLower.includes('deleted');
+            const deleted = resultLower.includes('removido') ||
+                resultLower.includes('deletado') ||
+                resultLower.includes('deleted');
             return {
                 success: deleted,
                 confidence: deleted ? 0.9 : 0.8,
@@ -2005,7 +2016,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('buscar na web') || lowerDesc.includes('pesquisar')) {
             const hasResults = result.length > 20 && !resultLower.includes('nenhum resultado');
             return {
@@ -2015,7 +2026,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: false
             };
         }
-        
+
         if (lowerDesc.includes('converter') || lowerDesc.includes('transformar')) {
             const hasOutput = result.length > 0 && result.length < 50000;
             return {
@@ -2025,7 +2036,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 needsLlm: true
             };
         }
-        
+
         return { success: true, confidence: 0.5, reason: 'Validação padrão aplicada', needsLlm: false };
     }
 
@@ -2076,17 +2087,17 @@ Considere:
             context,
             timestamp: Date.now()
         };
-        
+
         this.executionMemory.push(entry);
-        
+
         if (this.executionMemory.length > this.MAX_MEMORY_ENTRIES) {
             this.executionMemory.shift();
         }
-        
+
         if (this.decisionMemory && this.currentTaskType) {
             try {
                 const normalizedStep = this.normalizeStep(step.description);
-                
+
                 // ═════════════════════════════════════════════════════════════
                 // PROTEÇÃO DA MEMÓRIA: NÃO aprender steps cognitivos com tools
                 // ═══════════════════════════════════════════════════════════════
@@ -2101,11 +2112,11 @@ Considere:
                     'verificar', 'verif', 'check',
                     'identificar', 'identif', 'identify'
                 ];
-                
-                const isCognitiveStep = cognitiveSteps.some(cognitive => 
+
+                const isCognitiveStep = cognitiveSteps.some(cognitive =>
                     normalizedStep.toLowerCase().includes(cognitive)
                 );
-                
+
                 // NÃO aprender se:
                 // 1. Step é cognitivo E uma tool foi usada
                 // 2. Isso polui a memória com decisões ruins
@@ -2128,7 +2139,7 @@ Considere:
                 this.logger.warn('decision_memory_store_failed', `Failed to store decision: ${error}`);
             }
         }
-        
+
         const status = success ? 'sucesso' : 'falha';
         this.logger.debug('execution_memory', `[LEARNING] ${tool} → ${status} para step "${step.description}"`, {
             stepType: entry.stepType,
@@ -2140,9 +2151,9 @@ Considere:
         const recentMemory = this.executionMemory.filter(
             e => e.stepType === stepType && Date.now() - e.timestamp < 3600000
         );
-        
+
         const toolStats = new Map<string, { success: number; failure: number }>();
-        
+
         for (const entry of recentMemory) {
             const stats = toolStats.get(entry.tool) || { success: 0, failure: 0 };
             if (entry.success) {
@@ -2152,7 +2163,7 @@ Considere:
             }
             toolStats.set(entry.tool, stats);
         }
-        
+
         const scores: ToolScore[] = [];
         toolStats.forEach((stats, tool) => {
             scores.push({
@@ -2162,7 +2173,7 @@ Considere:
                 failures: stats.failure
             });
         });
-        
+
         return scores.sort((a, b) => b.score - a.score);
     }
 
@@ -2181,9 +2192,9 @@ Considere:
         if (recentMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
             const successes = recentMemory.filter(e => e.success).length;
             const confidence = successes / recentMemory.length;
-            
+
             this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} contextual_samples=${recentMemory.length} rate=${confidence.toFixed(2)}`);
-            
+
             return { confidence, isContextual: true };
         }
 
@@ -2194,9 +2205,9 @@ Considere:
         if (globalMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
             const successes = globalMemory.filter(e => e.success).length;
             const confidence = successes / globalMemory.length;
-            
+
             this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} global_samples=${globalMemory.length} rate=${confidence.toFixed(2)} (fallback)`);
-            
+
             return { confidence, isContextual: false };
         }
 
@@ -2214,7 +2225,7 @@ Considere:
         }
 
         const { confidence, isContextual } = this.getContextualConfidence(stepType, bestScore.tool);
-        
+
         if (confidence > 0) {
             return confidence;
         }
@@ -2240,14 +2251,14 @@ Considere:
     private getBestToolForStep(stepDescription: string, candidateTools: string[]): string | null {
         const stepType = this.getStepType(stepDescription);
         const scores = this.getToolScores(stepType);
-        
+
         if (scores.length === 0) {
             return null;
         }
 
         let bestCandidate = candidateTools[0];
         let bestConfidence = 0;
-        
+
         for (const candidate of candidateTools) {
             const scoreEntry = scores.find(s => s.tool === candidate);
             if (scoreEntry && scoreEntry.score > 0) {
@@ -2258,25 +2269,25 @@ Considere:
                 }
             }
         }
-        
+
         const decisionConfidence = bestConfidence > 0 ? bestConfidence : this.getDecisionConfidence(stepType, scores);
         const explorationRate = this.getAdaptiveExplorationRate(decisionConfidence);
-        
+
         const shouldExplore = candidateTools.length > 1 && Math.random() < explorationRate;
-        
+
         if (shouldExplore) {
             const validAlternatives = candidateTools.filter(tool => {
                 const scoreEntry = scores.find(s => s.tool === tool);
                 return !scoreEntry || scoreEntry.score > -3;
             });
-            
+
             if (validAlternatives.length > 1) {
                 const randomTool = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
                 this.logger.info('tool_selection', `[EXPLORATION] confidence=${decisionConfidence.toFixed(2)} rate=${explorationRate} choosing_alternative=${randomTool} for_step=${stepType}`);
                 return randomTool;
             }
         }
-        
+
         for (const candidate of candidateTools) {
             const scoreEntry = scores.find(s => s.tool === candidate);
             if (scoreEntry && scoreEntry.score > 0) {
@@ -2284,18 +2295,18 @@ Considere:
                 return candidate;
             }
         }
-        
+
         const lowestFailing = scores.filter(s => s.score < 0).pop();
         if (lowestFailing) {
             this.logger.debug('tool_selection', `[LEARNING] Avoiding tool ${lowestFailing.tool} (score=${lowestFailing.score}) for ${stepType}`);
         }
-        
+
         return null;
     }
 
     private logMemoryStats() {
         if (this.executionMemory.length === 0) return;
-        
+
         const stats = new Map<string, { success: number; failure: number }>();
         for (const entry of this.executionMemory) {
             const key = `${entry.stepType}:${entry.tool}`;
@@ -2303,14 +2314,14 @@ Considere:
             if (entry.success) s.success++; else s.failure++;
             stats.set(key, s);
         }
-        
+
         let msg = '[MEMORY STATS]\n';
         stats.forEach((s, key) => {
             const total = s.success + s.failure;
             const rate = total > 0 ? Math.round((s.success / total) * 100) : 0;
             msg += `${key}: ${s.success}✓ ${s.failure}✗ (${rate}%)\n`;
         });
-        
+
         this.logger.debug('memory_stats', msg);
     }
 
@@ -2357,7 +2368,7 @@ FORMATO DE SAÍDA:
 
         try {
             const response = await this.llm.generate(allMessages);
-            
+
             // ═════════════════════════════════════════════════════════════
             // GARANTIR OUTPUT MÍNIMO VÁLIDO
             // ═════════════════════════════════════════════════════════════
@@ -2370,12 +2381,12 @@ FORMATO DE SAÍDA:
                     newMessages: messages
                 };
             }
-            
+
             this.logger.info('short_circuit_success', '[SHORT-CIRCUIT] Conteúdo gerado com sucesso', {
                 response_length: response.final_answer.length,
                 mode: 'cognitive_direct'
             });
-            
+
             // ═════════════════════════════════════════════════════════════
             // SALVAR NA DECISION_MEMORY (aprendizado)
             // ═════════════════════════════════════════════════════════════
@@ -2392,7 +2403,7 @@ FORMATO DE SAÍDA:
                     // Ignora erro de memória - não é crítico
                 }
             }
-            
+
             return {
                 answer: response.final_answer,
                 newMessages: messages
@@ -2433,7 +2444,7 @@ FORMATO DE SAÍDA:
      */
     validatePlanAndDecide(): DecisionRequest | null {
         const planResult = this.planValidator.validatePlan();
-        
+
         // Sucesso total → sem necessidade de decisão
         if (planResult.success) {
             this.logger.info('plan_validation_success', '[VALIDATION] Plano executado com sucesso', {
@@ -2446,7 +2457,7 @@ FORMATO DE SAÍDA:
 
         // Falha → verificar se precisa de intervenção
         const decisionNeeded = this.decisionHandler.needsUserIntervention(planResult);
-        
+
         if (!decisionNeeded) {
             // Falha sem necessidade de intervenção (ex: contexto mudou)
             this.logger.warn('plan_validation_no_intervention', '[VALIDATION] Falha sem necessidade de intervenção', {
@@ -2458,14 +2469,14 @@ FORMATO DE SAÍDA:
 
         // Precisa de decisão do usuário
         const decision = this.decisionHandler.analyzePlanResult(planResult);
-        
+
         if (decision) {
             this.logger.warn('plan_validation_decision_needed', '[VALIDATION] Decisão do usuário necessária', {
                 failed_steps: decision.failedSteps.length,
                 context: decision.context
             });
         }
-        
+
         return decision;
     }
 
@@ -2475,19 +2486,19 @@ FORMATO DE SAÍDA:
     processUserDecision(decision: 'retry' | 'ignore' | 'adjust' | 'cancel'): { action: string; retrySteps?: string[] } {
         const planResult = this.planValidator.validatePlan();
         const result = this.decisionHandler.processUserDecision(decision, planResult);
-        
+
         this.logger.info('user_decision_processed', '[VALIDATION] Decisão processada', {
             decision,
             action: result.action,
             retrySteps: result.retrySteps
         });
-        
+
         // Resetar contador para nova tentativa
         if (decision === 'retry') {
             this.planValidator.reset();
             this.decisionHandler.reset();
         }
-        
+
         return {
             action: result.action,
             retrySteps: result.retrySteps

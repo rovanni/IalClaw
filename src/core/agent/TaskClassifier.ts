@@ -10,11 +10,11 @@ import { createLogger } from '../../shared/AppLogger';
 import { getClassificationMemory } from '../../memory/ClassificationMemory';
 import { t } from '../../i18n';
 
-export type TaskType = 
-    | 'file_conversion' 
-    | 'file_search' 
-    | 'content_generation' 
-    | 'system_operation' 
+export type TaskType =
+    | 'file_conversion'
+    | 'file_search'
+    | 'content_generation'
+    | 'system_operation'
     | 'skill_installation'
     | 'information_request'
     | 'code_generation'
@@ -111,6 +111,17 @@ const HEURISTIC_RULES: HeuristicRule[] = [
         confidence: 0.90
     },
     {
+        type: 'file_search',
+        patterns: [
+            /\b(buscar|procurar|localizar|encontrar|search|find|busque|procure|busca)\b/i,
+            /\b(listar|list|ls)\b/i,
+            /\b(varredura|varedura|escanear|scan)\b/i,
+            /\b(onde\s+est[áa]|onde\s+fica)\b/i
+        ],
+        keywords: ['buscar', 'procurar', 'listar', 'varredura', 'varedura', 'scan', 'localizar', 'busque', 'procure', 'busca'],
+        confidence: 0.90
+    },
+    {
         type: 'content_generation',
         patterns: [
             // Criação/generação de conteúdo
@@ -149,6 +160,16 @@ const HEURISTIC_RULES: HeuristicRule[] = [
         confidence: 0.85
     },
     {
+        type: 'system_operation',
+        patterns: [
+            /\b(armazenar|guardar|salvar|indexar|lembrar|recordar)\b.*\b(mem[óo]ria|conhecimento|grafo)\b/i,
+            /\b(store|save|index|remember)\b.*\b(memory|knowledge|graph)\b/i,
+            /\bindexar\b.*\b(projeto|pasta|diret[óo]rio|skills)\b/i
+        ],
+        keywords: ['armazenar', 'memória', 'indexar', 'guardar', 'lembrar'],
+        confidence: 0.85
+    },
+    {
         type: 'data_analysis',
         patterns: [
             /\b(analisar|analyze|análise)\b/i,
@@ -184,7 +205,7 @@ export class TaskClassifier {
 
     constructor(options?: { useLlmFallback?: boolean }) {
         this.useLlmFallback = options?.useLlmFallback ?? true;
-        
+
         if (this.useLlmFallback) {
             try {
                 this.llm = ProviderFactory.getProvider();
@@ -208,7 +229,7 @@ export class TaskClassifier {
         // CAMADA 1: Heurística Rápida (resolve ~60%)
         // ═══════════════════════════════════════════════════════════════
         const heuristicResult = this.heuristicClassify(normalized);
-        
+
         // CORREÇÃO 1: Tipos de alto risco NUNCA vão para LLM
         if (heuristicResult && this.isHighRiskType(heuristicResult.type) && heuristicResult.confidence >= 0.70) {
             // Aprender na memória
@@ -219,7 +240,7 @@ export class TaskClassifier {
             });
             return { ...heuristicResult, source: 'heuristic' };
         }
-        
+
         if (heuristicResult && heuristicResult.confidence >= 0.85) {
             // Aprender na memória
             this.memory.store(input, heuristicResult.type, heuristicResult.confidence);
@@ -252,7 +273,7 @@ export class TaskClassifier {
         // ═══════════════════════════════════════════════════════════════
         if (this.useLlmFallback && this.llm && heuristicResult && heuristicResult.confidence < 0.70) {
             const llmResult = await this.llmClassify(input);
-            
+
             // CORREÇÃO 2: Rejeitar generic_task e unknown do LLM
             if (llmResult && this.isValidTaskType(llmResult.type) && llmResult.confidence >= 0.70) {
                 // Verificar se LLM discordou da memória (penalizar entrada antiga)
@@ -263,7 +284,7 @@ export class TaskClassifier {
                     });
                     this.memory.penalize(input, memoryResult.type);
                 }
-                
+
                 // Aprender na memória
                 this.memory.store(input, llmResult.type, llmResult.confidence);
                 this.logger.info('classification_llm', 'Classificação por LLM', {
@@ -346,7 +367,7 @@ export class TaskClassifier {
         // Aplicar regras heurísticas
         for (const rule of HEURISTIC_RULES) {
             let ruleConfidence = 0;
-            
+
             // Verificar padrões regex
             for (const pattern of rule.patterns) {
                 if (pattern.test(normalized)) {
@@ -407,6 +428,11 @@ export class TaskClassifier {
      * - "melhorar HTML deixando mais legível" → content_generation
      */
     private isContentGeneration(normalized: string): boolean {
+        // EXCEÇÃO: "fazer uma varredura" ou "fazer um scan" NÃO é content_generation
+        if (/\b(varredura|varedura|scan|escanear)\b/i.test(normalized)) {
+            return false;
+        }
+
         // Criação de slides/apresentações
         if (/\b(criar|gerar|fazer|montar)\b.*\bslides?\b/i.test(normalized)) {
             return true;
@@ -458,8 +484,8 @@ export class TaskClassifier {
 
         // Tem caminho de arquivo E palavra de conversão (NÃO melhoria)
         const hasFilePath = /\/[\w\-\.\/]+\.(md|html|pptx|pdf|txt|json)/i.test(normalized) ||
-                            /[\w\-]+\/[\w\-]+\.(md|html|pptx|pdf)/i.test(normalized);
-        
+            /[\w\-]+\/[\w\-]+\.(md|html|pptx|pdf)/i.test(normalized);
+
         const hasConversionWord = /\b(converter|transformar|convert)\b/i.test(normalized);
 
         return hasFilePath && hasConversionWord;
@@ -632,17 +658,17 @@ Responda APENAS JSON válido:
      * Retorna classificação enriquecida com needsContext e isContinuation.
      */
     async classifyWithContext(
-        input: string, 
+        input: string,
         lastTaskType?: TaskType
     ): Promise<TaskClassification> {
         const normalized = input.toLowerCase().trim();
         const baseClassification = await this.classify(input);
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // 1. DETECTAR CONTINUIDADE
         // ═══════════════════════════════════════════════════════════════════
         const isContinuation = this.isContinuation(input);
-        
+
         if (isContinuation && lastTaskType) {
             // Se é continuação e última tarefa era content_generation,
             // MANTER o tipo (não virar file_conversion)
@@ -660,7 +686,7 @@ Responda APENAS JSON válido:
         // ═══════════════════════════════════════════════════════════════════
         if (this.requiresContentSource(baseClassification.type)) {
             const hasSource = this.hasContentSource(input);
-            
+
             if (!hasSource) {
                 // Intenção incompleta - precisa de contexto
                 // NÃO usar texto hardcoded - delega para t()
@@ -692,7 +718,7 @@ export function classifyTask(text: string): TaskClassification {
  * Útil para detectar quando precisa de mais contexto.
  */
 export function classifyTaskWithContext(
-    text: string, 
+    text: string,
     lastTaskType?: TaskType
 ): Promise<TaskClassification> {
     return defaultClassifier.classifyWithContext(text, lastTaskType);
