@@ -20,6 +20,7 @@ import { AgentMemoryContext } from '../memory/MemoryTypes';
 import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
 import { Lang } from '../i18n/types';
 import { TaskType } from './agent/TaskClassifier';
+import { OnboardingService } from '../services/OnboardingService';
 import {
     clearPendingAction,
     getPendingAction,
@@ -38,6 +39,7 @@ export class AgentController {
     private skillResolver?: SkillResolver;
     private skillResolution?: SkillResolutionManager;
     private memoryLifecycle?: MemoryLifecycleManager;
+    private onboardingService?: OnboardingService;
     private logger = createLogger('AgentController');
 
     private emitStatus(sessionId: string, message: string, channel: 'web' | 'telegram', extra?: Record<string, any>): void {
@@ -56,7 +58,8 @@ export class AgentController {
         inputHandler: TelegramInputHandler,
         outputHandler: TelegramOutputHandler,
         skillResolver?: SkillResolver,
-        memoryLifecycle?: MemoryLifecycleManager
+        memoryLifecycle?: MemoryLifecycleManager,
+        onboardingService?: OnboardingService
     ) {
         this.memory = memory;
         this.contextBuilder = contextBuilder;
@@ -67,6 +70,7 @@ export class AgentController {
         this.skillResolver = skillResolver;
         this.skillResolution = new SkillResolutionManager();
         this.memoryLifecycle = memoryLifecycle;
+        this.onboardingService = onboardingService;
     }
 
     private assertLoopHasProvider(loop: AgentLoop): void {
@@ -280,6 +284,12 @@ export class AgentController {
         if (!nodes.length) return null;
         const match = nodes[0].content?.match(/nome do usuario [eé] (.+)/i);
         return match ? match[1].trim() : null;
+    }
+
+    private getAssistantName(userId: string): string {
+        if (!this.onboardingService) return 'IalClaw';
+        const profile = this.onboardingService.getUserProfile(userId);
+        return profile?.assistant_name || 'IalClaw';
     }
 
     private async indexProjectsInMemory(): Promise<void> {
@@ -529,10 +539,11 @@ export class AgentController {
         const projectInfo = session?.current_project_id
             ? `\nProjeto ativo: ${session.current_project_id}. Use tools para executar acoes reais nesse projeto.`
             : '';
+        const assistantName = this.getAssistantName(sessionId);
         const messages: MessagePayload[] = [
             {
                 role: 'system',
-                content: `Voce e o IalClaw, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\nSe o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\nNao peca confirmacao redundante.\nNao ignore a escolha.\nNao continue conversa generica quando houver uma selecao valida.\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
+                content: `Voce e o ${assistantName}, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\nSe o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\nNao peca confirmacao redundante.\nNao ignore a escolha.\nNao continue conversa generica quando houver uma selecao valida.\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
             }
         ];
         for (const msg of history) {
@@ -662,14 +673,15 @@ export class AgentController {
         const identity = await this.memory.getIdentityNodes();
         const contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
 
-        // Adapta caminhos OpenClaw para o espaço de trabalho do IalClaw
+        // Adapta caminhos OpenClaw para o espaco de trabalho do IalClaw
         const adaptedBody = skill.body.replace(
             /\.agent\/skills\//g,
             'workspace/skills/'
         );
 
+        const assistantName = this.getAssistantName(sessionId);
         const systemPrompt =
-            `Voce e o IalClaw, um agente cognitivo 100% local e privado.\n` +
+            `Voce e o ${assistantName}, um agente cognitivo 100% local e privado.\n` +
             `A skill abaixo foi ativada pelo usuario. Siga suas instrucoes rigorosamente.\n` +
             `Voce TEM tools disponiveis para executar acoes reais. USE-AS em vez de dizer ao usuario para executar comandos manualmente.\n` +
             `Nao invente resultados — execute as tools e relate o resultado real.\n\n` +

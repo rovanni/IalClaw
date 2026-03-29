@@ -578,7 +578,8 @@ const controller = new AgentController(
     inputHandler,
     outputHandler,
     skillResolver,
-    memoryLifecycle
+    memoryLifecycle,
+    onboardingService
 );
 
 bootstrapCapabilities(capabilityRegistry, skillManager).catch((error) => {
@@ -597,13 +598,16 @@ if (hasTelegramBotToken) {
         if (!ctx.from) return;
         const userId = ctx.from.id;
 
+        const profile = onboardingService.getUserProfile(String(userId));
+        const assistantName = profile?.assistant_name || 'IalClaw';
+
         const onboardingResult = inputHandler.checkOnboarding(userId);
         if (onboardingResult?.isOnboarding && onboardingResult.question) {
             await ctx.reply(onboardingResult.question, { parse_mode: onboardingResult.parseMode });
         } else if (onboardingResult?.isOnboarding) {
-            await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nVamos começar o onboarding! Qual o seu nome?", { parse_mode: 'Markdown' });
+            await ctx.reply(`🧠 *Olá! Eu sou o ${assistantName}*, seu Agente Cognitivo com memória persistente.\n\nVamos começar o onboarding! Qual o seu nome?`, { parse_mode: 'Markdown' });
         } else {
-            await ctx.reply("🧠 *Olá! Eu sou o IalClaw*, seu Agente Cognitivo com memória persistente.\n\nBem-vindo de volta! Como posso ajudar?", { parse_mode: 'Markdown' });
+            await ctx.reply(`🧠 *Olá! Eu sou o ${assistantName}*, seu Agente Cognitivo com memória persistente.\n\nBem-vindo de volta! Como posso ajudar?`, { parse_mode: 'Markdown' });
         }
     });
 
@@ -614,7 +618,8 @@ if (hasTelegramBotToken) {
         if (profile?.onboarding_completed) {
             await ctx.reply(
                 `👤 *Seu Perfil*\n\n` +
-                `• Nome: ${profile.name || 'Não definido'}\n` +
+                `• Seu nome: ${profile.name || 'Não definido'}\n` +
+                `• Nome do assistente: ${profile.assistant_name || 'IalClaw'}\n` +
                 `• Área: ${profile.expertise || 'Não informada'}\n` +
                 `• Estilo: ${profile.response_style}\n` +
                 `• Aprendizado: ${profile.learning_mode}\n` +
