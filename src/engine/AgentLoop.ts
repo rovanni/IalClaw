@@ -417,11 +417,9 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
         this.setOriginalInput(userInput);
-        this.evaluateModeTransition();
-        this.ensureMinimalPlan();
         
         // ═══════════════════════════════════════════════════════════════════
-        // TASK CONTEXT: Atualizar contexto e detectar continuação
+        // TASK CONTEXT: Verificar continuação ANTES de classificar
         // "O agente não está pensando em continuidade, está reagindo por mensagem."
         // ═══════════════════════════════════════════════════════════════════
         
@@ -434,23 +432,41 @@ export class AgentLoop {
             };
         }
         
-        // Atualizar contexto (detecta continuação automaticamente)
-        const taskCtx = this.taskContextManager.update(this.chatId, userInput, this.currentTaskType || 'unknown');
+        // Obter contexto ANTERIOR (antes de classificar)
+        const previousCtx = this.taskContextManager.get(this.chatId);
         
-        // Se é continuação, manter tipo anterior
-        if (taskCtx.type !== 'unknown' && taskCtx.type !== this.currentTaskType) {
-            // Continuação detectada: usar tipo do contexto
-            this.currentTaskType = taskCtx.type;
-            this.currentTaskConfidence = 1.0;
+        // Verificar se é continuação ANTES de classificar
+        const existingTaskType = previousCtx.type !== 'unknown' ? previousCtx.type : null;
+        
+        // Se contexto tem tipo válido, é possível continuação
+        if (existingTaskType) {
             this.isContinuation = true;
-            
-            this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - mantendo tipo', {
-                type: taskCtx.type,
-                hasSource: !!taskCtx.data.source
+            this.logger.info('continuation_check_before_classify', '[CONTEXT] Contexto anterior encontrado', {
+                type: existingTaskType,
+                hasSource: !!previousCtx.data.source
+            });
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // CLASSIFICAÇÃO: Só classificar se NÃO for continuação
+        // ═══════════════════════════════════════════════════════════════════
+        
+        if (this.isContinuation && existingTaskType) {
+            // Continuação: usar tipo do contexto
+            this.currentTaskType = existingTaskType;
+            this.currentTaskConfidence = 1.0;
+            this.logger.info('continuation_using_context_type', '[CONTEXT] Usando tipo do contexto', {
+                type: existingTaskType
             });
         } else {
-            this.isContinuation = false;
+            // Nova tarefa: classificar
+            this.evaluateModeTransition();
         }
+        
+        this.ensureMinimalPlan();
+        
+        // Atualizar contexto com tipo final
+        const taskCtx = this.taskContextManager.update(this.chatId, userInput, this.currentTaskType || 'unknown');
         
         // Detectar fonte de conteúdo e adicionar ao contexto
         const detectedSource = this.detectSource(userInput);
