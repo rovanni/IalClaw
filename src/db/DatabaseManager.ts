@@ -65,6 +65,16 @@ export class DatabaseManager {
                     }
                 }
 
+        // Checagem atômica para múltiplos processos: lock de arquivo (opcional, exemplo)
+        // Para robustez extra, pode-se usar um lockfile (ex: pacote 'proper-lockfile')
+        // Exemplo:
+        // import lockfile from 'proper-lockfile';
+        // try {
+        //   await lockfile.lock(dbDir);
+        //   // operações críticas
+        //   await lockfile.unlock(dbDir);
+        // } catch (e) { ... }
+
         try {
             this.db = new Database(resolvedDbPath);
             this.db.pragma('journal_mode = WAL');

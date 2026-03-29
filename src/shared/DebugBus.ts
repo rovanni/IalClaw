@@ -12,3 +12,8 @@ export function emitDebug(type: string, payload: any) {
         timestamp: Date.now()
     });
 }
+
+// Sempre remova listeners não mais necessários para evitar vazamento
+public removeDebugListener(type: string, listener: (...args: any[]) => void) {
+    debugBus.removeListener(type, listener);
+}

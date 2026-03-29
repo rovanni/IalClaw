@@ -52,24 +52,26 @@ export class MemoryService {
             const updatedImportance = Math.min(1, Math.max(existing.importance || 0.5, input.importance) + 0.05);
             const updatedScore = Math.min(1, Math.max(existing.score || 0.4, input.relevance));
 
-            this.db.prepare(`
-                UPDATE nodes
-                SET content = ?, content_preview = ?, importance = ?, score = ?, freshness = ?, tags = ?, modified = ?, embedding = ?
-                WHERE id = ?
-            `).run(
-                mergedContent,
-                mergedContent.slice(0, 280),
-                updatedImportance,
-                updatedScore,
-                1,
-                tags,
-                now,
-                JSON.stringify(embedding),
-                existing.id
-            );
-
-            this.upsertEmbedding(existing.id, embedding, now, now, 0);
-            this.relinkEntities(existing.id, input.entities, input.context, now);
+            // Envolve todas as operações de update em uma transação atômica
+            this.db.transaction(() => {
+                this.db.prepare(`
+                    UPDATE nodes
+                    SET content = ?, content_preview = ?, importance = ?, score = ?, freshness = ?, tags = ?, modified = ?, embedding = ?
+                    WHERE id = ?
+                `).run(
+                    mergedContent,
+                    mergedContent.slice(0, 280),
+                    updatedImportance,
+                    updatedScore,
+                    1,
+                    tags,
+                    now,
+                    JSON.stringify(embedding),
+                    existing.id
+                );
+                this.upsertEmbedding(existing.id, embedding, now, now, 0);
+                this.relinkEntities(existing.id, input.entities, input.context, now);
+            })();
             return { memoryId: existing.id, action: 'updated' };
         }
 
@@ -77,28 +79,27 @@ export class MemoryService {
         const name = this.buildMemoryName(input.type, input.entities);
         const tags = JSON.stringify(this.buildTags(input.type, input.entities));
 
-        this.db.prepare(`
-            INSERT INTO nodes
-            (id, type, subtype, name, content, content_preview, importance, score, freshness, embedding, category, tags, auto_indexed, created_at, modified)
-            VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-        `).run(
-            memoryId,
-            input.type,
-            name,
-            input.content,
-            input.content.slice(0, 280),
-            input.importance,
-            input.relevance,
-            1,
-            JSON.stringify(embedding),
-            'memory_lifecycle',
-            tags,
-            now,
-            now
-        );
-
-        this.upsertEmbedding(memoryId, embedding, now, now, 0);
-        this.relinkEntities(memoryId, input.entities, input.context, now);
+        // Envolve o insert em uma transação atômica
+        this.db.transaction(() => {
+            this.db.prepare(`
+                INSERT INTO nodes (id, type, subtype, name, content, content_preview, importance, score, embedding, tags, freshness, auto_indexed, created_at, modified)
+                VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            `).run(
+                memoryId,
+                input.type,
+                name,
+                input.content,
+                input.content.slice(0, 280),
+                input.importance,
+                input.relevance,
+                JSON.stringify(embedding),
+                tags,
+                now,
+                now
+            );
+            this.upsertEmbedding(memoryId, embedding, now, now, 0);
+            this.relinkEntities(memoryId, input.entities, input.context, now);
+        })();
         return { memoryId, action: 'inserted' };
     }
 

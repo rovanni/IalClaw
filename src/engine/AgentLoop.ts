@@ -59,6 +59,7 @@ export type ExecutionContext = {
     toolsFailed: Map<string, number>;
     lastToolResult: string | null;
     planTaskType: TaskType | null;
+    currentStepIndex?: number;
 };
 
 export type StepValidation = {

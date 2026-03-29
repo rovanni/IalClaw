@@ -386,12 +386,51 @@ export class TaskContextManager {
     }
 }
 
-// Singleton para uso global
-let taskContextManagerInstance: TaskContextManager | null = null;
+// ═══════════════════════════════════════════════════════════════════════
+// SINGLETON THREAD-SAFE
+// Evita race conditions na inicialização do singleton
+// ═══════════════════════════════════════════════════════════════════════
 
+let taskContextManagerInstance: TaskContextManager | null = null;
+let initializationLock = false;
+
+/**
+ * Obtém a instância singleton do TaskContextManager.
+ * Thread-safe: garante inicialização única mesmo com chamadas concorrentes.
+ * 
+ * IMPORTANTE: Usa double-check locking para evitar race conditions.
+ */
 export function getTaskContextManager(): TaskContextManager {
+    // Fast path: já inicializado
+    if (taskContextManagerInstance) {
+        return taskContextManagerInstance;
+    }
+    
+    // Double-check locking para thread-safety
+    if (!initializationLock) {
+        initializationLock = true;
+        try {
+            if (!taskContextManagerInstance) {
+                taskContextManagerInstance = new TaskContextManager();
+            }
+        } finally {
+            initializationLock = false;
+        }
+    }
+    
+    // Garantir retorno mesmo em edge cases
     if (!taskContextManagerInstance) {
         taskContextManagerInstance = new TaskContextManager();
     }
+    
     return taskContextManagerInstance;
+}
+
+/**
+ * Reseta o singleton (USAR APENAS EM TESTES).
+ * CUIDADO: Pode causar inconsistência se usado em produção.
+ */
+export function resetTaskContextManager(): void {
+    taskContextManagerInstance = null;
+    initializationLock = false;
 }

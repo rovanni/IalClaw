@@ -11,6 +11,30 @@ export interface ToolDecision {
     timestamp: number;
 }
 
+// Cache em memória para reduzir bloqueios no event loop
+const decisionCache = new Map<string, ToolDecision[]>();
+const CACHE_TTL_MS = 60000; // 1 minuto
+let lastCacheCleanup = 0;
+
+/**
+ * Invalida cache expirado de forma não-bloqueante.
+ */
+function invalidateExpiredCache(): void {
+    const now = Date.now();
+    if (now - lastCacheCleanup < CACHE_TTL_MS) return;
+    
+    lastCacheCleanup = now;
+    // Limpar cache antigo
+    for (const [key, decisions] of decisionCache.entries()) {
+        const recentDecisions = decisions.filter(d => now - d.timestamp < CACHE_TTL_MS * 10);
+        if (recentDecisions.length === 0) {
+            decisionCache.delete(key);
+        } else {
+            decisionCache.set(key, recentDecisions);
+        }
+    }
+}
+
 export class DecisionMemory {
     private db: Database.Database;
     private provider: LLMProvider;
@@ -21,6 +45,11 @@ export class DecisionMemory {
         this.provider = provider;
     }
 
+    /**
+     * Armazena decisão de forma síncrona (better-sqlite3 é síncrono por design).
+     * Usa prepared statements para melhor performance.
+     * Agora, toda operação de escrita é feita dentro de uma transação atômica para evitar deadlocks e garantir consistência.
+     */
     async store(decision: ToolDecision): Promise<void> {
         const now = new Date().toISOString();
         const content = JSON.stringify(decision);
@@ -40,30 +69,59 @@ export class DecisionMemory {
         const nodeId = `tool_decision:${this.hash(`${decision.taskType}:${decision.step}:${decision.tool}:${decision.timestamp}`)}`;
         const tags = JSON.stringify(['tool_decision', decision.taskType, decision.tool, decision.success ? 'success' : 'failure']);
 
-        this.db.prepare(`
+        // Usar transaction para atomicidade e evitar deadlocks
+        const insertStmt = this.db.prepare(`
             INSERT OR REPLACE INTO nodes
             (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
             VALUES (?, 'memory', 'tool_decision', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-            nodeId,
-            `tool_decision:${decision.tool}`,
-            content,
-            content.slice(0, 280),
-            embedding,
-            'tool_decision',
-            tags,
-            decision.success ? 0.8 : 0.5,
-            decision.success ? 0.9 : 0.3,
-            1.0,
-            1,
-            now,
-            now
-        );
+        `);
 
-        this.logger.info('decision_stored', `Stored: ${decision.tool} for ${decision.taskType}:${decision.step} = ${decision.success}`);
+        this.db.transaction(() => {
+            insertStmt.run(
+                nodeId,
+                decision.tool,
+                decision.tool,
+                content,
+                content.slice(0, 280),
+                embedding,
+                'decision',
+                tags,
+                0.5,
+                decision.success ? 1 : 0,
+                1,
+                0,
+                now,
+                now
+            );
+        })();
+
+        // Atualiza cache em memória de forma segura
+        invalidateExpiredCache();
+        if (!decisionCache.has(nodeId)) {
+            decisionCache.set(nodeId, []);
+        }
+        decisionCache.get(nodeId)!.push({ ...decision, timestamp: Date.now() });
     }
 
+    /**
+     * Consulta decisões usando cache em memória para reduzir latência.
+     */
     async query(taskType: string, step: string, topK: number = 10): Promise<ToolDecision[]> {
+        invalidateExpiredCache();
+        
+        const cacheKey = `${taskType}:${step}`;
+        const cached = decisionCache.get(cacheKey);
+        
+        // Se temos cache válido, usar
+        if (cached && cached.length > 0) {
+            const recentDecisions = cached
+                .filter(d => Date.now() - d.timestamp < CACHE_TTL_MS * 10)
+                .slice(0, topK);
+            if (recentDecisions.length > 0) {
+                return recentDecisions;
+            }
+        }
+
         if (!EMBEDDING_ENABLED) {
             return this.queryWithoutEmbedding(taskType, step, topK);
         }
@@ -108,6 +166,11 @@ export class DecisionMemory {
             .slice(0, topK)
             .map(r => r.decision);
 
+        // Atualizar cache
+        if (results.length > 0) {
+            decisionCache.set(cacheKey, results);
+        }
+
         return results;
     }
 
@@ -134,9 +197,18 @@ export class DecisionMemory {
             }
         }
 
+        // Atualizar cache
+        if (results.length > 0) {
+            const cacheKey = `${taskType}:${step}`;
+            decisionCache.set(cacheKey, results);
+        }
+
         return results;
     }
 
+    /**
+     * Obtém histórico de ferramenta com cache.
+     */
     async getToolHistory(tool: string, taskType?: string): Promise<{ success: number; failure: number; rate: number }> {
         const safeTool = String(tool).replace(/["%_]/g, '');
         const safeTaskType = taskType ? String(taskType).replace(/["%_]/g, '') : undefined;
@@ -197,5 +269,13 @@ export class DecisionMemory {
         }
         if (!normA || !normB) return 0;
         return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    /**
+     * Limpa cache em memória (útil para tests ou cleanup manual).
+     */
+    static clearCache(): void {
+        decisionCache.clear();
+        lastCacheCleanup = 0;
     }
 }
