@@ -5,13 +5,13 @@ const BASE_PATH = process.cwd();
 export function resolvePath(input: string): string {
   if (!input) return BASE_PATH;
 
-  if (path.isAbsolute(input)) {
-    return input;
+  let normalized = input;
+  
+  if (input.startsWith("/workspace")) {
+    normalized = input.replace("/workspace", "workspace");
+  } else if (!path.isAbsolute(input)) {
+    normalized = input;
   }
-
-  const normalized = input.startsWith("/workspace") 
-    ? input.replace("/workspace", "workspace") 
-    : input;
 
   const resolved = path.resolve(BASE_PATH, normalized);
 
