@@ -17,9 +17,22 @@ async function runSetup() {
     console.log("==========================================\n");
     console.log("Vamos configurar o seu assistente passo a passo. Se não souber o que colocar, apenas aperte Enter para usar o padrão.\n");
 
-    // Escolha de idioma
-    const lang = await question("0. Escolha o idioma [pt-BR/en-US] (padrão: pt-BR): ");
-    const finalLang = (lang.trim().toLowerCase() === "en-us" || lang.trim().toLowerCase() === "en") ? "en-US" : "pt-BR";
+
+    // Escolha de idioma interativa
+    console.log("0. Escolha o idioma:");
+    console.log("   1 - English (en-US)");
+    console.log("   2 - Português (pt-BR)");
+    let langOption = await question("Digite 1 ou 2 [padrão: 2]: ");
+    langOption = langOption.trim();
+    let finalLang = "pt-BR";
+    if (langOption === "1") {
+        finalLang = "en-US";
+    } else if (langOption === "2" || langOption === "") {
+        finalLang = "pt-BR";
+    } else {
+        console.log("Opção inválida, usando padrão: pt-BR");
+        finalLang = "pt-BR";
+    }
 
     const ollamaHost = await question("1. Qual o endereço do Ollama? [Padrão: http://127.0.0.1:11434]: ");
     const finalOllamaHost = ollamaHost.trim() || "http://127.0.0.1:11434";
