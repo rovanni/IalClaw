@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { createLogger } from '../shared/AppLogger';
+import { t } from '../i18n';
 import path from 'path';
 import os from 'os';
 
@@ -28,63 +29,37 @@ export interface OnboardingState {
 const ONBOARDING_STEPS = [
     {
         id: 'name',
-        question: 'Olá! 🐙 *Bem-vindo ao IalClaw*!\n\nPara eu lembrar de você, *qual o seu nome* e como gostaria de ser chamado(a)?',
+        question: () => t('onboarding.welcome'),
         parseMode: 'Markdown' as const,
         saveField: 'name'
     },
     {
         id: 'expertise',
-        question: 'Prazer, {name}! 🌟\n\n*Com o que você trabalha ou estuda?* (opcional)\n\nEx: Desenvolvedor, Pesquisador, Estudante de Direito, Designer...',
+        question: (data: any) => t('onboarding.prazer', { name: data.name || '' }),
         parseMode: 'Markdown' as const,
         saveField: 'expertise'
     },
     {
         id: 'goals',
-        question: `Entendido! 🚀\n\n*Quais são seus principais objetivos ao usar o IalClaw?* (escolha uma ou mais opções)
-
-1️⃣ 🧑‍💻 Desenvolvimento de código e automação
-2️⃣ 📚 Pesquisa e organização de conhecimento
-3️⃣ 📝 Criação de conteúdo e escrita
-4️⃣ 🗂️ Gestão de tarefas e produtividade
-5️⃣ 🔍 Busca e análise de informações
-6️⃣ 🎓 Aprendizado e tutoria
-7️⃣ Outro (responda com sua opção)`,
+        question: () => t('onboarding.objetivos'),
         parseMode: 'Markdown' as const,
         saveField: 'goals'
     },
     {
         id: 'response_style',
-        question: `Ótimo! 📋\n\n*Qual estilo de resposta você prefere?*
-
-⚡ *Conciso* - Respostas diretas ao ponto
-📖 *Detalhado* - Explicações completas com contexto
-🎯 *Adaptativo* - O agente decide conforme a complexidade
-
-(Responda com o número ou nome)`,
+        question: () => t('onboarding.estilo_resposta'),
         parseMode: 'Markdown' as const,
         saveField: 'response_style'
     },
     {
         id: 'learning_mode',
-        question: `Certo! 🧠\n\n*Você deseja que o IalClaw aprenda com suas interações para melhorar sugestões futuras?*
-
-✅ Sim, ativar memória de aprendizado
-❌ Não, manter apenas sessão atual
-🔄 Parcial - Aprender apenas com feedback explícito
-
-(Responda com o número)`,
+        question: () => t('onboarding.aprendizado'),
         parseMode: 'Markdown' as const,
         saveField: 'learning_mode'
     },
     {
         id: 'autonomy_level',
-        question: `Perfeito! 🎛️\n\n*Qual nível de autonomia você permite ao agente?*
-
-🔒 *Conservador* - Sempre perguntar antes de executar ações
-⚖️ *Balanceado* - Autonomia para tarefas rotineiras
-🚀 *Confiante* - Executar quando tiver alta confiança
-
-(Responda com o número ou nome)`,
+        question: () => t('onboarding.autonomia'),
         parseMode: 'Markdown' as const,
         saveField: 'autonomy_level'
     }
@@ -205,11 +180,9 @@ export class OnboardingService {
         if (step >= ONBOARDING_STEPS.length) return null;
 
         const stepConfig = ONBOARDING_STEPS[step];
-        let question = stepConfig.question;
-
-        if (data.name) {
-            question = question.replace('{name}', data.name);
-        }
+        const question = typeof stepConfig.question === 'function' 
+            ? stepConfig.question(data) 
+            : stepConfig.question;
 
         return {
             question,
@@ -296,38 +269,34 @@ export class OnboardingService {
     }
 
     private generateWelcomeMessage(data: Partial<UserProfile>): string {
-        const name = data.name || 'Usuário';
-        const styleText = data.response_style === 'concise' ? 'concisa' : data.response_style === 'detailed' ? 'detalhada' : 'adaptativa';
-        const learningText = data.learning_mode === 'enabled' ? 'ativada' : data.learning_mode === 'disabled' ? 'desativada' : 'parcial';
-        const autonomyText = data.autonomy_level === 'conservative' ? 'conservador' : data.autonomy_level === 'confident' ? 'confiante' : 'balanceado';
+        const name = data.name || t('onboarding.default_name');
+        const styleText = data.response_style === 'concise' ? t('onboarding.style.concise') : data.response_style === 'detailed' ? t('onboarding.style.detailed') : t('onboarding.style.adaptive');
+        const learningText = data.learning_mode === 'enabled' ? t('onboarding.learning.enabled') : data.learning_mode === 'disabled' ? t('onboarding.learning.disabled') : t('onboarding.learning.partial');
+        const autonomyText = data.autonomy_level === 'conservative' ? t('onboarding.autonomy.conservative') : data.autonomy_level === 'confident' ? t('onboarding.autonomy.confident') : t('onboarding.autonomy.balanced');
 
-        let suggestionText = 'me ajude com uma tarefa';
+        let suggestionText = t('onboarding.suggestion.default');
         if (data.goals) {
             try {
                 const goals = JSON.parse(data.goals);
-                if (goals.includes('desenvolvimento_codigo')) {
-                    suggestionText = 'crie um script para automatizar algo';
-                } else if (goals.includes('pesquisa_conhecimento')) {
-                    suggestionText = 'pesquise sobre um tema';
-                } else if (goals.includes('criacao_conteudo')) {
-                    suggestionText = 'ajude-me a escrever um texto';
+                if (goals.includes('desenvolvimento_codigo') || goals.includes('code_development')) {
+                    suggestionText = t('onboarding.suggestion.code');
+                } else if (goals.includes('pesquisa_conhecimento') || goals.includes('research')) {
+                    suggestionText = t('onboarding.suggestion.research');
+                } else if (goals.includes('criacao_conteudo') || goals.includes('content')) {
+                    suggestionText = t('onboarding.suggestion.content');
                 }
             } catch {
                 // ignore
             }
         }
 
-        return `✨ *Pronto, ${name}!* 
-
-Configurei o IalClaw para você:
-• 🎯 Estilo de resposta: *${styleText}*
-• 🧠 Aprendizado: *${learningText}*
-• 🎛️ Autonomia: *${autonomyText}*
-• 📁 Workspace: \`${this.defaultWorkspace}\`
-
-_Dica: Digite /help para ver os comandos disponíveis_
-_ou /profile para ver/editar seu perfil_
-
-Vamos começar? Me peça: "${suggestionText}" 🚀`;
+        return t('onboarding.pronto', {
+            name,
+            styleText,
+            learningText,
+            autonomyText,
+            workspace: this.defaultWorkspace,
+            suggestionText
+        });
     }
 }
