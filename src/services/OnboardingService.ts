@@ -1,7 +1,10 @@
 // Classificação de intenção para onboarding adaptativo
+// Permite campos extras como '__skip__' em Partial<UserProfile>
+type UserProfileWithSkip = Partial<UserProfile> & { [key: string]: any };
+
 export function classificarEntrada(input: string): Partial<UserProfile> {
     const resposta = input.trim().toLowerCase();
-    const result: Partial<UserProfile> = {};
+    const result: UserProfileWithSkip = {};
 
     // Estilo de resposta
     if (/(conciso|curto|resumido|1|short|concise)/i.test(resposta)) {
@@ -128,8 +131,6 @@ const ONBOARDING_STEPS = [
     }
 ];
 
-import { classificarEntrada } from './OnboardingService';
-
 export class OnboardingService {
     private db: Database.Database;
     private logger = createLogger('OnboardingService');
@@ -200,8 +201,8 @@ export class OnboardingService {
         }
 
         // Classificação adaptativa
-        const campos = classificarEntrada(answer);
-        if (campos['__skip__']) {
+        const campos: UserProfileWithSkip = classificarEntrada(answer);
+        if (campos && campos['__skip__']) {
             // Usuário optou por pular
             return this.getNextAdaptiveQuestion(state.data);
         }
