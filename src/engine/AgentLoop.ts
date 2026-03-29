@@ -6,6 +6,8 @@ import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
 import { getTaskContextManager, TaskContext } from '../core/context';
+import { getPlanExecutionValidator, PlanExecutionValidator } from '../core/validation/PlanExecutionValidator';
+import { getDecisionHandler, DecisionHandler, DecisionRequest } from '../core/validation/DecisionHandler';
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
@@ -194,6 +196,8 @@ export class AgentLoop {
     
     // Gerenciamento de contexto contínuo
     private taskContextManager = getTaskContextManager();
+    private planValidator = getPlanExecutionValidator();
+    private decisionHandler = getDecisionHandler();
 
     /**
      * Verifica se tem todos os parâmetros necessários para o tipo de tarefa.
@@ -2285,5 +2289,112 @@ FORMATO DE SAÍDA:
                 newMessages: messages
             };
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // INTEGRAÇÃO: PlanExecutionValidator + DecisionHandler
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Inicia validação de plano no início da execução.
+     */
+    startPlanValidation(): void {
+        this.planValidator.startPlan();
+        this.logger.debug('plan_validation_started', '[VALIDATION] Iniciando validação de plano');
+    }
+
+    /**
+     * Registra resultado de um step no validador.
+     */
+    recordStepResult(stepName: string, success: boolean, output?: string, error?: string, duration?: number): void {
+        this.planValidator.recordStep(stepName, success, output, error, duration);
+    }
+
+    /**
+     * Valida plano após execução e retorna decisão se necessário.
+     * Retorna null se sucesso total, DecisionRequest se precisar de intervenção.
+     */
+    validatePlanAndDecide(): DecisionRequest | null {
+        const planResult = this.planValidator.validatePlan();
+        
+        // Sucesso total → sem necessidade de decisão
+        if (planResult.success) {
+            this.logger.info('plan_validation_success', '[VALIDATION] Plano executado com sucesso', {
+                score: planResult.score.toFixed(2),
+                completed: planResult.completedSteps,
+                total: planResult.totalSteps
+            });
+            return null;
+        }
+
+        // Falha → verificar se precisa de intervenção
+        const decisionNeeded = this.decisionHandler.needsUserIntervention(planResult);
+        
+        if (!decisionNeeded) {
+            // Falha sem necessidade de intervenção (ex: contexto mudou)
+            this.logger.warn('plan_validation_no_intervention', '[VALIDATION] Falha sem necessidade de intervenção', {
+                score: planResult.score.toFixed(2),
+                reason: planResult.interruptReason
+            });
+            return null;
+        }
+
+        // Precisa de decisão do usuário
+        const decision = this.decisionHandler.analyzePlanResult(planResult);
+        
+        if (decision) {
+            this.logger.warn('plan_validation_decision_needed', '[VALIDATION] Decisão do usuário necessária', {
+                failed_steps: decision.failedSteps.length,
+                context: decision.context
+            });
+        }
+        
+        return decision;
+    }
+
+    /**
+     * Processa decisão do usuário após falha.
+     */
+    processUserDecision(decision: 'retry' | 'ignore' | 'adjust' | 'cancel'): { action: string; retrySteps?: string[] } {
+        const planResult = this.planValidator.validatePlan();
+        const result = this.decisionHandler.processUserDecision(decision, planResult);
+        
+        this.logger.info('user_decision_processed', '[VALIDATION] Decisão processada', {
+            decision,
+            action: result.action,
+            retrySteps: result.retrySteps
+        });
+        
+        // Resetar contador para nova tentativa
+        if (decision === 'retry') {
+            this.planValidator.reset();
+            this.decisionHandler.reset();
+        }
+        
+        return {
+            action: result.action,
+            retrySteps: result.retrySteps
+        };
+    }
+
+    /**
+     * Retorna relatório de validação para o usuário.
+     */
+    getValidationReport(): string {
+        const planResult = this.planValidator.validatePlan();
+        return this.decisionHandler.generateUserReport(planResult);
+    }
+
+    /**
+     * Retorna estatísticas da execução.
+     */
+    getExecutionStats(): { completed: number; failed: number; total: number; score: number } {
+        const stats = this.planValidator.getStats();
+        return {
+            completed: stats.successSteps,
+            failed: stats.failedSteps,
+            total: stats.totalSteps,
+            score: stats.totalSteps > 0 ? stats.validSteps / stats.totalSteps : 0
+        };
     }
 }

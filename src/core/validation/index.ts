@@ -14,5 +14,6 @@ export {
     getDecisionHandler,
     type DecisionOption,
     type DecisionRequest,
-    type DecisionResult
+    type DecisionResult,
+    type FailureClassification
 } from './DecisionHandler';

@@ -286,6 +286,7 @@
   "plan.interrupted.unknown": "Plano interrompido por motivo desconhecido.",
   "decision.total_failure": "Não consegui executar nenhuma etapa.\n\nProblemas encontrados:\n{{steps}}\n\nO que deseja fazer?",
   "decision.partial_failure": "Concluí {{completed}} de {{total}} etapas, mas algumas falharam:\n\n{{steps}}\n\nO que deseja fazer?",
+  "decision.max_retries_reached": "⚠️ Limite de tentativas atingido ({{count}} tentativas).\n\nNão foi possível concluir a tarefa automaticamente.",
   "decision.option.retry": "🔁 Tentar novamente",
   "decision.option.retry_desc": "Repetir as etapas que falharam",
   "decision.option.ignore": "⚠️ Ignorar erros",

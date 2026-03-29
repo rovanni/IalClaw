@@ -28,43 +28,155 @@ export interface DecisionResult {
     ignoreErrors?: boolean;
 }
 
+export interface FailureClassification {
+    type: 'context' | 'execution' | 'logic' | 'system';
+    description: string;
+    suggestedAction: 'adjust' | 'retry' | 'cancel';
+}
+
 export class DecisionHandler {
     private logger = createLogger('DecisionHandler');
+    
+    // Limite de decisões por tarefa (anti-loop)
+    private readonly MAX_DECISIONS = 3;
+    private decisionCount: number = 0;
+    private lastDecisionType?: 'retry' | 'ignore' | 'adjust' | 'cancel';
 
     /**
      * Analisa resultado do plano e decide se precisa de intervenção do usuário.
      */
     analyzePlanResult(planResult: PlanValidationResult): DecisionRequest | null {
+        // ═══════════════════════════════════════════════════════════════════
+        // ANTI-LOOP: Limite de decisões por tarefa
+        // ═══════════════════════════════════════════════════════════════════
+        if (this.decisionCount >= this.MAX_DECISIONS) {
+            this.logger.error('max_decisions_reached', `[DECISION] Limite de decisões atingido (count=${this.decisionCount}, max=${this.MAX_DECISIONS})`);
+            return {
+                type: 'decision',
+                message: t('decision.max_retries_reached', {
+                    count: this.decisionCount
+                }),
+                failedSteps: planResult.failedSteps,
+                completedSteps: planResult.completedSteps,
+                totalSteps: planResult.totalSteps,
+                options: [
+                    { id: 'cancel', label: t('decision.option.cancel'), description: t('decision.option.cancel_desc') }
+                ],
+                context: 'max_decisions_reached'
+            };
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
         // Sucesso total → sem necessidade de decisão
+        // ═══════════════════════════════════════════════════════════════════
         if (planResult.success) {
             this.logger.info('plan_success', '[DECISION] Plano executado com sucesso');
             return null;
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // Classificar tipo de falha para sugerir ação adequada
+        // ═══════════════════════════════════════════════════════════════════
+        const failureClassification = this.classifyFailure(planResult);
+        this.logger.info('failure_classified', '[DECISION] Falha classificada', {
+            type: failureClassification.type,
+            suggested: failureClassification.suggestedAction
+        });
+
+        // ═══════════════════════════════════════════════════════════════════
         // Falha total → sem steps completos
+        // ═══════════════════════════════════════════════════════════════════
         if (planResult.completedSteps === 0) {
             this.logger.warn('plan_total_failure', '[DECISION] Plano falhou completamente');
-            return this.createTotalFailureDecision(planResult);
+            return this.createTotalFailureDecision(planResult, failureClassification);
         }
 
+        // ═══════════════════════════════════════════════════════════════════
         // Falha parcial → alguns steps falharam
+        // ═══════════════════════════════════════════════════════════════════
         this.logger.warn('plan_partial_failure', '[DECISION] Plano falhou parcialmente', {
             completed: planResult.completedSteps,
             total: planResult.totalSteps,
             failed: planResult.failedSteps.length
         });
 
-        return this.createPartialFailureDecision(planResult);
+        return this.createPartialFailureDecision(planResult, failureClassification);
+    }
+
+    /**
+     * Classifica o tipo de falha para sugerir ação adequada.
+     */
+    private classifyFailure(planResult: PlanValidationResult): FailureClassification {
+        const failedSteps = planResult.failedSteps;
+        
+        // Verificar se falhas são de contexto (falta de input)
+        const contextFailures = failedSteps.filter(f => 
+            f.error?.includes('context') || 
+            f.error?.includes('input') ||
+            f.error?.includes('source') ||
+            f.error?.includes('arquivo') ||
+            f.error?.includes('file')
+        );
+        
+        if (contextFailures.length > 0) {
+            return {
+                type: 'context',
+                description: 'Falta de contexto ou input',
+                suggestedAction: 'adjust'
+            };
+        }
+        
+        // Verificar se falhas são de execução (comando, tool)
+        const executionFailures = failedSteps.filter(f =>
+            f.error?.includes('command') ||
+            f.error?.includes('tool') ||
+            f.error?.includes('exec') ||
+            f.error?.includes('timeout')
+        );
+        
+        if (executionFailures.length > 0) {
+            return {
+                type: 'execution',
+                description: 'Erro de execução',
+                suggestedAction: 'retry'
+            };
+        }
+        
+        // Verificar se falhas são de sistema
+        const systemFailures = failedSteps.filter(f =>
+            f.error?.includes('network') ||
+            f.error?.includes('connection') ||
+            f.error?.includes('permission') ||
+            f.error?.includes('memory')
+        );
+        
+        if (systemFailures.length > 0) {
+            return {
+                type: 'system',
+                description: 'Erro de sistema',
+                suggestedAction: 'cancel'
+            };
+        }
+        
+        // Default: falha de lógica
+        return {
+            type: 'logic',
+            description: 'Falha de lógica do plano',
+            suggestedAction: 'adjust'
+        };
     }
 
     /**
      * Cria decisão para falha total (nenhum step completou).
      */
-    private createTotalFailureDecision(planResult: PlanValidationResult): DecisionRequest {
+    private createTotalFailureDecision(planResult: PlanValidationResult, classification: FailureClassification): DecisionRequest {
         const failedSteps = planResult.failedSteps;
         const errorMessages = failedSteps
             .map(f => `• ${f.name}: ${f.error || 'erro desconhecido'}`)
             .join('\n');
+
+        // Opções baseadas na classificação da falha
+        const options = this.getOptionsForFailureType(classification);
 
         return {
             type: 'decision',
@@ -75,15 +187,15 @@ export class DecisionHandler {
             failedSteps,
             completedSteps: 0,
             totalSteps: planResult.totalSteps,
-            options: this.getOptionsForTotalFailure(),
-            context: 'total_failure'
+            options,
+            context: classification.type
         };
     }
 
     /**
      * Cria decisão para falha parcial (alguns steps completaram).
      */
-    private createPartialFailureDecision(planResult: PlanValidationResult): DecisionRequest {
+    private createPartialFailureDecision(planResult: PlanValidationResult, classification: FailureClassification): DecisionRequest {
         const failedSteps = planResult.failedSteps;
         const completedSteps = planResult.completedSteps;
         const totalSteps = planResult.totalSteps;
@@ -92,6 +204,9 @@ export class DecisionHandler {
         const failedDetails = failedSteps
             .map(f => `• ${f.name}: ${f.error || 'falhou'}`)
             .join('\n');
+
+        // Opções baseadas na classificação da falha
+        const options = this.getOptionsForFailureType(classification);
 
         return {
             type: 'decision',
@@ -103,9 +218,41 @@ export class DecisionHandler {
             failedSteps,
             completedSteps,
             totalSteps,
-            options: this.getOptionsForPartialFailure(),
-            context: 'partial_failure'
+            options,
+            context: classification.type
         };
+    }
+
+    /**
+     * Retorna opções baseadas no tipo de falha.
+     */
+    private getOptionsForFailureType(classification: FailureClassification): DecisionOption[] {
+        switch (classification.type) {
+            case 'context':
+                // Falta de contexto → ajustar ou cancelar
+                return [
+                    { id: 'adjust', label: t('decision.option.adjust'), description: t('decision.option.adjust_desc') },
+                    { id: 'cancel', label: t('decision.option.cancel'), description: t('decision.option.cancel_desc') }
+                ];
+
+            case 'execution':
+                // Erro de execução → tentar novamente ou cancelar
+                return [
+                    { id: 'retry', label: t('decision.option.retry'), description: t('decision.option.retry_desc') },
+                    { id: 'cancel', label: t('decision.option.cancel'), description: t('decision.option.cancel_desc') }
+                ];
+
+            case 'system':
+                // Erro de sistema → cancelar
+                return [
+                    { id: 'cancel', label: t('decision.option.cancel'), description: t('decision.option.cancel_desc') }
+                ];
+
+            case 'logic':
+            default:
+                // Falha de lógica → todas as opções
+                return this.getOptionsForPartialFailure();
+        }
     }
 
     /**
@@ -161,11 +308,17 @@ export class DecisionHandler {
 
     /**
      * Processa a decisão do usuário.
+     * IMPORTANTE: Incrementa contador de decisões (anti-loop).
      */
     processUserDecision(decision: 'retry' | 'ignore' | 'adjust' | 'cancel', planResult: PlanValidationResult): DecisionResult {
+        // Incrementar contador (anti-loop)
+        this.decisionCount++;
+        this.lastDecisionType = decision;
+
         this.logger.info('decision_processed', '[DECISION] Usuário decidiu', {
             decision,
-            failedSteps: planResult.failedSteps.length
+            failedSteps: planResult.failedSteps.length,
+            decisionCount: this.decisionCount
         });
 
         switch (decision) {
@@ -197,6 +350,22 @@ export class DecisionHandler {
                     action: 'cancel'
                 };
         }
+    }
+
+    /**
+     * Reseta contador de decisões (para nova tarefa).
+     */
+    reset(): void {
+        this.decisionCount = 0;
+        this.lastDecisionType = undefined;
+        this.logger.debug('decision_reset', '[DECISION] Contador resetado');
+    }
+
+    /**
+     * Retorna contador atual (para debug).
+     */
+    getDecisionCount(): number {
+        return this.decisionCount;
     }
 
     /**
