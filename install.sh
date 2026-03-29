@@ -2,94 +2,69 @@
 clear
 set -e
 
-if [[ "${BASH_SOURCE[0]}" == *"/"* ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-else
-    SCRIPT_DIR="$(pwd)"
-fi
-
-cd "$SCRIPT_DIR"
-
-source "./i18n.sh"
+REPO_URL=${1:-"https://github.com/rovanni/IalClaw.git"}
 
 echo "=========================================="
 echo "    Instalando IalClaw Cognitive Agent    "
 echo "=========================================="
 
-REPO_URL=${1:-"https://github.com/rovanni/IalClaw.git"}
+echo "Verificando prerequisites..."
 
 if ! command -v git &> /dev/null; then
-    echo "[ERRO] $(t 'err.git_not_found')"
+    echo "[ERRO] Git nao encontrado. Instale antes de continuar."
     exit 1
 fi
 
 if ! command -v node &> /dev/null; then
-    echo "[ERRO] $(t 'err.node_not_found')"
+    echo "[ERRO] Node.js nao encontrado. Instale antes de continuar."
     exit 1
 fi
 
 NODE_VERSION=$(node -v | sed 's/v//g' | cut -d. -f1)
 
 if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "[ERRO] $(t 'err.node_version')"
+    echo "[ERRO] Node.js precisa ser versao 18 ou superior."
     exit 1
 fi
 
-if ! command -v ollama &> /dev/null; then
-    echo "[INFO] $(t 'err.ollama_missing')"
-    
-    if command -v tty >/dev/null 2>&1 && [ -c "$(tty 2>/dev/null)" ]; then
-        read -p "$(t 'prompt.ollama')" install_ollama < "$(tty)"
-    elif [ -c /dev/tty ]; then
-        read -p "$(t 'prompt.ollama')" install_ollama < /dev/tty
-    else
-        install_ollama="n"
-    fi
-    install_ollama=${install_ollama:-s}
+echo "Node.js OK (v$NODE_VERSION)"
 
+if ! command -v ollama &> /dev/null; then
+    echo "[INFO] Ollama nao encontrado."
+    read -p "Deseja instalar o Ollama? (s/n): " install_ollama
     if [[ "$install_ollama" =~ ^[sS]$ ]]; then
-        echo "$(t 'info.install_ollama')"
+        echo "Instalando Ollama..."
         curl -fsSL https://ollama.com/install.sh | sh
     else
-        echo "$(t 'info.skip_ollama')"
+        echo "Pulando instalacao do Ollama."
     fi
 else
-    echo "$(t 'info.ollama_found') ✔"
+    echo "Ollama ja instalado"
     ollama list || true
 fi
 
-if [ ! -d "ialclaw" ]; then
-    echo "$(t 'info.clone')"
-    git clone "$REPO_URL" ialclaw
-else
-    echo "$(t 'info.sync_attempt')"
-    if [ -d "ialclaw/.git" ]; then
-        GIT_STATUS=$(git -C ialclaw status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
-        if [ -n "$GIT_STATUS" ]; then
-            echo "[ERRO] $(t 'err.local_changes')"
-            echo "[ERRO] $(t 'err.resolve_git')"
-            echo "        cd ~/ialclaw"
-            echo "        git status"
-            echo "        git stash push -u -m 'ialclaw-install'"
-            echo "        git pull --ff-only"
-            exit 1
-        fi
+echo "Baixando IalClaw..."
 
-        if git -C ialclaw pull --ff-only; then
-            echo "$(t 'info.sync_done')"
-        else
-            echo "[ERRO] $(t 'err.update_auto')"
-            echo "[ERRO] $(t 'err.git_manual')"
+if [ ! -d "ialclaw" ]; then
+    git clone "$REPO_URL" ialclaw
+    cd ialclaw
+else
+    if [ -d "ialclaw/.git" ]; then
+        cd ialclaw
+        GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
+        if [ -n "$GIT_STATUS" ]; then
+            echo "[ERRO] Alteracoes locais detectadas."
+            echo "Resolva com: cd ialclaw && git stash && git pull"
             exit 1
         fi
+        git pull --ff-only
     else
-        echo "[ERRO] $(t 'err.not_git')"
-        echo "[ERRO] $(t 'err.rename_folder')"
+        echo "[ERRO] Pasta ialclaw existe mas nao e um repositorio git."
         exit 1
     fi
 fi
 
-cd ialclaw || { echo "[ERRO] $(t 'err.cant_access')"; exit 1; }
+source "./i18n.sh"
 
 chmod +x update.sh 2>/dev/null || true
 
