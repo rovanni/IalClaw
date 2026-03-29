@@ -20,22 +20,23 @@ export type OnboardingPayload = {
 };
 
 export class TelegramInputHandler {
-    private allowedUsers: Set<number>;
+    private allowedUsers: Set<string>;
     private logger = createLogger('TelegramInputHandler');
     private onboardingService: OnboardingService | null = null;
 
     constructor(onboardingService?: OnboardingService) {
         const ids = process.env.TELEGRAM_ALLOWED_USER_IDS || '';
-        this.allowedUsers = new Set(ids.split(',').map(id => parseInt(id.trim())));
+        this.allowedUsers = new Set(ids.split(',').map(id => id.trim()).filter(Boolean));
         this.onboardingService = onboardingService || null;
         this.logger.info('configured', t('log.telegram.input.configured'), {
-            allowed_users_count: Array.from(this.allowedUsers).filter((id) => !Number.isNaN(id)).length
+            allowed_users: Array.from(this.allowedUsers),
+            allowed_users_count: this.allowedUsers.size
         });
     }
 
     public isUserAllowed(ctx: Context): boolean {
         if (!ctx.from) return false;
-        return this.allowedUsers.has(ctx.from.id);
+        return this.allowedUsers.has(String(ctx.from.id));
     }
 
     public checkOnboarding(userId: string | number): OnboardingPayload | null {
