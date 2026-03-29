@@ -168,6 +168,8 @@ export class AgentLoop {
     private currentTaskConfidence: number = 0;
     private forcedTaskType: boolean = false;
     private stepValidations: number[] = [];
+    private createdPaths: Set<string> = new Set();
+    private actionTaken: boolean = false;
     private reclassificationAttempts: number = 0;
     private readonly MAX_RECLASSIFY_ATTEMPTS = 1;
     private readonly LOW_CONFIDENCE_THRESHOLD = 0.85;
@@ -177,7 +179,6 @@ export class AgentLoop {
     private lastStepResult: string = '';
     private mode: AgentMode = 'THINKING';
     private disableFollowUpQuestions: boolean = false;
-    private actionTaken: boolean = false;
     private refinementUsed: boolean = false;
     private readonly QUALITY_THRESHOLD = 0.5;
 
@@ -289,12 +290,14 @@ export class AgentLoop {
             lastToolResult: null,
             planTaskType: null
         };
-        this.executionMemory = [];
+        this.actionTaken = false;
         this.stepValidations = [];
+        this.createdPaths.clear();
+        let toolCallsCount = 0;
         this.reclassificationAttempts = 0;
+        this.executionMemory = [];
         this.mode = 'THINKING';
         this.disableFollowUpQuestions = false;
-        this.actionTaken = false;
         this.refinementUsed = false;
         this.previousConfidence = null;
         this.lowImprovementCount = 0;
@@ -965,6 +968,13 @@ export class AgentLoop {
 
                     let result = await this.registry.executeTool(execToolName, response.tool_call.args);
 
+                    // ═════════════════════════════════════════════════════════════
+                    // FIX: Garantir que resultados tipo objeto sejam stringificados
+                    // ═══════════════════════════════════════════════════════════════
+                    if (typeof result === 'object' && result !== null) {
+                        result = JSON.stringify(result, null, 2);
+                    }
+
                     const execPlan = this.executionContext.currentPlan;
                     const execStep = execPlan && execPlan.currentStepIndex < execPlan.steps.length
                         ? execPlan.steps[execPlan.currentStepIndex]
@@ -1053,6 +1063,11 @@ export class AgentLoop {
                             validation.reason
                         );
                     }
+
+                    // ═════════════════════════════════════════════════════════════
+                    // RASTREAMENTO DE ARQUIVOS CRIADOS
+                    // ═══════════════════════════════════════════════════════════════
+                    this.trackCreatedPath(execToolName, response.tool_call.args, result);
 
                     if (response.tool_call.args?.path) {
                         this.recordPathTried(response.tool_call.args.path);
@@ -1148,15 +1163,16 @@ export class AgentLoop {
                 messages.push(finalMsg);
                 newMessages.push(finalMsg);
                 const duration = Date.now() - startedAt;
+                const finalAnswer = this.appendCreatedFiles(safeAnswer);
                 this.logger.info('loop_completed', t('log.loop.completed'), {
                     duration_ms: duration,
                     iterations_used: i + 1,
                     tool_calls_count: toolCallsCount,
-                    answer_length: safeAnswer.length
+                    answer_length: finalAnswer.length
                 });
                 await emitProgress({ stage: 'completed', iteration: i + 1, duration_ms: duration });
                 this.logMemoryStats();
-                return { answer: safeAnswer, newMessages };
+                return { answer: finalAnswer, newMessages };
             }
 
             // Parada inteligente: se já há conteúdo suficiente acumulado
@@ -1233,13 +1249,14 @@ export class AgentLoop {
             const finalMsg: MessagePayload = { role: 'assistant', content: sanitized };
             newMessages.push(finalMsg);
             const duration = Date.now() - startedAt;
+            const finalAnswer = this.appendCreatedFiles(sanitized);
             this.logger.info('loop_completed_via_fallback', t('log.loop.completed_fallback'), {
                 duration_ms: duration,
-                answer_length: sanitized.length
+                answer_length: finalAnswer.length
             });
             await emitProgress({ stage: 'completed', duration_ms: duration });
             this.logMemoryStats();
-            return { answer: sanitized, newMessages };
+            return { answer: finalAnswer, newMessages };
         } catch (fallbackError: any) {
             this.logger.error('loop_fallback_failed', fallbackError, t('log.loop.fallback_failed'), {
                 duration_ms: Date.now() - startedAt
@@ -2561,5 +2578,64 @@ FORMATO DE SAÍDA:
         const sanitizedCategory = category.replace(/[^a-zA-Z0-9_-]/g, '_');
         const sanitizedItemName = itemName.replace(/[^a-zA-Z0-9_.-]/g, '_');
         return `${basePath}/${sanitizedCategory}/${sanitizedItemName}`;
+    }
+
+    /**
+     * Rastreia caminhos de arquivos criados com sucesso por ferramentas conhecidas.
+     */
+    private trackCreatedPath(toolName: string, args: any, result: string) {
+        try {
+            // Se o resultado indica erro, não rastrear
+            if (result.toLowerCase().includes('erro') || result.toLowerCase().includes('error')) return;
+
+            // 1. Extração por ferramentas estruturadas (WorkspaceTools)
+            if (toolName === 'workspace_save_artifact' || toolName === 'workspace_apply_diff') {
+                const data = JSON.parse(result);
+                if (data.success && data.data?.path) {
+                    this.createdPaths.add(data.data.path);
+                }
+            }
+
+            // 2. Extração por ferramentas de escrita direta (write_file, etc)
+            if (toolName === 'write_file' || toolName === 'write_skill_file') {
+                if (args.path) this.createdPaths.add(args.path);
+                else if (args.filename && args.skill_name) {
+                    // write_skill_file usa skill_name e filename
+                    const targetDir = String(args.target_dir || 'temp').toLowerCase() === 'public' ? 'public' : 'temp';
+                    this.createdPaths.add(`skills/${targetDir}/${args.skill_name}/${args.filename}`);
+                }
+            }
+
+            // 3. Extração por conversão (file_convert)
+            if (toolName === 'file_convert') {
+                const pathMatch = result.match(/Arquivo: (.*)/i);
+                if (pathMatch && pathMatch[1]) {
+                    this.createdPaths.add(pathMatch[1].trim());
+                }
+            }
+        } catch (e) {
+            // Ignorar erros de parsing
+        }
+    }
+
+    /**
+     * Acrescenta a lista de arquivos criados à resposta final, se necessário.
+     */
+    private appendCreatedFiles(answer: string): string {
+        if (this.createdPaths.size === 0) return answer;
+
+        const paths = Array.from(this.createdPaths);
+
+        // Verificar se os caminhos já estão mencionados na resposta
+        const missingPaths = paths.filter(p => !answer.includes(p));
+
+        if (missingPaths.length === 0) return answer;
+
+        let report = t('loop.created_files_section');
+        for (const p of missingPaths) {
+            report += t('loop.created_files_item', { path: p });
+        }
+
+        return `${answer.trimEnd()}${report}`;
     }
 }
