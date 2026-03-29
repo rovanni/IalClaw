@@ -5,7 +5,9 @@ set -e
 cd "$(dirname "$0")"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/i18n.sh"
+cd "$SCRIPT_DIR"
+
+source "./i18n.sh"
 
 RESET='\033[0m'
 BOLD='\033[1m'

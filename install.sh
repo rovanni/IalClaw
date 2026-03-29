@@ -3,7 +3,10 @@ clear
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/i18n.sh"
+
+cd "$SCRIPT_DIR"
+
+source "./i18n.sh"
 
 echo "=========================================="
 echo "    Instalando IalClaw Cognitive Agent    "
