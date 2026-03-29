@@ -2,9 +2,12 @@
 clear
 set -e
 
-cd "$(dirname "$0")"
+if [[ "${BASH_SOURCE[0]}" == *"/"* ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    SCRIPT_DIR="$(pwd)"
+fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 source "./i18n.sh"
