@@ -168,10 +168,12 @@ else {
     Write-Host (t "bootstrap.update_hint") -ForegroundColor Yellow
 }
 
-# -------------------------
-# DONE
-# -------------------------
 
+# Execução automática do setup interativo
+Write-Host "\nIniciando configuração interativa do ambiente..." -ForegroundColor Cyan
+cmd.exe /c "npm run setup"
+
+# DONE
 Write-Host (t "app.header_line") -ForegroundColor Cyan
 Write-Host " $(t 'done.success')" -ForegroundColor Green
 Write-Host ""
@@ -179,6 +181,7 @@ Write-Host (t "done.next_step") -ForegroundColor Yellow
 Write-Host " $(t 'done.step1')"
 Write-Host "    cd ialclaw" -ForegroundColor Gray
 Write-Host " $(t 'done.step2')"
+Write-Host "    npm run dev" -ForegroundColor Gray
 Write-Host " $(t 'done.step3')"
 Write-Host "    npx ts-node src/scripts/test-routing.ts" -ForegroundColor Gray
 Write-Host " $(t 'done.step4')"

@@ -96,17 +96,19 @@ else
     echo "[AVISO] $(t 'warn.update_repo')"
 fi
 
+
+# Execução automática do setup interativo
+echo "\nIniciando configuração interativa do ambiente..."
+npm run setup
+
 echo "=========================================="
 echo " $(t 'info.done')"
 echo ""
 echo " >> $(t 'info.next_step')"
 echo " 1. $(t 'info.access_folder')"
 echo "    cd ialclaw"
-echo " 2. $(t 'info.configure_env')"
-echo " 3. $(t 'info.validate_router')"
-echo "    npx ts-node src/scripts/test-routing.ts"
-echo " 4. $(t 'info.run_dev')"
+echo " 2. $(t 'info.run_dev')"
 echo "    npm run dev"
-echo " 5. $(t 'info.future_update')"
+echo " 3. $(t 'info.future_update')"
 echo "    bash update.sh"
 echo "=========================================="

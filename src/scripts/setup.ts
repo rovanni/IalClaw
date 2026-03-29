@@ -17,6 +17,10 @@ async function runSetup() {
     console.log("==========================================\n");
     console.log("Vamos configurar o seu assistente passo a passo. Se não souber o que colocar, apenas aperte Enter para usar o padrão.\n");
 
+    // Escolha de idioma
+    const lang = await question("0. Escolha o idioma [pt-BR/en-US] (padrão: pt-BR): ");
+    const finalLang = (lang.trim().toLowerCase() === "en-us" || lang.trim().toLowerCase() === "en") ? "en-US" : "pt-BR";
+
     const ollamaHost = await question("1. Qual o endereço do Ollama? [Padrão: http://127.0.0.1:11434]: ");
     const finalOllamaHost = ollamaHost.trim() || "http://127.0.0.1:11434";
 
@@ -32,6 +36,7 @@ async function runSetup() {
     const telegramId = await question("4. Cole aqui o seu ID do Telegram (opcional, ex: 8071707790): ");
 
     const envContent = `# Configurações do Provedor (Ollama local)
+APP_LANG=${finalLang}
 OLLAMA_HOST=${finalOllamaHost}
 
 # Modelo Principal
