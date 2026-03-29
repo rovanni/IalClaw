@@ -1,3 +1,64 @@
+// Classificação de intenção para onboarding adaptativo
+export function classificarEntrada(input: string): Partial<UserProfile> {
+    const resposta = input.trim().toLowerCase();
+    const result: Partial<UserProfile> = {};
+
+    // Estilo de resposta
+    if (/(conciso|curto|resumido|1|short|concise)/i.test(resposta)) {
+        result.response_style = 'concise';
+    } else if (/(detalhado|longo|explicativo|2|detailed|long)/i.test(resposta)) {
+        result.response_style = 'detailed';
+    } else if (/(adaptativo|auto|3|adaptive)/i.test(resposta)) {
+        result.response_style = 'adaptive';
+    }
+
+    // Modo de aprendizado
+    if (/(sim|yes|ativar|enable|memorizar|aprender|memória|memoria)/i.test(resposta)) {
+        result.learning_mode = 'enabled';
+    } else if (/(não|nao|no|desativar|disable|sem memória|sem memoria)/i.test(resposta)) {
+        result.learning_mode = 'disabled';
+    } else if (/(parcial|feedback|só feedback|apenas feedback|partial|feedback-only)/i.test(resposta)) {
+        result.learning_mode = 'feedback-only';
+    }
+
+    // Autonomia
+    if (/(conservador|baixo risco|conservative|1)/i.test(resposta)) {
+        result.autonomy_level = 'conservative';
+    } else if (/(balanceado|equilibrado|balanced|2)/i.test(resposta)) {
+        result.autonomy_level = 'balanced';
+    } else if (/(confiante|ousado|confident|3)/i.test(resposta)) {
+        result.autonomy_level = 'confident';
+    }
+
+    // Nome do usuário
+    if (/meu nome é|sou |chamo|name is|i am |i'm /i.test(input)) {
+        const nome = input.replace(/.*(meu nome é|sou|chamo|name is|i am|i'm)\s*/i, '').split(/[,.!\n]/)[0].trim();
+        if (nome.length > 1) result.name = nome;
+    }
+
+    // Nome do assistente
+    if (/seu nome é|te chamo de|assistant name is|call you /i.test(input)) {
+        const nome = input.replace(/.*(seu nome é|te chamo de|assistant name is|call you)\s*/i, '').split(/[,.!\n]/)[0].trim();
+        if (nome.length > 1) result.assistant_name = nome;
+    }
+
+    // Expertise/contexto
+    if (/(professor|engenheiro|dev|designer|médico|advogado|teacher|engineer|developer|doctor|lawyer)/i.test(resposta)) {
+        result.expertise = input;
+    }
+
+    // Objetivos/goals
+    if (/(meu objetivo|quero|preciso|busco|goal|i want|i need|my goal)/i.test(input)) {
+        result.goals = input;
+    }
+
+    // Pular
+    if (/pular|skip|depois|não quero|nao quero|next|proxima|próxima/i.test(resposta)) {
+        result['__skip__'] = true;
+    }
+
+    return result;
+}
 import Database from 'better-sqlite3';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
@@ -58,12 +119,7 @@ const ONBOARDING_STEPS = [
         parseMode: 'Markdown' as const,
         saveField: 'response_style'
     },
-    {
-        id: 'learning_mode',
-        question: () => t('onboarding.aprendizado'),
-        parseMode: 'Markdown' as const,
-        saveField: 'learning_mode'
-    },
+    // Removido passo de pergunta sobre aprendizado (learning_mode)
     {
         id: 'autonomy_level',
         question: () => t('onboarding.autonomia'),
@@ -71,6 +127,8 @@ const ONBOARDING_STEPS = [
         saveField: 'autonomy_level'
     }
 ];
+
+import { classificarEntrada } from './OnboardingService';
 
 export class OnboardingService {
     private db: Database.Database;
@@ -122,20 +180,18 @@ export class OnboardingService {
         if (this.isOnboardingCompleted(userId)) {
             return null;
         }
-
+        // Estado inicial vazio
         const state: OnboardingState = {
             step: 0,
             userId,
             data: {}
         };
-
         this.states.set(userId, state);
-        return this.getQuestionForStep(0, state.data);
+        return this.getNextAdaptiveQuestion(state.data);
     }
 
     public processOnboardingAnswer(userId: string, answer: string): { question?: string; parseMode: 'Markdown' | 'HTML'; completed?: boolean; welcomeMessage?: string } | null {
         const state = this.states.get(userId);
-
         if (!state) {
             if (!this.isOnboardingCompleted(userId)) {
                 return this.startOnboarding(userId);
@@ -143,36 +199,51 @@ export class OnboardingService {
             return null;
         }
 
-        const currentStep = ONBOARDING_STEPS[state.step];
-        const fieldName = currentStep.saveField;
-
-        if (fieldName === 'response_style') {
-            state.data[fieldName] = this.parseResponseStyle(answer);
-        } else if (fieldName === 'learning_mode') {
-            state.data[fieldName] = this.parseLearningMode(answer);
-        } else if (fieldName === 'autonomy_level') {
-            state.data[fieldName] = this.parseAutonomyLevel(answer);
-        } else if (fieldName === 'goals') {
-            state.data[fieldName] = this.parseGoals(answer);
-        } else {
-            (state.data as any)[fieldName] = answer.trim();
+        // Classificação adaptativa
+        const campos = classificarEntrada(answer);
+        if (campos['__skip__']) {
+            // Usuário optou por pular
+            return this.getNextAdaptiveQuestion(state.data);
         }
+        Object.assign(state.data, campos);
 
-        state.step++;
-
-        if (state.step >= ONBOARDING_STEPS.length) {
+        // Verifica se já tem dados suficientes (mínimo: nome OU qualquer outro campo)
+        const preenchidos = Object.keys(state.data).filter(k => state.data[k as keyof UserProfile]);
+        if (preenchidos.length >= 3 || preenchidos.includes('name')) {
             this.completeOnboarding(state);
             const welcomeMsg = this.generateWelcomeMessage(state.data);
             this.states.delete(userId);
             return { completed: true, welcomeMessage: welcomeMsg, parseMode: 'Markdown' };
         }
 
-        const nextQuestion = this.getQuestionForStep(state.step, state.data);
-        if (nextQuestion) {
-            return { ...nextQuestion, completed: false };
-        }
+        // Pergunta próxima informação relevante
+        return this.getNextAdaptiveQuestion(state.data);
+    }
 
-        return null;
+    // Nova função: sugere próxima pergunta relevante, sempre opcional
+    private getNextAdaptiveQuestion(data: Partial<UserProfile>): { question: string; parseMode: 'Markdown' | 'HTML' } {
+        // Lista de campos e perguntas
+        const perguntas: { campo: keyof UserProfile, texto: string }[] = [
+            { campo: 'name', texto: t('onboarding.welcome_optional') },
+            { campo: 'assistant_name', texto: t('onboarding.assistant_name_optional') },
+            { campo: 'expertise', texto: t('onboarding.prazer_optional') },
+            { campo: 'goals', texto: t('onboarding.objetivos_optional') },
+            { campo: 'response_style', texto: t('onboarding.estilo_resposta_optional') },
+            { campo: 'autonomy_level', texto: t('onboarding.autonomia_optional') }
+        ];
+        for (const p of perguntas) {
+            if (!data[p.campo]) {
+                return {
+                    question: `${p.texto}\n\n_${t('onboarding.optional_hint')}_`,
+                    parseMode: 'Markdown'
+                };
+            }
+        }
+        // Se tudo preenchido, finaliza
+        return {
+            question: t('onboarding.finalizacao'),
+            parseMode: 'Markdown'
+        };
     }
 
     public getOnboardingState(userId: string): OnboardingState | undefined {
@@ -270,7 +341,7 @@ export class OnboardingService {
             state.data.expertise || null,
             state.data.goals || null,
             state.data.response_style || 'adaptive',
-            state.data.learning_mode || 'feedback-only',
+            'enabled', // Sempre ativado
             state.data.autonomy_level || 'balanced',
             this.defaultWorkspace,
             'system',
