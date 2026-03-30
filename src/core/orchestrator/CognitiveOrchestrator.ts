@@ -28,6 +28,7 @@ export interface CognitiveInput {
         projectId?: string;
         autonomyLevel?: AutonomyLevel;
     };
+    isRetry?: boolean;
 }
 
 export interface CognitiveDecision {
@@ -91,8 +92,9 @@ export class CognitiveOrchestrator {
         const pending = currentSession ? getPendingAction(currentSession) : null;
         const isInstalling = pending?.status === 'executing';
         const isRetrying = pending?.status === 'completed' && (currentSession?.retry_count ?? 0) > 0;
+        const isExplicitRetry = input.isRetry === true;
 
-        const capabilityGap = (isInstalling || isRetrying)
+        const capabilityGap = (isInstalling || isRetrying || isExplicitRetry)
             ? { hasGap: false, status: 'available' } as any
             : this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
 
@@ -142,15 +144,29 @@ export class CognitiveOrchestrator {
                 [AutonomyDecision.ASK]: "low_confidence_fallback"
             };
 
-            return {
-                strategy: CognitiveStrategy.ASK,
-                confidence: aggregatedConfidence.score,
-                reason: strategyMap[autonomyDecision] || "autonomy_engine_ask",
-                route: routeDecision,
-                autonomy: autonomyDecision,
-                memoryHits,
-                aggregatedConfidence
-            };
+            // Override ASK fallback during execution continuity
+            const hasRecentCompletion = currentSession?.lastCompletedAction &&
+                (Date.now() - currentSession.lastCompletedAction.completedAt < 30000);
+
+            if (isExplicitRetry || hasRecentCompletion) {
+                this.logger.info('overriding_ask_for_continuation', '[CONTINUITY] Overriding ASK fallback during execution continuity', {
+                    reason: strategyMap[autonomyDecision] || 'autonomy_engine_ask',
+                    isRetry: isExplicitRetry,
+                    hasRecentCompletion: !!hasRecentCompletion,
+                    originalRequest: currentSession?.lastCompletedAction?.originalRequest
+                });
+                // Fall through to TOOL/LLM decision instead of returning ASK
+            } else {
+                return {
+                    strategy: CognitiveStrategy.ASK,
+                    confidence: aggregatedConfidence.score,
+                    reason: strategyMap[autonomyDecision] || "autonomy_engine_ask",
+                    route: routeDecision,
+                    autonomy: autonomyDecision,
+                    memoryHits,
+                    aggregatedConfidence
+                };
+            }
         }
 
         if (autonomyDecision === AutonomyDecision.CONFIRM) {

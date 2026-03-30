@@ -44,6 +44,11 @@ export interface SessionContext {
     task_confidence?: number;
     retry_count?: number;
     lastAccessedAt?: number;
+    lastCompletedAction?: {
+        type: string;
+        originalRequest: string;
+        completedAt: number;
+    };
 }
 
 export type Session = SessionContext;
@@ -201,6 +206,13 @@ export class SessionManager {
         session.pending_actions = session.pending_actions.filter(
             action => action.expires_at > now
         );
+
+        // Expirar lastCompletedAction stale (>30s)
+        if (session.lastCompletedAction) {
+            if (now - session.lastCompletedAction.completedAt > 30000) {
+                session.lastCompletedAction = undefined;
+            }
+        }
 
         return session;
     }

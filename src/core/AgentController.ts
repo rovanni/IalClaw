@@ -328,7 +328,8 @@ export class AgentController {
         sessionId: string,
         userQuery: string,
         onProgress?: (event: AgentProgressEvent) => Promise<void> | void,
-        shouldStop?: () => boolean
+        shouldStop?: () => boolean,
+        isRetry: boolean = false
     ): Promise<string> {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
@@ -343,6 +344,14 @@ export class AgentController {
 
         let effectiveUserQuery = userQuery;
         this.resolveSessionLanguage(userQuery, session);
+
+        // Guard: evitar retry sem contexto válido (edge-case de dupla execução)
+        if (isRetry && !session.lastCompletedAction) {
+            logger.warn('retry_without_context', '[CONTINUITY] Retry solicitado mas lastCompletedAction ausente, tratando como query normal', {
+                query: userQuery.slice(0, 80)
+            });
+            isRetry = false;
+        }
 
         // ── Roteamento de comandos (antes do LLM) ──────────────────────────
         const commandResponse = this.handleCommand(userQuery, sessionId);
@@ -418,10 +427,27 @@ export class AgentController {
 
                         pending.status = 'completed';
                         pending.completedAt = Date.now();
-                        // Após instalar, retomar o query original
-                        effectiveUserQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
-                        // Limpar ação pendente após conclusão para evitar estado stale no retry
+
+                        // Persist completion state for execution continuity
+                        const originalQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
+                        session.lastCompletedAction = {
+                            type: pending.type,
+                            originalRequest: originalQuery,
+                            completedAt: Date.now()
+                        };
+
+                        // Clear pending action and reset retry count
                         clearPendingAction(session, pending.id);
+                        session.retry_count = 0;
+
+                        logger.info('execution_continuity_triggered', '[CONTINUITY] Auto-retry após instalação bem-sucedida', {
+                            originalRequest: originalQuery,
+                            capability: pending.payload.capability,
+                            retry: true
+                        });
+
+                        // Auto-retry: reprocess original query through full pipeline
+                        return await this.runConversation(sessionId, originalQuery, onProgress, shouldStop, true);
                     } else {
                         session.retry_count = 0; // Reset para ações não-capability
                         pending.status = 'executing';
@@ -545,7 +571,8 @@ export class AgentController {
             context: {
                 sessionId,
                 projectId: session?.current_project_id,
-            }
+            },
+            isRetry
         });
 
         this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {
@@ -756,8 +783,18 @@ Nao peca confirmacao redundante.
             cognitive_stage: 'result',
             result: 'SUCCESS',
             duration_ms: Date.now() - startedAt,
-            response_length: result.answer.length
+            response_length: result.answer.length,
+            isRetry
         });
+
+        // Clear lastCompletedAction after successful final response
+        if (session.lastCompletedAction) {
+            logger.info('execution_continuity_completed', '[CONTINUITY] Tarefa original concluída com sucesso, limpando estado', {
+                originalRequest: session.lastCompletedAction.originalRequest,
+                isRetry
+            });
+            session.lastCompletedAction = undefined;
+        }
 
         if (this.skillResolution) {
             this.skillResolution.clearPendingList();

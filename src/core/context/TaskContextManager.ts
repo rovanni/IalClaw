@@ -8,6 +8,7 @@
 import { TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { t } from '../../i18n';
+import { SessionManager } from '../../shared/SessionManager';
 
 export interface TaskContext {
     type: TaskType;
@@ -31,15 +32,15 @@ export interface AskResult {
 export class TaskContextManager {
     private contexts = new Map<string, TaskContext>();
     private logger = createLogger('TaskContextManager');
-    
+
     // Tempo de inatividade antes de considerar nova tarefa (5 minutos para continuidade)
     private readonly CONTEXT_TTL_MS = 5 * 60 * 1000;  // 5 minutos
     private readonly INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;  // 15 minutos
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // GESTÃO DE ESTADO
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     /**
      * Retorna o contexto para um chat específico.
      * Retorna null se não existir contexto (sem criação automática).
@@ -47,7 +48,7 @@ export class TaskContextManager {
     get(chatId: string): TaskContext | null {
         return this.contexts.get(chatId) ?? null;
     }
-    
+
     /**
      * Cria um novo contexto para um chat.
      */
@@ -62,7 +63,7 @@ export class TaskContextManager {
         this.contexts.set(chatId, ctx);
         return ctx;
     }
-    
+
     /**
      * Verifica se há uma tarefa ativa em andamento.
      */
@@ -71,7 +72,7 @@ export class TaskContextManager {
         if (!ctx) return false;
         return ctx.type !== 'unknown' && ctx.inProgress === true;
     }
-    
+
     /**
      * Verifica se há execução em andamento.
      */
@@ -79,28 +80,28 @@ export class TaskContextManager {
         const ctx = this.get(chatId);
         return ctx?.inProgress ?? false;
     }
-    
+
     /**
      * Verifica se o contexto ainda é válido (recente + relevante).
      * Combina tempo e heurística de relevância.
      */
     isContextValid(chatId: string, input: string): boolean {
         const ctx = this.get(chatId);
-        
+
         // Sem contexto → inválido
         if (!ctx) {
             return false;
         }
-        
+
         // Sem tipo → contexto inválido
         if (ctx.type === 'unknown') {
             return false;
         }
-        
+
         const now = Date.now();
         const timeSinceLast = now - ctx.lastUpdated;
         const isRecent = timeSinceLast < this.CONTEXT_TTL_MS;
-        
+
         // Se não é recente, contexto inválido
         if (!isRecent) {
             this.logger.info('context_expired', '[CONTEXT] Contexto expirado por tempo', {
@@ -109,10 +110,24 @@ export class TaskContextManager {
             });
             return false;
         }
-        
+
+        // Execution continuity: se uma ação foi completada recentemente, forçar contexto válido
+        const currentSession = SessionManager.getCurrentSession();
+        if (currentSession?.lastCompletedAction) {
+            const completionAge = now - currentSession.lastCompletedAction.completedAt;
+            if (completionAge < 30000) {
+                this.logger.info('continuation_from_completed_action', '[CONTEXT] Contexto válido por continuidade de execução', {
+                    originalRequest: currentSession.lastCompletedAction.originalRequest,
+                    completionAgeMs: completionAge,
+                    actionType: currentSession.lastCompletedAction.type
+                });
+                return true;
+            }
+        }
+
         // Verificar relevância do input
         const isRelevant = this.isRelevantToContext(input, ctx);
-        
+
         if (!isRelevant) {
             this.logger.info('context_not_relevant', '[CONTEXT] Input não é relevante para o contexto', {
                 inputPreview: input.slice(0, 50),
@@ -120,38 +135,38 @@ export class TaskContextManager {
             });
             return false;
         }
-        
+
         return true;
     }
-    
+
     /**
      * Verifica se o input é relevante para o contexto atual.
      * Heurística simples (sem embeddings).
      */
     private isRelevantToContext(input: string, ctx: TaskContext): boolean {
         const text = input.toLowerCase().trim();
-        
+
         // Input curto = provável follow-up
         const isShortInput = text.length < 20;
-        
+
         // Pistas de continuação
         const continuationHints = [
-            '?', 'deu certo', 'funcionou', 'e agora', 'próximo', 
+            '?', 'deu certo', 'funcionou', 'e agora', 'próximo',
             'ok', 'certo', 'sim', 'não', 'pronto', 'resultado',
             'teste', 'testar', 'melhorar', 'ajustar', 'finalizar',
             'continua', 'continuar', 'ainda', 'mais'
         ];
-        
+
         const hasHint = continuationHints.some(h => text.includes(h));
-        
+
         // Referência à tarefa atual
         const taskKeywords = this.getTaskKeywords(ctx.type);
         const hasTaskReference = taskKeywords.some(kw => text.includes(kw));
-        
+
         // Regra: curto OU tem pista OU tem referência à tarefa
         return isShortInput || hasHint || hasTaskReference;
     }
-    
+
     /**
      * Retorna palavras-chave relacionadas ao tipo de tarefa.
      */
@@ -164,10 +179,10 @@ export class TaskContextManager {
             'skill_installation': ['skill', 'instalar', 'adicionar', 'módulo'],
             'information_request': ['qual', 'como', 'quando', 'onde', 'por que', 'o que']
         };
-        
+
         return keywordMap[type] || [];
     }
-    
+
     /**
      * Define status de execução.
      */
@@ -178,18 +193,18 @@ export class TaskContextManager {
         }
         ctx.inProgress = value;
         ctx.lastUpdated = Date.now();
-        
+
         this.logger.debug('in_progress_set', '[CONTEXT] Status de execução', {
             chatId,
             inProgress: value,
             type: ctx.type
         });
     }
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // DETECÇÃO DE CONTINUIDADE (GENÉRICA)
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     /**
      * Detecção de continuidade GENÉRICA (sem frases específicas).
      * 
@@ -201,7 +216,7 @@ export class TaskContextManager {
         if (ctx.type === 'unknown') {
             return false;
         }
-        
+
         // Timeout de inatividade (15 minutos = nova tarefa)
         const timeSinceLast = Date.now() - ctx.lastUpdated;
         if (timeSinceLast > this.INACTIVITY_TIMEOUT_MS) {
@@ -211,19 +226,19 @@ export class TaskContextManager {
             });
             return false;
         }
-        
+
         const text = input.toLowerCase().trim();
-        
+
         // Mensagem curta = provável follow-up
         const isShortMessage = text.length < 80;
-        
+
         // Referências comuns à tarefa atual
         const taskReferencePattern = /\b(slide|slides|aula|arquivo|conteúdo|html|esse|isso|ele|ela|ok|certo|sim|não|pronto|agora|resultado|teste|testar|melhorar|ajustar|finalizar)\b/i;
         const hasTaskReference = taskReferencePattern.test(text);
-        
+
         // Regra: tarefa ativa + (mensagem curta OU referência à tarefa)
         const isContinuation = isShortMessage || hasTaskReference;
-        
+
         this.logger.debug('continuation_check', '[CONTEXT] Verificação de continuidade', {
             type: ctx.type,
             isShortMessage,
@@ -231,21 +246,21 @@ export class TaskContextManager {
             isContinuation,
             inputLength: text.length
         });
-        
+
         return isContinuation;
     }
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // ATUALIZAÇÃO DE CONTEXTO
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     /**
      * Atualiza contexto com base no input e tipo classificado.
      * IMPORTANTE: Se for continuação, MANTÉM o tipo anterior.
      */
     update(chatId: string, input: string, classifiedType: TaskType): TaskContext {
         let ctx = this.get(chatId);
-        
+
         // Se não existe contexto, verificar se é continuação ou nova tarefa
         if (!ctx) {
             // Sem contexto anterior = nova tarefa
@@ -257,22 +272,22 @@ export class TaskContextManager {
             });
             return ctx;
         }
-        
+
         const isCont = this.isRealContinuation(ctx, input);
-        
+
         if (isCont) {
             // 🔥 Continuação: mantém tipo anterior + adiciona informações novas
             const sourceMatch = input.match(/(\/[^\s,]+)/);
             if (sourceMatch) {
                 ctx.data.source = sourceMatch[1];
             }
-            
+
             // Adiciona goal se mencionado
             const goalMatch = input.match(/(?:para|com|usando)\s+(.+)/i);
             if (goalMatch) {
                 ctx.data.goal = goalMatch[1];
             }
-            
+
             this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - mantendo tipo', {
                 type: ctx.type,
                 hasSource: !!ctx.data.source,
@@ -283,17 +298,17 @@ export class TaskContextManager {
             ctx.type = classifiedType;
             ctx.data = { task: input };
             ctx.createdAt = Date.now();
-            
+
             this.logger.info('new_task_detected', '[CONTEXT] Nova tarefa detectada', {
                 type: classifiedType,
                 inputPreview: input.slice(0, 50)
             });
         }
-        
+
         ctx.lastUpdated = Date.now();
         return ctx;
     }
-    
+
     /**
      * Define explicitamente a fonte de conteúdo.
      */
@@ -304,13 +319,13 @@ export class TaskContextManager {
         }
         ctx.data.source = source;
         ctx.lastUpdated = Date.now();
-        
+
         this.logger.info('source_set', '[CONTEXT] Fonte definida', {
             source,
             type: ctx.type
         });
     }
-    
+
     /**
      * Limpa o contexto (reset completo).
      */
@@ -319,7 +334,7 @@ export class TaskContextManager {
         this.logger.info('context_cleared', '[CONTEXT] Contexto limpo', {
             type: ctx?.type ?? 'none'
         });
-        
+
         this.contexts.set(chatId, {
             type: 'unknown',
             data: {},
@@ -328,27 +343,27 @@ export class TaskContextManager {
             createdAt: Date.now()
         });
     }
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // PERGUNTAS USANDO i18n
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     /**
      * Verifica se precisa perguntar sobre fonte.
      */
     checkNeedsSource(chatId: string): AskResult | null {
         const ctx = this.get(chatId);
-        
+
         // Sem contexto → não precisa perguntar
         if (!ctx) {
             return null;
         }
-        
+
         // Se já tem fonte, não precisa perguntar
         if (ctx.data.source) {
             return null;
         }
-        
+
         // Se é tarefa que precisa de fonte
         const needsSourceTypes: TaskType[] = ['content_generation', 'file_conversion'];
         if (needsSourceTypes.includes(ctx.type)) {
@@ -358,10 +373,10 @@ export class TaskContextManager {
                 message: t('content.ask_for_source')
             };
         }
-        
+
         return null;
     }
-    
+
     /**
      * Retorna snapshot para debug.
      */
@@ -369,7 +384,7 @@ export class TaskContextManager {
         const ctx = this.get(chatId);
         return ctx ? { ...ctx } : null;
     }
-    
+
     /**
      * Estatísticas do contexto.
      */
@@ -405,7 +420,7 @@ export function getTaskContextManager(): TaskContextManager {
     if (taskContextManagerInstance) {
         return taskContextManagerInstance;
     }
-    
+
     // Double-check locking para thread-safety
     if (!initializationLock) {
         initializationLock = true;
@@ -417,12 +432,12 @@ export function getTaskContextManager(): TaskContextManager {
             initializationLock = false;
         }
     }
-    
+
     // Garantir retorno mesmo em edge cases
     if (!taskContextManagerInstance) {
         taskContextManagerInstance = new TaskContextManager();
     }
-    
+
     return taskContextManagerInstance;
 }
 
