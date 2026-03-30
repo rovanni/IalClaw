@@ -75,14 +75,14 @@ class OllamaProvider implements LLMProvider {
             fetch: fetchParams ? (input, init) => fetch(input, { ...init, ...fetchParams }) : undefined
         });
 
-        // Timeout configurável via env (padrão: 2 minutos)
-        this.timeoutMs = parseInt(process.env.OLLAMA_TIMEOUT_MS || '120000');
+        // Timeout configurável via env (padrão: 4 minutos)
+        this.timeoutMs = parseInt(process.env.OLLAMA_TIMEOUT_MS || '240000');
         // Retry configurável via env (padrão: 3 tentativas)
         this.maxRetries = parseInt(process.env.OLLAMA_MAX_RETRIES || '3');
         // Backoff base (padrão: 1 segundo)
         this.baseDelayMs = parseInt(process.env.OLLAMA_RETRY_BASE_DELAY_MS || '1000');
-        // Limite total de tempo (padrão: 3 minutos)
-        this.maxTotalMs = parseInt(process.env.OLLAMA_MAX_TOTAL_MS || '180000');
+        // Limite total de tempo (padrão: 6 minutos)
+        this.maxTotalMs = parseInt(process.env.OLLAMA_MAX_TOTAL_MS || '360000');
 
         this.logger.info('provider_initialized', 'Provider Ollama inicializado.', {
             host,
@@ -151,7 +151,7 @@ class OllamaProvider implements LLMProvider {
 
                 // Verifica se ainda temos tempo para retry
                 const remainingTime = this.maxTotalMs - (Date.now() - startedAt);
-                
+
                 // Se não for recuperável OU última tentativa OU sem tempo -> propaga erro
                 if (!isRetryable || attempt === maxAttempts - 1 || remainingTime < this.baseDelayMs) {
                     const diagnostic = this.describeProviderError(error, 'chat', this.getModel());

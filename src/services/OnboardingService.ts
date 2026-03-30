@@ -15,13 +15,44 @@ export function classificarEntrada(input: string): Partial<UserProfile> {
         result.response_style = 'adaptive';
     }
 
+    // Familiaridade
+    if (/(iniciante|1|beginner|basic)/i.test(resposta)) {
+        result.familiarity = 'beginner';
+    } else if (/(intermediário|intermediario|2|intermediate|medium)/i.test(resposta)) {
+        result.familiarity = 'intermediate';
+    } else if (/(avançado|avancado|3|advanced|pro|expert)/i.test(resposta)) {
+        result.familiarity = 'advanced';
+    }
+
     // Modo de aprendizado
-    if (/(sim|yes|ativar|enable|memorizar|aprender|memória|memoria)/i.test(resposta)) {
+    if (/(sim|yes|ativar|enable|memorizar|aprender|memória|memoria|1)/i.test(resposta)) {
         result.learning_mode = 'enabled';
-    } else if (/(não|nao|no|desativar|disable|sem memória|sem memoria)/i.test(resposta)) {
+    } else if (/(não|nao|no|desativar|disable|sem memória|sem memoria|2)/i.test(resposta)) {
         result.learning_mode = 'disabled';
-    } else if (/(parcial|feedback|só feedback|apenas feedback|partial|feedback-only)/i.test(resposta)) {
+    } else if (/(parcial|feedback|só feedback|apenas feedback|partial|feedback-only|3)/i.test(resposta)) {
         result.learning_mode = 'feedback-only';
+    }
+
+    // Integrações
+    if (/(github|gitlab|1)/i.test(resposta)) {
+        result.integrations = 'github';
+    } else if (/(vscode|ide|development|2)/i.test(resposta)) {
+        result.integrations = 'vscode';
+    } else if (/(google|drive|cloud|3)/i.test(resposta)) {
+        result.integrations = 'google_drive';
+    } else if (/(api|external|4)/i.test(resposta)) {
+        result.integrations = 'external_api';
+    } else if (/(nenhuma|none|5)/i.test(resposta)) {
+        result.integrations = 'none';
+    }
+
+    // Idioma
+    if (/(padrão|sistema|pt|br|1)/i.test(resposta)) {
+        result.language_preference = 'system';
+    } else if (/(inglês|ingles|english|tech|2)/i.test(resposta)) {
+        result.language_preference = 'english-tech';
+    } else if (/(pergunta|question|dynamic|3)/i.test(resposta)) {
+        result.language_preference = 'dynamic';
     }
 
     // Autonomia
@@ -64,7 +95,7 @@ export function classificarEntrada(input: string): Partial<UserProfile> {
     // Isso evita o loop infinito quando o usuário responde algo simples como "oi"
     const skipWords = ['pular', 'skip', 'depois', 'next', 'proxima', 'próxima'];
     const isSkipIntent = skipWords.some(w => resposta.includes(w));
-    
+
     if (Object.keys(result).length === 0 && !isSkipIntent && resposta.length >= 2 && resposta.length <= 50) {
         // Trata como nome válido (primeira pergunta do onboarding)
         result.name = input.trim();
@@ -84,6 +115,7 @@ export interface UserProfile {
     assistant_name: string | null;
     expertise: string | null;
     goals: string | null;
+    familiarity: 'beginner' | 'intermediate' | 'advanced' | null;
     response_style: 'concise' | 'detailed' | 'adaptive';
     learning_mode: 'enabled' | 'disabled' | 'feedback-only';
     autonomy_level: 'conservative' | 'balanced' | 'confident';
@@ -104,40 +136,57 @@ export interface OnboardingState {
 const ONBOARDING_STEPS = [
     {
         id: 'name',
-        question: () => t('onboarding.welcome'),
+        question: (_data: any) => t('onboarding.welcome'),
         parseMode: 'Markdown' as const,
         saveField: 'name'
     },
     {
-        id: 'assistant_name',
-        question: (data: any) => t('onboarding.assistant_name', { name: data.name || '' }),
+        id: 'familiarity',
+        question: (_data: any) => t('onboarding.familiarity'),
         parseMode: 'Markdown' as const,
-        saveField: 'assistant_name'
+        saveField: 'familiarity'
     },
     {
         id: 'expertise',
-        question: (data: any) => t('onboarding.prazer', { name: data.name || '', assistantName: data.assistant_name || t('onboarding.default_assistant_name') }),
+        question: (_data: any) => t('onboarding.prazer'),
         parseMode: 'Markdown' as const,
         saveField: 'expertise'
     },
     {
         id: 'goals',
-        question: () => t('onboarding.objetivos'),
+        question: (_data: any) => t('onboarding.objetivos'),
         parseMode: 'Markdown' as const,
         saveField: 'goals'
     },
     {
         id: 'response_style',
-        question: () => t('onboarding.estilo_resposta'),
+        question: (_data: any) => t('onboarding.estilo_resposta'),
         parseMode: 'Markdown' as const,
         saveField: 'response_style'
     },
-    // Removido passo de pergunta sobre aprendizado (learning_mode)
     {
         id: 'autonomy_level',
-        question: () => t('onboarding.autonomia'),
+        question: (_data: any) => t('onboarding.autonomia'),
         parseMode: 'Markdown' as const,
         saveField: 'autonomy_level'
+    },
+    {
+        id: 'workspace_path',
+        question: (_data: any) => t('onboarding.workspace'),
+        parseMode: 'Markdown' as const,
+        saveField: 'workspace_path'
+    },
+    {
+        id: 'integrations',
+        question: (_data: any) => t('onboarding.integrations'),
+        parseMode: 'Markdown' as const,
+        saveField: 'integrations'
+    },
+    {
+        id: 'language_preference',
+        question: (_data: any) => t('onboarding.language'),
+        parseMode: 'Markdown' as const,
+        saveField: 'language_preference'
     }
 ];
 
@@ -172,10 +221,13 @@ export class OnboardingService {
                 updated_at TEXT
             )
         `);
-        
+
         try {
             this.db.exec(`ALTER TABLE user_profile ADD COLUMN assistant_name TEXT`);
-        } catch {}
+        } catch { }
+        try {
+            this.db.exec(`ALTER TABLE user_profile ADD COLUMN familiarity TEXT`);
+        } catch { }
     }
 
     public isOnboardingCompleted(userId: string): boolean {
@@ -218,13 +270,17 @@ export class OnboardingService {
         }
         Object.assign(state.data, campos);
 
-        // Verifica se já tem dados suficientes (mínimo: nome OU qualquer outro campo)
+        // Verifica se já tem dados suficientes (mínimo: nome + familiaridade OU 5 campos)
         const preenchidos = Object.keys(state.data).filter(k => state.data[k as keyof UserProfile]);
-        if (preenchidos.length >= 3 || preenchidos.includes('name')) {
-            this.completeOnboarding(state);
-            const welcomeMsg = this.generateWelcomeMessage(state.data);
-            this.states.delete(userId);
-            return { completed: true, welcomeMessage: welcomeMsg, parseMode: 'Markdown' };
+        if (preenchidos.length >= 6 || (preenchidos.includes('name') && preenchidos.length >= 2)) {
+            // Se o usuário responder a última pergunta, ou se já tiver nome e algo mais, podemos considerar terminar
+            // Mas para seguir o fluxo, vamos ser mais criteriosos se ele estiver respondendo as perguntas
+            if (preenchidos.length >= 9 || (answer.toLowerCase().includes('finalizar') && preenchidos.includes('name'))) {
+                this.completeOnboarding(state);
+                const welcomeMsg = this.generateWelcomeMessage(state.data);
+                this.states.delete(userId);
+                return { completed: true, welcomeMessage: welcomeMsg, parseMode: 'Markdown' };
+            }
         }
 
         // Pergunta próxima informação relevante
@@ -233,26 +289,20 @@ export class OnboardingService {
 
     // Nova função: sugere próxima pergunta relevante, sempre opcional
     private getNextAdaptiveQuestion(data: Partial<UserProfile>): { question: string; parseMode: 'Markdown' | 'HTML' } {
-        // Lista de campos e perguntas
-        const perguntas: { campo: keyof UserProfile, texto: string }[] = [
-            { campo: 'name', texto: t('onboarding.welcome_optional') },
-            { campo: 'assistant_name', texto: t('onboarding.assistant_name_optional') },
-            { campo: 'expertise', texto: t('onboarding.prazer_optional') },
-            { campo: 'goals', texto: t('onboarding.objetivos_optional') },
-            { campo: 'response_style', texto: t('onboarding.estilo_resposta_optional') },
-            { campo: 'autonomy_level', texto: t('onboarding.autonomia_optional') }
-        ];
-        for (const p of perguntas) {
-            if (!data[p.campo]) {
+        // Encontra o primeiro campo não preenchido na ordem do ONBOARDING_STEPS
+        for (const step of ONBOARDING_STEPS) {
+            if (!data[step.saveField as keyof UserProfile] && step.saveField !== 'assistant_name') {
+                const question = typeof step.question === 'function' ? step.question(data) : step.question;
                 return {
-                    question: `${p.texto}\n\n_${t('onboarding.optional_hint')}_`,
-                    parseMode: 'Markdown'
+                    question,
+                    parseMode: step.parseMode
                 };
             }
         }
+
         // Se tudo preenchido, finaliza
         return {
-            question: t('onboarding.finalizacao'),
+            question: this.generateWelcomeMessage(data),
             parseMode: 'Markdown'
         };
     }
@@ -274,8 +324,8 @@ export class OnboardingService {
         if (step >= ONBOARDING_STEPS.length) return null;
 
         const stepConfig = ONBOARDING_STEPS[step];
-        const question = typeof stepConfig.question === 'function' 
-            ? stepConfig.question(data) 
+        const question = typeof stepConfig.question === 'function'
+            ? stepConfig.question(data)
             : stepConfig.question;
 
         return {
@@ -343,19 +393,21 @@ export class OnboardingService {
 
         this.db.prepare(`
             INSERT OR REPLACE INTO user_profile
-            (user_id, name, assistant_name, expertise, goals, response_style, learning_mode, autonomy_level, workspace_path, language_preference, onboarding_completed, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            (user_id, name, assistant_name, expertise, goals, familiarity, response_style, learning_mode, autonomy_level, workspace_path, integrations, language_preference, onboarding_completed, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         `).run(
             state.userId,
             state.data.name || null,
             state.data.assistant_name || null,
             state.data.expertise || null,
             state.data.goals || null,
+            state.data.familiarity || null,
             state.data.response_style || 'adaptive',
-            'enabled', // Sempre ativado
+            'enabled',
             state.data.autonomy_level || 'balanced',
-            this.defaultWorkspace,
-            'system',
+            state.data.workspace_path || this.defaultWorkspace,
+            state.data.integrations || 'none',
+            state.data.language_preference || 'system',
             now,
             now
         );
@@ -365,34 +417,34 @@ export class OnboardingService {
 
     private generateWelcomeMessage(data: Partial<UserProfile>): string {
         const name = data.name || t('onboarding.default_name');
-        const assistantName = data.assistant_name || t('onboarding.default_assistant_name');
         const styleText = data.response_style === 'concise' ? t('onboarding.style.concise') : data.response_style === 'detailed' ? t('onboarding.style.detailed') : t('onboarding.style.adaptive');
         const learningText = data.learning_mode === 'enabled' ? t('onboarding.learning.enabled') : data.learning_mode === 'disabled' ? t('onboarding.learning.disabled') : t('onboarding.learning.partial');
-        const autonomyText = data.autonomy_level === 'conservative' ? t('onboarding.autonomy.conservative') : data.autonomy_level === 'confident' ? t('onboarding.autonomy.confident') : t('onboarding.autonomy.balanced');
 
-        let suggestionText = t('onboarding.suggestion.default');
+        let goalsText = "produtividade geral";
         if (data.goals) {
             try {
                 const goals = JSON.parse(data.goals);
-                if (goals.includes('desenvolvimento_codigo') || goals.includes('code_development')) {
-                    suggestionText = t('onboarding.suggestion.code');
-                } else if (goals.includes('pesquisa_conhecimento') || goals.includes('research')) {
-                    suggestionText = t('onboarding.suggestion.research');
-                } else if (goals.includes('criacao_conteudo') || goals.includes('content')) {
-                    suggestionText = t('onboarding.suggestion.content');
+                if (goals.length > 0) {
+                    goalsText = goals.map((g: string) => g.replace(/_/g, ' ')).join(', ');
                 }
             } catch {
-                // ignore
+                goalsText = data.goals;
             }
         }
 
-        return t('onboarding.pronto', {
+        let suggestionText = t('onboarding.suggestion.default');
+        if (data.goals) {
+            if (data.goals.includes('desenvolvimento_codigo')) suggestionText = t('onboarding.suggestion.code');
+            else if (data.goals.includes('pesquisa_conhecimento')) suggestionText = t('onboarding.suggestion.research');
+            else if (data.goals.includes('criacao_conteudo')) suggestionText = t('onboarding.suggestion.content');
+        }
+
+        return t('onboarding.finalizacao', {
             name,
-            assistantName,
+            goalsText,
             styleText,
             learningText,
-            autonomyText,
-            workspace: this.defaultWorkspace,
+            workspace: data.workspace_path || this.defaultWorkspace,
             suggestionText
         });
     }
