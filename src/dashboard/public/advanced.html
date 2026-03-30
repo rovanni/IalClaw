@@ -205,7 +205,7 @@
       font-size: var(--font-sm);
       font-weight: 600;
       transition: all 0.2s;
-      text-decoration: none;
+      text-decoration: none !important;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -677,6 +677,8 @@
     #chat-input {
       flex: 1;
       width: 100%;
+      min-height: 48px;
+      max-height: 200px;
       padding: 10px 12px;
       background: var(--bg-input);
       border: 1px solid transparent;
@@ -685,6 +687,9 @@
       outline: none;
       font-size: var(--font-md);
       font-family: var(--font-mono);
+      resize: none;
+      line-height: 1.4;
+      overflow-y: auto;
       transition: all 0.2s;
     }
 
@@ -1084,8 +1089,9 @@
               </div>
               <div class="sidebar-subtitle" id="sidebar-subtitle" data-i18n="dashboard.advanced.conversations_subtitle">
                 Continue uma sessão anterior ou comece uma nova conversa.</div>
-              <button class="sidebar-btn btn-primary" id="new-chat-btn" data-i18n="dashboard.button.new_chat">+ Nova
-                conversa</button>
+              <button class="sidebar-btn btn-primary" id="new-chat-btn">
+                <span>➕</span> <span data-i18n="dashboard.button.new_chat">Nova conversa</span>
+              </button>
             </div>
             <div id="conversation-list">
               <div class="conversation-empty" id="conversation-empty" data-i18n="dashboard.conversation.loading">
@@ -1124,14 +1130,18 @@
                 </aside>
               </div>
               <div class="input-area">
+                <input type="file" id="file-input" style="display: none;">
+                <button id="upload-btn" class="console-btn" data-i18n-title="dashboard.button.upload"
+                  title="Enviar arquivo">➕</button>
                 <textarea id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off"
-                  data-i18n-placeholder="dashboard.input.placeholder_advanced" rows="1"></textarea>
+                  data-i18n-placeholder="dashboard.input.placeholder_advanced" rows="2"></textarea>
                 <button id="speech-btn" class="console-btn" title="Entrada por voz"
                   data-i18n-title="dashboard.voice.title">🎤</button>
                 <button id="tts-toggle" class="console-btn" title="Ler respostas finais"
                   data-i18n-title="dashboard.voice.tts_title">🔊</button>
-                <button id="action-btn" class="console-btn" title="Enviar mensagem"
-                  data-i18n="dashboard.action.send">Enviar</button>
+                <button id="action-btn" class="console-btn" title="Enviar mensagem">
+                  <span>➤</span> <span data-i18n="dashboard.action.send">Enviar</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1147,10 +1157,12 @@
                 Visualização sob demanda para não competir com o chat.</div>
             </div>
             <div class="memory-drawer-actions">
-              <button class="zoom-btn btn-primary" id="replay-btn" type="button"
-                data-i18n="dashboard.memory.replay">Replay por Trace</button>
-              <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memória"
-                data-i18n="dashboard.button.close">Fechar</button>
+              <button class="zoom-btn btn-primary" id="replay-btn" type="button">
+                <span>🔄</span> <span data-i18n="dashboard.memory.replay">Replay por Trace</span>
+              </button>
+              <button class="zoom-btn" id="memory-close-btn" type="button" aria-label="Fechar painel de memória">
+                <span>❌</span> <span data-i18n="dashboard.button.close">Fechar</span>
+              </button>
             </div>
           </div>
           <div class="memory-drawer-body">
@@ -1864,12 +1876,68 @@
               typingIndicator.style.display = 'none';
               typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
               requestInFlight = false;
+              chatInput.value = '';
+              chatInput.style.height = 'auto'; // Reset height
               updateChatActionButtons();
               activeChatRequestController = null;
               speechBtn.disabled = false;
               chatInput.focus();
             }
           }
+
+          async function handleFiles(files) {
+            for (const file of files) {
+              try {
+                const base64 = await toBase64(file);
+                const response = await fetch('/api/upload', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    fileName: file.name,
+                    base64Content: base64,
+                    sessionId: sessionId
+                  })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                  const analyzeMsg = tf('dashboard.chat.analyze_file', {
+                    filename: result.fileName,
+                    path: result.filePath
+                  }, `Analyze file: ${result.fileName}`);
+
+                  if (chatInput.value) {
+                    chatInput.value += '\n\n' + analyzeMsg;
+                  } else {
+                    chatInput.value = analyzeMsg;
+                  }
+                  chatInput.dispatchEvent(new Event('input')); // Trigger resize
+                  console.log('Upload success');
+                } else {
+                  console.error('Upload error:', result.error);
+                }
+              } catch (err) {
+                console.error('Upload error:', err.message);
+              }
+            }
+          }
+
+          const uploadBtn = document.getElementById('upload-btn');
+          const fileInput = document.getElementById('file-input');
+          if (uploadBtn && fileInput) {
+            uploadBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', () => {
+              if (fileInput.files.length > 0) {
+                handleFiles(fileInput.files);
+                fileInput.value = ''; // Reset
+              }
+            });
+          }
+
+          chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = (chatInput.scrollHeight) + 'px';
+          });
 
           async function stopCurrentExecution() {
             if (!requestInFlight) return;

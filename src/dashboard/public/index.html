@@ -466,7 +466,7 @@
 
     #chat-input {
       flex: 1;
-      min-height: 44px;
+      min-height: 48px;
       max-height: 200px;
       padding: 14px 20px;
       border-radius: 18px;
@@ -924,6 +924,9 @@
       <div id="typing-indicator" data-i18n="dashboard.typing.thinking">IalClaw esta pensando...</div>
 
       <div class="input-area">
+        <input type="file" id="file-input" style="display: none;">
+        <button id="upload-btn" class="icon-btn" data-i18n-title="dashboard.button.upload"
+          title="Enviar arquivo">➕</button>
         <textarea id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off"
           data-i18n-placeholder="dashboard.input.placeholder" rows="1"></textarea>
         <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz"
@@ -1705,6 +1708,18 @@
       chatInput.style.height = 'auto';
       chatInput.style.height = (chatInput.scrollHeight) + 'px';
     });
+    const uploadBtn = document.getElementById('upload-btn');
+    const fileInput = document.getElementById('file-input');
+    if (uploadBtn && fileInput) {
+      uploadBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+          handleFiles(fileInput.files);
+          fileInput.value = ''; // Reset
+        }
+      });
+    }
+
     if (newChatBtn) newChatBtn.addEventListener('click', startNewConversation);
     if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', () => openDrawer('menu'));
@@ -1805,7 +1820,7 @@
             } else {
               chatInput.value = analyzeMsg;
             }
-
+            chatInput.dispatchEvent(new Event('input')); // Trigger resize
             console.log('Upload success');
           } else {
             console.error('Upload error:', result.error);
