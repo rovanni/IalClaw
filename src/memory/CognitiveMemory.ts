@@ -67,6 +67,16 @@ export class CognitiveMemory {
         return this.db.prepare(query).all(targetAgentId ? [targetAgentId] : []) as NodeResult[];
     }
 
+    public getProjectNodes(limit: number = 10): NodeResult[] {
+        return this.db.prepare(`
+            SELECT id, type, subtype, name, score, importance, freshness, content, content_preview
+            FROM nodes
+            WHERE type = 'memory' AND subtype = 'project'
+            ORDER BY importance DESC
+            LIMIT ?
+        `).all(limit) as NodeResult[];
+    }
+
     public getConversationHistory(sessionId: string, limit: number = 20): any[] {
         return this.db.prepare(`
             SELECT role, content, created_at

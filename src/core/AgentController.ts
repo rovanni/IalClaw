@@ -29,6 +29,9 @@ import {
     setPendingAction,
     shouldDropPendingActionOnTopicShift
 } from './agent/PendingActionTracker';
+import { FlowManager } from './flow/FlowManager';
+import { CognitiveOrchestrator, CognitiveStrategy } from './orchestrator/CognitiveOrchestrator';
+import { getActionRouter } from './autonomy/ActionRouter';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -40,6 +43,8 @@ export class AgentController {
     private skillResolution?: SkillResolutionManager;
     private memoryLifecycle?: MemoryLifecycleManager;
     private onboardingService?: OnboardingService;
+    private flowManager: FlowManager;
+    private orchestrator: CognitiveOrchestrator;
     private logger = createLogger('AgentController');
 
     private emitStatus(sessionId: string, message: string, channel: 'web' | 'telegram', extra?: Record<string, any>): void {
@@ -71,6 +76,12 @@ export class AgentController {
         this.skillResolution = new SkillResolutionManager();
         this.memoryLifecycle = memoryLifecycle;
         this.onboardingService = onboardingService;
+        this.flowManager = new FlowManager();
+        this.orchestrator = new CognitiveOrchestrator(
+            getActionRouter(),
+            this.memory,
+            this.flowManager
+        );
     }
 
     private assertLoopHasProvider(loop: AgentLoop): void {
@@ -114,7 +125,7 @@ export class AgentController {
             return SessionManager.runWithSession(conversationId, async () => {
                 const progress = this.createTelegramProgressTracker(ctx);
                 let answer: string | null = null;
-                
+
                 try {
                     answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
                     await progress.complete();
@@ -126,7 +137,7 @@ export class AgentController {
                     });
                     answer = t('agent.error.pipeline', { message: error.message });
                 }
-                
+
                 // GARANTIA DE ENTREGA: Sempre tentar enviar resposta, mesmo se houve erro
                 if (answer) {
                     try {
@@ -143,12 +154,12 @@ export class AgentController {
                             response_length: answer.length,
                             error_message: sendError.message
                         });
-                        
+
                         console.error(t('agent.error.delivery_critical_header'));
                         console.error(t('agent.error.delivery_critical_chat', { chatId: conversationId }));
                         console.error(t('agent.error.delivery_critical_error', { message: sendError.message }));
                         console.error(t('agent.error.delivery_critical_response', { length: answer.length }));
-                        
+
                         // Última tentativa: mensagem de erro mínima sem retry
                         try {
                             await ctx.reply(t('agent.error.delivery'));
@@ -296,7 +307,7 @@ export class AgentController {
         try {
             const projects = workspaceService.listProjects();
             const existingNodes = this.memory.getProjectNodes(100);
-            const indexedIds = new Set(existingNodes.map(n => n.id.replace(/^project:/, '')));
+            const indexedIds = new Set(existingNodes.map((n: any) => n.id.replace(/^project:/, '')));
 
             for (const { id, metadata, files_count } of projects) {
                 if (!indexedIds.has(id)) {
@@ -323,14 +334,14 @@ export class AgentController {
         const startedAt = Date.now();
         const logger = this.logger.child({ conversation_id: sessionId });
         const session = SessionManager.getCurrentSession();
-        
+
         if (!session) {
             logger.warn('session_not_found', t('log.agent.session_not_found'), {
                 conversation_id: sessionId
             });
             return t('agent.session.not_found');
         }
-        
+
         let effectiveUserQuery = userQuery;
         this.resolveSessionLanguage(userQuery, session);
 
@@ -348,7 +359,7 @@ export class AgentController {
                 nodes_used: [],
                 success: true,
                 response: commandResponse
-            }).catch(() => {});
+            }).catch(() => { });
             return commandResponse;
         }
 
@@ -366,7 +377,7 @@ export class AgentController {
                         nodes_used: [],
                         success: true,
                         response: declined
-                    }).catch(() => {});
+                    }).catch(() => { });
                     return declined;
                 }
 
@@ -407,13 +418,13 @@ export class AgentController {
         if (this.skillResolver && this.skillResolution) {
             const hasListReference = /(?:essa|esse|a|o|numero|n)\s*[:\-]?\s*\d+/i.test(effectiveUserQuery);
             const hasInstallIntent = /(?:instala|instalar|instale|adicione|adicionar)/i.test(effectiveUserQuery);
-            
+
             if (!hasListReference && hasInstallIntent) {
                 this.skillResolution.clearPendingList();
             }
-            
+
             const resolution = this.skillResolution.resolve(effectiveUserQuery);
-            
+
             if (resolution.action === 'install' && resolution.skillName) {
                 const installer = this.skillResolver.resolve(`instale ${resolution.skillName}`);
                 if (installer) {
@@ -423,7 +434,7 @@ export class AgentController {
                     return this.runWithSkill(sessionId, effectiveUserQuery, installer.query, installer.skill, onProgress, shouldStop);
                 }
             }
-            
+
             if (resolution.action === 'list' && resolution.searchResults) {
                 const listText = this.formatSkillList(resolution.searchResults);
                 this.memory.saveMessage(sessionId, 'assistant', listText);
@@ -432,12 +443,12 @@ export class AgentController {
                 });
                 return listText;
             }
-            
+
             if (resolution.action === 'ask_input' && resolution.message) {
                 this.memory.saveMessage(sessionId, 'assistant', resolution.message);
                 return resolution.message;
             }
-            
+
             if (resolution.action === 'none') {
                 const resolved = this.skillResolver.resolve(effectiveUserQuery);
                 if (resolved) {
@@ -468,15 +479,58 @@ export class AgentController {
                 nodes_used: [],
                 success: true,
                 response: sessionDirectiveReply
-            }).catch(() => {});
+            }).catch(() => { });
             return sessionDirectiveReply;
         }
 
-        // ── Fluxo unificado: LLM decide usar tools ou responder direto ──
+        // ── DECISÃO COGNITIVA (ORQUESTRADOR) ──────────────────────────────
+        const decision = await this.orchestrator.decide({
+            input: effectiveUserQuery,
+            taskType: session?.task_type as TaskType,
+            context: {
+                sessionId,
+                projectId: session?.current_project_id,
+            }
+        });
+
+        this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {
+            strategy: decision.strategy,
+            reason: decision.reason
+        });
+
+        // ── Execução baseada na estratégia ────────────────────────────────
+        switch (decision.strategy) {
+            case CognitiveStrategy.FLOW: {
+                const flowResponse = await this.flowManager.handleInput(effectiveUserQuery);
+                if (flowResponse.answer) {
+                    this.memory.saveMessage(sessionId, 'assistant', flowResponse.answer);
+                    SessionManager.addToHistory(sessionId, 'assistant', flowResponse.answer);
+                    return flowResponse.answer;
+                }
+                // Se o flow não retornou resposta (ex: foi encerrado), caímos para o loop normal
+                break;
+            }
+
+            case CognitiveStrategy.ASK:
+            case CognitiveStrategy.CONFIRM:
+                // Nestes casos, o loop (AgentLoop) ou o orquestrador já identificaram a necessidade de interação.
+                // Atualmente, o AgentLoop ainda contém a lógica de "ASK" e "CONFIRM" rica (tradução, etc).
+                // Para manter a "explicabilidade", vamos deixar o AgentLoop rodar se houver alta confiança em tool
+                // ou se precisar de confirmação via loop.
+                break;
+
+            case CognitiveStrategy.LLM:
+            case CognitiveStrategy.TOOL:
+            default:
+                // Segue para o loop unificado
+                break;
+        }
+
+        // ── Fluxo unificado (AgentLoop) ───────────────────────────────────
         console.log(t('log.agent.unified_flow_console'));
         logger.info('unified_flow_started', t('log.agent.unified_flow_started'), {
             cognitive_stage: 'decision',
-            decision: 'UNIFIED',
+            decision: decision.strategy,
             has_project: Boolean(session?.current_project_id)
         });
 
@@ -500,7 +554,7 @@ export class AgentController {
         // ── Injetar projetos conhecidos no contexto ────────────────────────
         const projectNodes = this.memory.getProjectNodes(5);
         if (projectNodes.length) {
-            const projectLines = projectNodes.map(n => {
+            const projectLines = projectNodes.map((n: any) => {
                 const projectId = n.id.replace(/^project:/, '');
                 return `- ${n.name} (id: ${projectId})`;
             }).join('\n');
@@ -565,7 +619,8 @@ export class AgentController {
                 shouldStop
             },
             taskType: session?.task_type,
-            taskConfidence: session?.task_confidence
+            taskConfidence: session?.task_confidence,
+            orchestrationResult: decision // Passamos a decisão para o loop
         };
 
         const result = await this.loop.run(messages, policy);
@@ -654,13 +709,13 @@ export class AgentController {
         // Forçar tipo de task para skill_installation APENAS se for instalação de skill
         // NÃO forçar se for instalação de pacote do sistema (apt, pip, npm, etc.)
         const isSkillInstallIntent = /(?:instala|instalar|instale)\s+(?:uma\s+)?skill\b/i.test(originalQuery) ||
-                                      /skill\b.*\b(?:instala|instalar|instale)\b/i.test(originalQuery) ||
-                                      /(?:buscar|procurar|encontre)\s+(?:uma\s+)?skill\b/i.test(originalQuery);
-        
+            /skill\b.*\b(?:instala|instalar|instale)\b/i.test(originalQuery) ||
+            /(?:buscar|procurar|encontre)\s+(?:uma\s+)?skill\b/i.test(originalQuery);
+
         // NÃO forçar se mencionar pacotes do sistema
         const isSystemPackage = /(?:apt|apt-get|pip|npm|yarn|pacote|package)\b/i.test(originalQuery) ||
-                                 /(?:instala|instalar|instale)\s+(?:o|a|os|as)\s+\w+\b/i.test(originalQuery) && !/\bskill\b/i.test(originalQuery);
-        
+            /(?:instala|instalar|instale)\s+(?:o|a|os|as)\s+\w+\b/i.test(originalQuery) && !/\bskill\b/i.test(originalQuery);
+
         if (isSkillInstallIntent && !isSystemPackage) {
             (this.loop as any).forceTaskType('skill_installation', 1.0);
             logger.info('skill_installation_forced', '[FORCE] Tipo de task forçado para skill_installation');

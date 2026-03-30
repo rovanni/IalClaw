@@ -65,4 +65,24 @@ export class DecisionMemory {
             GROUP BY tool
         `).all(taskType);
     }
+
+    public async getToolHistory(toolName: string, taskType: string): Promise<any[]> {
+        return this.db.prepare(`
+            SELECT success, timestamp
+            FROM tool_decisions
+            WHERE tool = ? AND task_type = ?
+            ORDER BY timestamp DESC
+            LIMIT 10
+        `).all(toolName, taskType);
+    }
+
+    public async query(taskType: string, step: string, limit: number = 10): Promise<ToolDecision[]> {
+        return this.db.prepare(`
+            SELECT task_type as taskType, step, tool, success, timestamp
+            FROM tool_decisions
+            WHERE task_type = ? AND step LIKE ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        `).all(taskType, `%${step}%`, limit) as any[];
+    }
 }

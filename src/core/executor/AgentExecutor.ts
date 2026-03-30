@@ -549,10 +549,8 @@ export class AgentExecutor {
                 if (session.last_error && session.last_error.length < 5000) {
                     await this.memory.saveExecutionFix({
                         content: `Erro anterior:\n${session.last_error}\n\nTipo:\n${session.last_error_type || 'unknown'}\n\nFingerprint:\n${session.last_error_fingerprint || 'unknown'}\n\nCorrecao aplicada:\n${JSON.stringify(plan)}`,
-                        project_id: session.current_project_id,
-                        error_type: session.last_error_type,
-                        fingerprint: session.last_error_fingerprint,
-                        timestamp: Date.now()
+                        error_type: session.last_error_type || 'unknown',
+                        fingerprint: session.last_error_fingerprint || 'none'
                     });
                 }
 
@@ -649,10 +647,8 @@ export class AgentExecutor {
             if (session.last_error && session.last_error.length < 5000) {
                 await this.memory.saveExecutionFix({
                     content: `Erro anterior:\n${session.last_error}\n\nTipo:\n${session.last_error_type || 'unknown'}\n\nFingerprint:\n${session.last_error_fingerprint || 'unknown'}\n\nCorrecao aplicada:\n${JSON.stringify(plan)}`,
-                    project_id: session.current_project_id,
-                    error_type: session.last_error_type,
-                    fingerprint: session.last_error_fingerprint,
-                    timestamp: Date.now()
+                    error_type: session.last_error_type || 'unknown',
+                    fingerprint: session.last_error_fingerprint || 'none'
                 });
             }
 

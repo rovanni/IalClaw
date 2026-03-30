@@ -59,4 +59,20 @@ export class MemoryLifecycleManager {
         // Por enquanto, retorna vazio para deixar o MemoryService lidar com o que puder
         return [];
     }
+
+    public async storeExplicit(input: string, type: any, importance: number): Promise<void> {
+        await this.memoryService.upsertMemory({
+            content: input.trim(),
+            type,
+            importance,
+            relevance: 1.0,
+            entities: [],
+            context: { role: 'user', sessionId: 'manual_store' }
+        });
+    }
+
+    public async queryMemory(query: string, options: { limit: number }): Promise<any[]> {
+        // Usa queryMemory do MemoryService diretamente
+        return this.memoryService.queryMemory(query, options);
+    }
 }

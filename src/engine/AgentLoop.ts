@@ -538,10 +538,9 @@ export class AgentLoop {
 
         // ═══════════════════════════════════════════════════════════════════
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
-        // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
         const actionRouter = getActionRouter();
-        const decision = actionRouter.decideRoute(userInput, this.currentTaskType);
+        const decision = (policy as any)?.orchestrationResult?.route || actionRouter.decideRoute(userInput, this.currentTaskType);
 
         const autonomyCtx = createAutonomyContext(
             this.currentTaskType || 'unknown',
@@ -558,7 +557,7 @@ export class AgentLoop {
         autonomyCtx.confidence = decision.confidence;
         autonomyCtx.intentSubtype = decision.subtype;
 
-        const autonomyDecision = decideAutonomy(autonomyCtx);
+        const autonomyDecision = policy?.orchestrationResult?.autonomy || decideAutonomy(autonomyCtx);
 
         // Log da decisão (essencial para debug)
         this.logger.info('autonomy_decision', `[AUTONOMY] Decisão: ${autonomyDecision}`, {

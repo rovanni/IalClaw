@@ -51,25 +51,25 @@ function parseEnvFile(envPath: string): Record<string, string> {
 function checkAndRunSetup(): void {
     const envPath = path.resolve('.env');
     const envVars = parseEnvFile(envPath);
-    
+
     const requiredVars = ['MODEL', 'USE_OLLAMA'];
     const missing = requiredVars.filter(v => !envVars[v] || envVars[v] === 'your_bot_token_here');
-    
+
     if (missing.length > 0 || !fs.existsSync(envPath)) {
         const envLang = parseEnvFile(envPath).APP_LANG || 'pt-BR';
         const isEnglish = envLang.includes('en');
-        
+
         console.log('');
         console.log('\x1b[33m' + (isEnglish ? '⚠️  Incomplete configuration or .env not found!' : '⚠️  Configuração incompleta ou .env não encontrado!') + '\x1b[0m');
         console.log('');
-        
+
         const readline = require('readline').createInterface({
             input: process.stdin,
             output: process.stdout
         });
 
         const prompt = isEnglish ? 'Do you want to run interactive setup? (y/n): ' : 'Deseja executar o setup interativo? (s/n): ';
-        
+
         readline.question(prompt, (answer: string) => {
             readline.close();
 
@@ -270,14 +270,14 @@ function checkAndPromptDatabase(): void {
     console.log('');
     console.log('\x1b[33m' + t('database.not_found') + '\x1b[0m');
     console.log('');
-    
+
     const answer = readlineSync.question(t('database.create_prompt'));
-    
+
     if (answer.toLowerCase() !== 's' && answer.toLowerCase() !== 'sim' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
         console.log(t('database.skip_start'));
         process.exit(0);
     }
-    
+
     console.log(t('database.creating'));
     console.log('');
 }
@@ -416,7 +416,7 @@ registry.register({
             return t('index.memory.none');
         }
 
-        const lines = memories.map((memoryItem, index) =>
+        const lines = memories.map((memoryItem: any, index: number) =>
             `${index + 1}. [${memoryItem.type}] score=${memoryItem.finalScore.toFixed(3)} :: ${memoryItem.content.slice(0, 220)}`
         );
         return t('index.memory.found', { count: memories.length, lines: lines.join('\n') });
@@ -621,7 +621,7 @@ if (hasTelegramBotToken) {
     bot.command('profile', async (ctx) => {
         if (!ctx.from) return;
         const profile = onboardingService.getUserProfile(String(ctx.from.id));
-        
+
         if (profile?.onboarding_completed) {
             await ctx.reply(
                 `👤 *Seu Perfil*\n\n` +
@@ -665,7 +665,7 @@ if (hasTelegramBotToken) {
 
         if (onboardingState || !onboardingService.isOnboardingCompleted(String(userId))) {
             const result = inputHandler.processOnboardingAnswer(userId, ctx.message?.text || '');
-            
+
             if (result?.isOnboarding && result.question) {
                 await ctx.reply(result.question, { parse_mode: result.parseMode });
             } else if (result?.completed && result.welcomeMessage) {
