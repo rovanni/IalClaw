@@ -525,11 +525,11 @@
 
     #speech-btn,
     #tts-toggle {
-      width: 58px;
-      height: 58px;
+      width: 48px;
+      height: 48px;
       padding: 8px;
       border-radius: 18px;
-      font-size: 1.4rem;
+      font-size: 1.2rem;
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
     }
@@ -1091,7 +1091,12 @@
     }
     function updateChatActionButtons() {
       const state = IalclawDashboardUiCore.getActionButtonState(pendingRequest);
-      actionBtn.textContent = state.label;
+      const labelEl = actionBtn.querySelector('[data-i18n="dashboard.action.send"]');
+      if (labelEl) {
+        labelEl.textContent = state.label;
+      } else {
+        actionBtn.textContent = state.label;
+      }
       actionBtn.title = state.title;
       actionBtn.classList.toggle('is-stop', state.action === 'stop');
     }
@@ -1379,14 +1384,20 @@
 
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      themeToggleBtn.innerText = theme === 'light' ? tf('dashboard.theme.dark', undefined, 'Dark') : tf('dashboard.theme.light', undefined, 'Light');
+      const themeLabel = themeToggleBtn.querySelector('[data-i18n="dashboard.theme.toggle"]');
+      if (themeLabel) {
+        themeLabel.textContent = theme === 'light' ? tf('dashboard.theme.dark', undefined, 'Dark') : tf('dashboard.theme.light', undefined, 'Light');
+      }
     }
 
 
     function applyStaticTranslations() {
       chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
-      newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
-      logsToggleBtn.textContent = tf('dashboard.nav.logs', undefined, 'Logs');
+
+      // newChatBtn and logsToggleBtn have icon spans, so we only update the spans with data-i18n
+      // which is already handled by applyHtmlTranslations() called in bootstrap.
+      // We only need to handle elements without data-i18n attributes here if any.
+
       if (languageSelect) {
         languageSelect.value = dashboardI18n?.getLanguage?.() || 'en-US';
         const [pt, en] = languageSelect.options;
