@@ -1,6 +1,7 @@
 import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import cors from 'cors';
 import { Server } from 'http';
 import { AgentController } from '../core/AgentController';
@@ -93,7 +94,7 @@ export class DashboardServer {
                 const webUserId = 'web-user';
                 if (this.onboardingService && !this.onboardingService.isOnboardingCompleted(webUserId)) {
                     const onboardingState = this.onboardingService.getOnboardingState(webUserId);
-                    
+
                     if (!onboardingState) {
                         const result = this.onboardingService.startOnboarding(webUserId);
                         if (result) {
@@ -251,6 +252,42 @@ export class DashboardServer {
 
                 res.json(messages);
             } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        this.app.post('/api/upload', (req, res) => {
+            let sessionId = 'web-session';
+            try {
+                const { fileName, base64Content, sessionId: sid } = req.body || {};
+                if (sid) sessionId = String(sid);
+
+                if (!fileName || !base64Content) {
+                    return res.status(400).json({ error: 'Missing fileName or base64Content' });
+                }
+
+                const uploadDir = path.join(process.cwd(), 'data', 'uploads', sessionId);
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
+                }
+
+                // Sanitize filename
+                const safeName = path.basename(fileName).replace(/[^a-zA-Z0-9.\-_]/g, '_');
+                const filePath = path.join(uploadDir, safeName);
+
+                // Extract base64 and save
+                const buffer = Buffer.from(base64Content.split(',')[1] || base64Content, 'base64');
+                fs.writeFileSync(filePath, buffer);
+
+                dashLogger.info('file_uploaded', `Arquivo salvo: ${filePath}`, { sessionId, fileName: safeName });
+
+                res.json({
+                    success: true,
+                    fileName: safeName,
+                    filePath: filePath
+                });
+            } catch (err: any) {
+                dashLogger.error('upload_failed', err, `Falha no upload: ${err.message}`, { sessionId });
                 res.status(500).json({ error: err.message });
             }
         });

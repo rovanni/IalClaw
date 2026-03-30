@@ -122,7 +122,12 @@
       'dashboard.view.trace': 'Ver execucao',
       'dashboard.conversation.no_messages': 'Sem mensagens',
       'dashboard.conversation.msg_count': '{count} msgs',
-      'dashboard.logs.tool_history': 'Tool (historico): {content}'
+      'dashboard.logs.tool_history': 'Tool (historico): {content}',
+      'dashboard.dropzone.title': 'Solte o arquivo aqui para enviar',
+      'dashboard.dropzone.hint': 'O IalClaw poderá analisar o conteúdo do arquivo.',
+      'dashboard.upload.success': 'Arquivo enviado com sucesso!',
+      'dashboard.upload.error': 'Erro ao enviar arquivo: {error}',
+      'dashboard.chat.analyze_file': 'Analise este arquivo: {filename} em {path}'
     },
     'en-US': {
       'dashboard.brand': 'IalClaw V3.0',
@@ -236,7 +241,12 @@
       'dashboard.view.trace': 'View execution',
       'dashboard.conversation.no_messages': 'No messages',
       'dashboard.conversation.msg_count': '{count} msgs',
-      'dashboard.logs.tool_history': 'Tool (history): {content}'
+      'dashboard.logs.tool_history': 'Tool (history): {content}',
+      'dashboard.dropzone.title': 'Drop file here to upload',
+      'dashboard.dropzone.hint': 'IalClaw will be able to analyze the file content.',
+      'dashboard.upload.success': 'File uploaded successfully!',
+      'dashboard.upload.error': 'Error uploading file: {error}',
+      'dashboard.chat.analyze_file': 'Analyze this file: {filename} at {path}'
     }
   };
 
@@ -289,7 +299,7 @@
     document.documentElement.lang = language;
     try {
       window.localStorage.setItem(STORAGE_KEY, language);
-    } catch (_error) {}
+    } catch (_error) { }
     initialized = true;
     return language;
   }
@@ -304,7 +314,7 @@
     document.documentElement.lang = normalized;
     try {
       window.localStorage.setItem(STORAGE_KEY, normalized);
-    } catch (_error) {}
+    } catch (_error) { }
     initialized = true;
     return language;
   }

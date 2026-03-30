@@ -6,10 +6,21 @@ export enum ExecutionRoute {
     TOOL_LOOP = 'tool_loop'
 }
 
+/**
+ * Modos de execução para tarefas híbridas.
+ * Ex: "crie um arquivo com esse conteúdo" → TOOL_ASSISTED_LLM
+ */
+export enum ExecutionMode {
+    PURE_LLM = 'pure_llm',           // Apenas geração de texto
+    TOOL_ASSISTED_LLM = 'tool_assisted_llm', // LLM gera → tool salva
+    PURE_TOOL = 'pure_tool'           // Apenas execução de ferramenta
+}
+
 export enum IntentSubtype {
     COMMAND = 'command',       // "mova os arquivos"
     SUGGESTION = 'suggestion', // "acho que deveria mover"
-    DOUBT = 'doubt'            // "por que os arquivos estão aí?"
+    DOUBT = 'doubt',           // "por que os arquivos estão aí?"
+    UNCERTAIN = 'uncertain'    // Não bate forte em nada
 }
 
 export interface RouteDecision {
@@ -81,11 +92,13 @@ export class ActionRouter {
         }
 
         // 4. Ajustar confiança baseada no subtipo
-        if (subtype === IntentSubtype.SUGGESTION) {
-            confidence *= 0.8; // Reduz confiança para sugestões
-        } else if (subtype === IntentSubtype.DOUBT) {
-            confidence *= 0.6; // Reduz confiança para dúvidas
-        }
+                if (subtype === IntentSubtype.SUGGESTION) {
+                    confidence *= 0.8; // Reduz confiança para sugestões
+                } else if (subtype === IntentSubtype.DOUBT) {
+                    confidence *= 0.6; // Reduz confiança para dúvidas
+                } else if (subtype === IntentSubtype.UNCERTAIN) {
+                    confidence *= 0.5; // Reduz ainda mais para incertos
+                }
 
         const decision: RouteDecision = { route, subtype, confidence };
 
@@ -99,35 +112,56 @@ export class ActionRouter {
     }
 
     /**
-     * Detecta o subtipo da intenção no input.
-     */
-    private detectSubtype(input: string): IntentSubtype {
-        if (this.SUBTYPE_PATTERNS.DOUBT.test(input)) {
-            return IntentSubtype.DOUBT;
+         * Detecta o subtipo da intenção no input.
+         */
+        private detectSubtype(input: string): IntentSubtype {
+            if (this.SUBTYPE_PATTERNS.DOUBT.test(input)) {
+                return IntentSubtype.DOUBT;
+            }
+            if (this.SUBTYPE_PATTERNS.SUGGESTION.test(input)) {
+                return IntentSubtype.SUGGESTION;
+            }
+
+            // ── NOVO: Detectar incerteza ──
+            // Se não tem padrão de ação claro
+            const hasActionPattern = this.ACTION_PATTERNS.some(pattern => pattern.test(input));
+            const hasActionKeyword = this.ACTION_KEYWORDS.some(kw => input.includes(kw));
+
+            if (!hasActionPattern && !hasActionKeyword) {
+                return IntentSubtype.UNCERTAIN;
+            }
+
+            return IntentSubtype.COMMAND;
         }
-        if (this.SUBTYPE_PATTERNS.SUGGESTION.test(input)) {
-            return IntentSubtype.SUGGESTION;
-        }
-        return IntentSubtype.COMMAND;
-    }
 
     /**
-     * Detecta se o input exige ação no mundo real (uso de tools).
-     */
-    private requiresToolExecution(input: string): boolean {
-        // Verificar padrões regex (mais forte)
-        if (this.ACTION_PATTERNS.some(pattern => pattern.test(input))) {
-            return true;
+         * Detecta se o input exige ação no mundo real (uso de tools).
+         * Usa abordagem híbrida: verbo forte + objeto alvo.
+         */
+        private requiresToolExecution(input: string): boolean {
+            // Verificar padrões regex (mais forte)
+            if (this.ACTION_PATTERNS.some(pattern => pattern.test(input))) {
+                return true;
+            }
+
+            // ── Abordagem híbrida (melhoria do code review) ──
+            const tokens = input.split(/\s+/);
+
+            // Verificar se há um verbo forte de ação
+            const hasStrongVerb = tokens.some(t => this.ACTION_KEYWORDS.includes(t));
+
+            // Verificar se há um objeto alvo (arquivo, pasta, etc)
+            const hasObject = /\b(arquivo|file|pasta|folder|diret[óo]rio|arquivos|files|pastas|folders)\b/i.test(input);
+
+            // Se tem verbo forte E objeto → alta probabilidade de ação
+            if (hasStrongVerb && hasObject) {
+                return true;
+            }
+
+            // Fallback: 2+ keywords de ação (heurística original)
+            const actionScore = tokens.filter(token => this.ACTION_KEYWORDS.includes(token)).length;
+            return actionScore >= 2;
         }
-
-        // Verificar keywords (heurística simples)
-        // Só conta como ação se houver um verbo de ação claro
-        const tokens = input.split(/\s+/);
-        const actionScore = tokens.filter(token => this.ACTION_KEYWORDS.includes(token)).length;
-
-        // Se tiver 2 ou mais termos de ação, é altamente provável que precise de tools
-        return actionScore >= 2;
-    }
 }
 
 // Singleton para uso global

@@ -9,3 +9,12 @@ export {
     logAutonomyDecision,
     type AutonomyContext
 } from './DecisionEngine';
+
+export {
+    ActionRouter,
+    ExecutionRoute,
+    ExecutionMode,
+    IntentSubtype,
+    type RouteDecision,
+    getActionRouter
+} from './ActionRouter';

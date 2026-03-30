@@ -7,6 +7,14 @@
   <title>IalClaw v3.0 - Cognitive Console</title>
   <link rel="icon" href="data:,">
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <div id="drop-zone">
+    <div class="drop-zone-content">
+      <div class="drop-zone-icon">📁</div>
+      <div class="drop-zone-title" data-i18n="dashboard.dropzone.title">Solte o arquivo aqui para enviar</div>
+      <div class="drop-zone-hint" data-i18n="dashboard.dropzone.hint">O IalClaw poderá analisar o conteúdo do arquivo.
+      </div>
+    </div>
+  </div>
   <script src="/dashboard-i18n.js"></script>
   <script src="/dashboard-ui-core.js"></script>
   <style>
@@ -68,6 +76,45 @@
       --line-error: #f28b82;
       --line-debug: #9aa0a6;
       --line-rag: #f28b82;
+    }
+
+    #drop-zone {
+      position: fixed;
+      inset: 0;
+      background: rgba(var(--bg-base-rgb), 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: 4px dashed var(--accent);
+      pointer-events: none;
+    }
+
+    #drop-zone.active {
+      display: flex;
+    }
+
+    .drop-zone-content {
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .drop-zone-icon {
+      font-size: 4rem;
+      margin-bottom: 20px;
+    }
+
+    .drop-zone-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: var(--text-main);
+    }
+
+    .drop-zone-hint {
+      font-size: 1rem;
+      color: var(--text-muted);
     }
 
     html {

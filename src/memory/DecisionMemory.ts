@@ -1,281 +1,515 @@
 import Database from 'better-sqlite3';
-import { LLMProvider } from '../engine/ProviderFactory';
+import { createHash } from 'crypto';
+import { createLogger } from '../shared/AppLogger';
+import { EmbeddingService } from './EmbeddingService';
+import {
+    AgentMemoryContext,
+    MemoryQueryOptions,
+    MemoryQueryResult,
+    StoreMemoryInput,
+    UpsertMemoryResult
+} from './MemoryTypes';
 
-export const EMBEDDING_ENABLED = false;
+type MemoryRow = {
+    id: string;
+    subtype: string;
+    content: string;
+    importance: number;
+    score: number;
+    embedding?: string | null;
+    modified?: string | null;
+    edge_count?: number;
+    last_accessed?: string | null;
+};
 
-export interface ToolDecision {
-    taskType: string;
-    step: string;
-    tool: string;
-    success: boolean;
-    timestamp: number;
-}
-
-// Cache em memória para reduzir bloqueios no event loop
-const decisionCache = new Map<string, ToolDecision[]>();
-const CACHE_TTL_MS = 60000; // 1 minuto
-let lastCacheCleanup = 0;
-
-/**
- * Invalida cache expirado de forma não-bloqueante.
- */
-function invalidateExpiredCache(): void {
-    const now = Date.now();
-    if (now - lastCacheCleanup < CACHE_TTL_MS) return;
-    
-    lastCacheCleanup = now;
-    // Limpar cache antigo
-    for (const [key, decisions] of decisionCache.entries()) {
-        const recentDecisions = decisions.filter(d => now - d.timestamp < CACHE_TTL_MS * 10);
-        if (recentDecisions.length === 0) {
-            decisionCache.delete(key);
-        } else {
-            decisionCache.set(key, recentDecisions);
-        }
-    }
-}
-
-export class DecisionMemory {
+export class MemoryService {
     private db: Database.Database;
-    private provider: LLMProvider;
-    private logger = { info: (k: string, m: string) => console.log(`[DecisionMemory] ${m}`) };
+    private embeddingService: EmbeddingService;
+    private logger = createLogger('MemoryService');
 
-    constructor(db: Database.Database, provider: LLMProvider) {
+    constructor(db: Database.Database, embeddingService: EmbeddingService) {
         this.db = db;
-        this.provider = provider;
+        this.embeddingService = embeddingService;
+        this.ensureTables();
     }
 
-    /**
-     * Armazena decisão de forma síncrona (better-sqlite3 é síncrono por design).
-     * Usa prepared statements para melhor performance.
-     * Agora, toda operação de escrita é feita dentro de uma transação atômica para evitar deadlocks e garantir consistência.
-     */
-    async store(decision: ToolDecision): Promise<void> {
+    public async upsertMemory(input: StoreMemoryInput): Promise<UpsertMemoryResult> {
         const now = new Date().toISOString();
-        const content = JSON.stringify(decision);
-        
-        let embedding = '[]';
-        if (EMBEDDING_ENABLED) {
-            try {
-                const emb = await this.provider.embed(
-                    `tool:${decision.tool} task:${decision.taskType} step:${decision.step} success:${decision.success}`
-                );
-                embedding = JSON.stringify(emb);
-            } catch {
-                embedding = '[]';
-            }
+        const embedding = await this.embeddingService.generate(input.content);
+
+        if (!embedding) {
+            this.logger.warn('embedding_unavailable', 'Embedding indisponível, usando fallback heurístico', {
+                content_preview: input.content.slice(0, 50)
+            });
+            return this.fallbackUpsert(input, now);
         }
 
-        const nodeId = `tool_decision:${this.hash(`${decision.taskType}:${decision.step}:${decision.tool}:${decision.timestamp}`)}`;
-        const tags = JSON.stringify(['tool_decision', decision.taskType, decision.tool, decision.success ? 'success' : 'failure']);
+        const existing = this.findBestExistingMemory(input, embedding);
 
-        // Usar transaction para atomicidade e evitar deadlocks
-        const insertStmt = this.db.prepare(`
-            INSERT OR REPLACE INTO nodes
-            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
-            VALUES (?, 'memory', 'tool_decision', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
+        if (existing) {
+            const mergedContent = this.mergeContent(existing.content, input.content);
+            const tags = JSON.stringify(this.buildTags(input.type, input.entities));
+            const updatedImportance = Math.min(1, Math.max(existing.importance || 0.5, input.importance) + 0.05);
+            const updatedScore = Math.min(1, Math.max(existing.score || 0.4, input.relevance));
 
+            // Envolve todas as operações de update em uma transação atômica
+            this.db.transaction(() => {
+                this.db.prepare(`
+                    UPDATE nodes
+                    SET content = ?, content_preview = ?, importance = ?, score = ?, freshness = ?, tags = ?, modified = ?, embedding = ?
+                    WHERE id = ?
+                `).run(
+                    mergedContent,
+                    mergedContent.slice(0, 280),
+                    updatedImportance,
+                    updatedScore,
+                    1,
+                    tags,
+                    now,
+                    JSON.stringify(embedding),
+                    existing.id
+                );
+                this.upsertEmbedding(existing.id, embedding, now, now, 0);
+                this.relinkEntities(existing.id, input.entities, input.context, now);
+            })();
+            return { memoryId: existing.id, action: 'updated' };
+        }
+
+        const memoryId = this.buildMemoryId(input.type, input.content);
+        const name = this.buildMemoryName(input.type, input.entities);
+        const tags = JSON.stringify(this.buildTags(input.type, input.entities));
+
+        // Envolve o insert em uma transação atômica
         this.db.transaction(() => {
-            insertStmt.run(
-                nodeId,
-                decision.tool,
-                decision.tool,
-                content,
-                content.slice(0, 280),
-                embedding,
-                'decision',
+            this.db.prepare(`
+                INSERT INTO nodes (id, type, subtype, name, content, content_preview, importance, score, embedding, tags, freshness, auto_indexed, created_at, modified)
+                VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            `).run(
+                memoryId,
+                input.type,
+                name,
+                input.content,
+                input.content.slice(0, 280),
+                input.importance,
+                input.relevance,
+                JSON.stringify(embedding),
                 tags,
-                0.5,
-                decision.success ? 1 : 0,
-                1,
-                0,
                 now,
                 now
             );
+            this.upsertEmbedding(memoryId, embedding, now, now, 0);
+            this.relinkEntities(memoryId, input.entities, input.context, now);
         })();
-
-        // Atualiza cache em memória de forma segura
-        invalidateExpiredCache();
-        if (!decisionCache.has(nodeId)) {
-            decisionCache.set(nodeId, []);
-        }
-        decisionCache.get(nodeId)!.push({ ...decision, timestamp: Date.now() });
+        return { memoryId, action: 'inserted' };
     }
 
-    /**
-     * Consulta decisões usando cache em memória para reduzir latência.
-     */
-    async query(taskType: string, step: string, topK: number = 10): Promise<ToolDecision[]> {
-        invalidateExpiredCache();
+    public async queryMemory(query: string, options?: MemoryQueryOptions): Promise<MemoryQueryResult[]> {
+        const limit = options?.limit ?? 6;
+        const reinforce = options?.reinforce !== false;
+        const queryEmbedding = await this.embeddingService.generate(query);
         
-        const cacheKey = `${taskType}:${step}`;
-        const cached = decisionCache.get(cacheKey);
-        
-        // Se temos cache válido, usar
-        if (cached && cached.length > 0) {
-            const recentDecisions = cached
-                .filter(d => Date.now() - d.timestamp < CACHE_TTL_MS * 10)
-                .slice(0, topK);
-            if (recentDecisions.length > 0) {
-                return recentDecisions;
-            }
+        if (!queryEmbedding) {
+            this.logger.warn('embedding_unavailable', 'Embedding indisponível para query, usando fallback');
+            return this.fallbackQuery(query, limit);
         }
 
-        if (!EMBEDDING_ENABLED) {
-            return this.queryWithoutEmbedding(taskType, step, topK);
-        }
-
-        const queryText = `${taskType} ${step}`;
-        const queryEmbedding = await this.provider.embed(queryText);
-
-        const nodes = this.db.prepare(`
-            SELECT id, content, embedding, score
-            FROM nodes
-            WHERE type = 'memory' AND subtype = 'tool_decision'
-            ORDER BY score DESC, modified DESC
-            LIMIT 100
-        `).all() as Array<{ id: string; content: string; embedding: string; score: number }>;
-
-        const results = nodes
-            .map(node => {
-                let similarity = 0;
-                try {
-                    const nodeEmbedding = JSON.parse(node.embedding || '[]') as number[];
-                    if (nodeEmbedding.length > 0 && queryEmbedding.length > 0) {
-                        similarity = this.cosineSimilarity(queryEmbedding, nodeEmbedding);
-                    }
-                } catch {
-                    similarity = 0;
-                }
-
-                const content = node.content;
-                let parsed: ToolDecision | null = null;
-                try {
-                    parsed = JSON.parse(content);
-                } catch {
-                    parsed = null;
-                }
-
-                if (!parsed) return null;
-
-                return { decision: parsed, similarity };
-            })
-            .filter((r): r is { decision: ToolDecision; similarity: number } => r !== null && r.decision !== null)
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, topK)
-            .map(r => r.decision);
-
-        // Atualizar cache
-        if (results.length > 0) {
-            decisionCache.set(cacheKey, results);
-        }
-
-        return results;
-    }
-
-    private async queryWithoutEmbedding(taskType: string, step: string, topK: number): Promise<ToolDecision[]> {
-        const safeTaskType = String(taskType).replace(/["%_]/g, '');
         const rows = this.db.prepare(`
-            SELECT content FROM nodes
-            WHERE type = 'memory'
-            AND subtype = 'tool_decision'
-            AND content LIKE ?
-            ORDER BY modified DESC
-            LIMIT ?
-        `).all(`%"taskType":"${safeTaskType}"%`, topK) as Array<{ content: string }>;
+            SELECT
+                n.id,
+                n.subtype,
+                n.content,
+                n.importance,
+                n.score,
+                COALESCE(me.embedding, n.embedding) AS embedding,
+                COALESCE(ec.edge_count, 0) AS edge_count,
+                me.last_accessed
+            FROM nodes n
+            LEFT JOIN memory_embeddings me ON me.memory_id = n.id
+            LEFT JOIN (
+                SELECT source, COUNT(*) AS edge_count
+                FROM edges
+                GROUP BY source
+            ) ec ON ec.source = n.id
+            WHERE n.type = 'memory'
+            ORDER BY n.modified DESC
+            LIMIT 300
+        `).all() as MemoryRow[];
 
-        const results: ToolDecision[] = [];
-        for (const row of rows) {
-            try {
-                const parsed = JSON.parse(row.content) as ToolDecision;
-                if (parsed.taskType === taskType) {
-                    results.push(parsed);
-                }
-            } catch {
-                // Skip invalid entries
+        const ranked = rows
+            .map((row) => {
+                const memoryEmbedding = this.safeParseEmbedding(row.embedding);
+                const simResult = this.cosineSimilarity(queryEmbedding, memoryEmbedding);
+                const similarity = simResult !== null ? this.normalizeSimilarity(simResult) : 0;
+                const relevance = Math.max(0, Math.min(1, (row.importance + row.score) / 2));
+                const connectionScore = Math.min(1, (row.edge_count || 0) / 6);
+                const graphScore = (connectionScore * 0.7) + (relevance * 0.3);
+                const finalScore = (0.6 * similarity) + (0.4 * graphScore);
+
+                return {
+                    id: row.id,
+                    type: row.subtype as MemoryQueryResult['type'],
+                    content: row.content,
+                    similarity,
+                    graphScore,
+                    finalScore,
+                    importance: row.importance,
+                    lastAccessed: row.last_accessed || undefined
+                };
+            })
+            .sort((a, b) => b.finalScore - a.finalScore)
+            .slice(0, limit);
+
+        if (reinforce) {
+            for (const item of ranked) {
+                this.reinforceMemory(item.id, 0.03);
             }
         }
 
-        // Atualizar cache
-        if (results.length > 0) {
-            const cacheKey = `${taskType}:${step}`;
-            decisionCache.set(cacheKey, results);
-        }
-
-        return results;
+        return ranked;
     }
 
-    /**
-     * Obtém histórico de ferramenta com cache.
-     */
-    async getToolHistory(tool: string, taskType?: string): Promise<{ success: number; failure: number; rate: number }> {
-        const safeTool = String(tool).replace(/["%_]/g, '');
-        const safeTaskType = taskType ? String(taskType).replace(/["%_]/g, '') : undefined;
+    public reinforceMemory(memoryId: string, delta: number = 0.05): void {
+        const now = new Date().toISOString();
 
-        let query = `
-            SELECT content FROM nodes
-            WHERE type = 'memory' AND subtype = 'tool_decision' AND content LIKE ?
-        `;
-        const params: string[] = [`%"tool":"${safeTool}"%`];
+        this.db.prepare(`
+            UPDATE nodes
+            SET importance = MIN(1, importance + ?),
+                score = MIN(1, score + (? / 2)),
+                freshness = MIN(1, freshness + 0.02),
+                modified = ?
+            WHERE id = ? AND type = 'memory'
+        `).run(delta, delta, now, memoryId);
 
-        if (safeTaskType) {
-            query += ` AND content LIKE ?`;
-            params.push(`%"taskType":"${safeTaskType}"%`);
-        }
+        this.db.prepare(`
+            UPDATE memory_embeddings
+            SET last_accessed = ?, access_count = access_count + 1, updated_at = ?
+            WHERE memory_id = ?
+        `).run(now, now, memoryId);
+    }
 
-        const rows = this.db.prepare(query).all(...params) as Array<{ content: string }>;
+    public countMemoriesContaining(token: string): number {
+        if (!token.trim()) return 0;
+        const row = this.db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM nodes
+            WHERE type = 'memory' AND LOWER(content) LIKE ?
+        `).get(`%${token.toLowerCase()}%`) as { count: number };
+        return Number(row?.count || 0);
+    }
 
-        let success = 0;
-        let failure = 0;
+    public applyDecay(decayRate: number = 0.01): number {
+        const result = this.db.prepare(`
+            UPDATE nodes
+            SET importance = MAX(0, importance - ?),
+                freshness = MAX(0, freshness - (? / 2))
+            WHERE type = 'memory'
+              AND id IN (
+                  SELECT memory_id
+                  FROM memory_embeddings
+                  WHERE last_accessed IS NULL OR last_accessed < datetime('now', '-30 days')
+              )
+        `).run(decayRate, decayRate);
 
-        for (const row of rows) {
-            try {
-                const parsed = JSON.parse(row.content) as ToolDecision;
-                if (parsed.success) success++;
-                else failure++;
-            } catch {
-                // Skip invalid entries
+        return Number(result.changes || 0);
+    }
+
+    private ensureTables(): void {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                memory_id TEXT PRIMARY KEY,
+                embedding TEXT NOT NULL,
+                model TEXT,
+                last_accessed TEXT,
+                access_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_accessed ON memory_embeddings(last_accessed);
+        `);
+    }
+
+    private findBestExistingMemory(input: StoreMemoryInput, embedding: number[]): MemoryRow | null {
+        const candidates = this.db.prepare(`
+            SELECT n.id, n.subtype, n.content, n.importance, n.score, COALESCE(me.embedding, n.embedding) AS embedding
+            FROM nodes n
+            LEFT JOIN memory_embeddings me ON me.memory_id = n.id
+            WHERE n.type = 'memory' AND n.subtype = ?
+            ORDER BY n.modified DESC
+            LIMIT 120
+        `).all(input.type) as MemoryRow[];
+
+        let best: { row: MemoryRow; score: number } | null = null;
+        for (const row of candidates) {
+            const currentEmbedding = this.safeParseEmbedding(row.embedding);
+            const simResult = this.cosineSimilarity(embedding, currentEmbedding);
+            const similarity = simResult !== null ? this.normalizeSimilarity(simResult) : 0;
+            const overlap = this.entityOverlapScore(row.content, input.entities);
+            const contradiction = this.looksContradictory(row.content, input.content) ? 0.3 : 0;
+            const candidateScore = similarity + overlap + contradiction;
+
+            if (!best || candidateScore > best.score) {
+                best = { row, score: candidateScore };
             }
         }
 
-        const total = success + failure;
-        return {
-            success,
-            failure,
-            rate: total > 0 ? success / total : 0
-        };
+        if (!best) return null;
+
+
+        // AJUSTE: flexibilizar threshold com entity overlap para melhor merge semântico
+        const entityOverlap = this.entityOverlapScore(best.row.content, input.entities);
+        const shouldUpdate = best.score >= 0.85 + entityOverlap
+            || (best.score >= 0.78 && entityOverlap >= 0.2)
+            || this.looksContradictory(best.row.content, input.content);
+
+        return shouldUpdate ? best.row : null;
+    }
+
+    private mergeContent(existingContent: string, newContent: string): string {
+        const normalizedExisting = existingContent.trim().toLowerCase();
+        const normalizedIncoming = newContent.trim().toLowerCase();
+        if (normalizedExisting === normalizedIncoming) {
+            return existingContent;
+        }
+        if (normalizedExisting.includes(normalizedIncoming)) {
+            return existingContent;
+        }
+        if (this.looksContradictory(existingContent, newContent)) {
+            return newContent;
+        }
+        return `${existingContent}\nAtualizacao: ${newContent}`;
+    }
+
+    private relinkEntities(memoryId: string, entities: string[], context: AgentMemoryContext, now: string): void {
+        this.db.prepare(`
+            DELETE FROM edges
+            WHERE source = ? AND relation IN ('mentions', 'about', 'applies_to_project')
+        `).run(memoryId);
+
+        const uniqueEntities = Array.from(new Set(entities.map((entity) => entity.trim()).filter(Boolean)));
+        for (const entity of uniqueEntities) {
+            const entityNodeId = this.ensureEntityNode(entity, now);
+            this.db.prepare(`
+                INSERT INTO edges
+                (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
+                VALUES (?, ?, 'mentions', ?, ?, 0, ?, ?)
+            `).run(memoryId, entityNodeId, 0.75, 0.7, context.sessionId, now);
+        }
+
+        if (context.projectId) {
+            const projectNodeId = this.ensureProjectNode(context.projectId, now);
+            this.db.prepare(`
+                INSERT INTO edges
+                (source, target, relation, weight, semantic_strength, traversal_count, context, created_at)
+                VALUES (?, ?, 'applies_to_project', ?, ?, 0, ?, ?)
+            `).run(memoryId, projectNodeId, 0.82, 0.78, context.sessionId, now);
+        }
+    }
+
+    private ensureEntityNode(entity: string, now: string): string {
+        const cleanEntity = entity.trim();
+        const entityNodeId = `entity:${this.hash(cleanEntity.toLowerCase())}`;
+        this.db.prepare(`
+            INSERT OR IGNORE INTO nodes
+            (id, type, subtype, name, content, content_preview, importance, score, freshness, category, tags, auto_indexed, created_at, modified)
+            VALUES (?, 'concept', 'entity', ?, ?, ?, 0.45, 0.3, 1.0, 'entity', ?, 1, ?, ?)
+        `).run(
+            entityNodeId,
+            cleanEntity,
+            `Entidade: ${cleanEntity}`,
+            `Entidade: ${cleanEntity}`,
+            JSON.stringify(['entity', cleanEntity.toLowerCase()]),
+            now,
+            now
+        );
+        return entityNodeId;
+    }
+
+    private ensureProjectNode(projectId: string, now: string): string {
+        const projectNodeId = `project:${projectId}`;
+        this.db.prepare(`
+            INSERT OR IGNORE INTO nodes
+            (id, type, subtype, name, content, content_preview, importance, score, freshness, category, tags, auto_indexed, created_at, modified)
+            VALUES (?, 'concept', 'project', ?, ?, ?, 0.72, 0.55, 1.0, 'project', ?, 1, ?, ?)
+        `).run(
+            projectNodeId,
+            projectId,
+            `Projeto ${projectId}`,
+            `Projeto ${projectId}`,
+            JSON.stringify(['project', projectId]),
+            now,
+            now
+        );
+        return projectNodeId;
+    }
+
+    private upsertEmbedding(memoryId: string, embedding: number[], now: string, lastAccessed?: string, accessCount?: number): void {
+        this.db.prepare(`
+            INSERT INTO memory_embeddings
+            (memory_id, embedding, model, last_accessed, access_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(memory_id) DO UPDATE SET
+                embedding = excluded.embedding,
+                model = excluded.model,
+                updated_at = excluded.updated_at,
+                last_accessed = COALESCE(excluded.last_accessed, memory_embeddings.last_accessed),
+                access_count = COALESCE(excluded.access_count, memory_embeddings.access_count)
+        `).run(
+            memoryId,
+            JSON.stringify(embedding),
+            process.env.OLLAMA_MODEL || process.env.MODEL || 'unknown',
+            lastAccessed || null,
+            accessCount ?? 0,
+            now,
+            now
+        );
+    }
+
+    private entityOverlapScore(content: string, entities: string[]): number {
+        if (!entities.length) return 0;
+        const normalized = content.toLowerCase();
+        let matches = 0;
+        for (const entity of entities) {
+            if (normalized.includes(entity.toLowerCase())) {
+                matches++;
+            }
+        }
+        return Math.min(0.4, (matches / entities.length) * 0.4);
+    }
+
+    private looksContradictory(previous: string, incoming: string): boolean {
+        const prev = previous.toLowerCase();
+        const next = incoming.toLowerCase();
+        const negPattern = /\b(nao|não|nunca|jamais)\b/;
+        const hasNegPrev = negPattern.test(prev);
+        const hasNegNext = negPattern.test(next);
+        if (hasNegPrev !== hasNegNext) {
+            const sharedWords = this.sharedTokenCount(prev, next);
+            return sharedWords >= 3;
+        }
+        return false;
+    }
+
+    private sharedTokenCount(a: string, b: string): number {
+        const tokensA = new Set(this.tokenize(a));
+        const tokensB = new Set(this.tokenize(b));
+        let count = 0;
+        for (const token of tokensA) {
+            if (tokensB.has(token)) count++;
+        }
+        return count;
+    }
+
+    private tokenize(value: string): string[] {
+        return value
+            .toLowerCase()
+            .split(/[^a-z0-9à-ÿ_]+/i)
+            .map((token) => token.trim())
+            .filter((token) => token.length >= 3);
+    }
+
+    private safeParseEmbedding(embedding?: string | null): number[] {
+        if (!embedding) return [];
+        try {
+            const parsed = JSON.parse(embedding);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error: any) {
+            this.logger.debug('invalid_embedding', 'Falha ao parsear embedding armazenado.', {
+                reason: String(error?.message || error)
+            });
+            return [];
+        }
+    }
+
+    private buildMemoryId(type: string, content: string): string {
+        return `memory:${type}:${this.hash(`${type}:${content}:${Date.now()}`)}`;
+    }
+
+    private buildMemoryName(type: string, entities: string[]): string {
+        if (!entities.length) {
+            return `memory:${type}`;
+        }
+        const entitySuffix = entities.slice(0, 2).join('/');
+        return `memory:${type}:${entitySuffix}`;
+    }
+
+    private buildTags(type: string, entities: string[]): string[] {
+        const base = ['memory_lifecycle', type];
+        for (const entity of entities) {
+            base.push(`entity:${entity.toLowerCase()}`);
+        }
+        return Array.from(new Set(base));
     }
 
     private hash(text: string): string {
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            hash = (hash << 5) - hash + text.charCodeAt(i);
-            hash |= 0;
-        }
-        return Math.abs(hash).toString(36);
+        return createHash('sha1').update(text).digest('hex').slice(0, 16);
     }
 
-    private cosineSimilarity(vecA: number[], vecB: number[]): number {
-        if (!vecA.length || !vecB.length) return 0;
-        const len = Math.min(vecA.length, vecB.length);
+    private cosineSimilarity(a: number[], b: number[]): number | null {
+        if (!a.length || !b.length) return null;
+        const len = Math.min(a.length, b.length);
         let dot = 0;
         let normA = 0;
         let normB = 0;
         for (let i = 0; i < len; i++) {
-            dot += vecA[i] * vecB[i];
-            normA += vecA[i] * vecA[i];
-            normB += vecB[i] * vecB[i];
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
         }
-        if (!normA || !normB) return 0;
+        if (!normA || !normB) return null;
         return dot / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    /**
-     * Limpa cache em memória (útil para tests ou cleanup manual).
-     */
-    static clearCache(): void {
-        decisionCache.clear();
-        lastCacheCleanup = 0;
+    private normalizeSimilarity(value: number): number {
+        return Math.max(0, Math.min(1, (value + 1) / 2));
+    }
+
+    private fallbackUpsert(input: StoreMemoryInput, now: string): UpsertMemoryResult {
+        const memoryId = this.buildMemoryId(input.type, input.content);
+        const name = this.buildMemoryName(input.type, input.entities);
+        const tags = JSON.stringify(this.buildTags(input.type, input.entities));
+
+        this.db.prepare(`
+            INSERT INTO nodes
+            (id, type, subtype, name, content, content_preview, importance, score, freshness, category, tags, auto_indexed, created_at, modified)
+            VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(
+            memoryId,
+            input.type,
+            name,
+            input.content,
+            input.content.slice(0, 280),
+            input.importance,
+            input.relevance,
+            1,
+            'memory_lifecycle',
+            tags,
+            now,
+            now
+        );
+
+        this.relinkEntities(memoryId, input.entities, input.context, now);
+        return { memoryId, action: 'inserted' };
+    }
+
+    private fallbackQuery(query: string, limit: number): MemoryQueryResult[] {
+        const normalizedQuery = query.toLowerCase();
+        const rows = this.db.prepare(`
+            SELECT id, subtype, content, importance, score
+            FROM nodes
+            WHERE type = 'memory' AND LOWER(content) LIKE ?
+            ORDER BY importance DESC, score DESC
+            LIMIT ?
+        `).all(`%${normalizedQuery}%`, limit) as Array<{ id: string; subtype: string; content: string; importance: number; score: number }>;
+
+        return rows.map(row => ({
+            id: row.id,
+            type: row.subtype as MemoryQueryResult['type'],
+            content: row.content,
+            similarity: 0,
+            graphScore: (row.importance + row.score) / 2,
+            finalScore: (row.importance + row.score) / 2,
+            importance: row.importance
+        }));
     }
 }
