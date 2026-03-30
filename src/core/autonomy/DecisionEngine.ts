@@ -2,11 +2,15 @@
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { ExecutionRoute, TaskNature } from './ActionRouter';
 import { ResolutionProposal } from './CapabilityResolver';
+import { AggregatedConfidence, UncertaintyType } from './ConfidenceScorer';
 
 export enum AutonomyDecision {
-    EXECUTE = "execute",   // Executar automaticamente
-    ASK = "ask",           // Perguntar ao usuário
-    CONFIRM = "confirm"    // Confirmar antes de executar
+    EXECUTE = "execute",           // Executar automaticamente
+    ASK = "ask",                   // Perguntar ao usuário (genérico)
+    CONFIRM = "confirm",           // Confirmar antes de executar
+    ASK_CLARIFICATION = "ask_clarification",     // Intenção obscura
+    ASK_TOOL_SELECTION = "ask_tool_selection",   // Intenção clara, mas ferramenta incerta
+    ASK_EXECUTION_STRATEGY = "ask_strategy"      // Conflito interno (intenção vs ação)
 }
 
 export enum AutonomyLevel {
@@ -22,7 +26,8 @@ export interface AutonomyContext {
     riskLevel: 'low' | 'medium' | 'high';  // Nível de risco
     isDestructive: boolean;   // Ação destrutiva (delete, drop, etc.)?
     isReversible: boolean;     // Ação pode ser revertida?
-    confidence?: number;       // Confiança na classificação/roteamento
+    confidence?: number;       // Score depreciado (usar full confidence se disponível)
+    aggregatedConfidence?: AggregatedConfidence; // NOVO: Diagnóstico completo
     autonomyLevel?: AutonomyLevel; // Nível de autonomia global
     intentSubtype?: string;    // command, suggestion, doubt
     route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
@@ -31,13 +36,13 @@ export interface AutonomyContext {
 }
 
 /**
- * Motor de decisão de autonomia.
- * Decide: EXECUTAR | PERGUNTAR | CONFIRMAR
+ * Motor de decisão de autonomia evoluído com diagnósticos.
+ * Decide: EXECUTAR | PERGUNTAR | CONFIRMAR | DIAGNÓSTICOS ESPECÍFICOS
  */
 export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     const level = ctx.autonomyLevel || AutonomyLevel.BALANCED;
-    const confidence = ctx.confidence ?? 1.0;
-    const isCommand = ctx.intentSubtype === 'command' || !ctx.intentSubtype;
+    const confidence = ctx.aggregatedConfidence?.score ?? ctx.confidence ?? 1.0;
+    const diagnostics = ctx.aggregatedConfidence;
 
     // ═══════════════════════════════════════════════════════════════════
     // 🔴 SAFE MODE: Sempre confirmação/pergunta
@@ -54,12 +59,41 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 🧠 DIAGNÓSTICO DE INCERTEZA (Confidence Decomposition in Action)
+    // ═══════════════════════════════════════════════════════════════════
+    if (diagnostics) {
+        // 1. Conflito Interno: Sei o que quer, mas não como fazer (ou vice-versa)
+        if (diagnostics.isConflict) {
+            return AutonomyDecision.ASK_EXECUTION_STRATEGY;
+        }
+
+        // 2. Incerteza de Intenção: Não entendi bem o pedido
+        if (diagnostics.uncertaintyType === UncertaintyType.INTENT || diagnostics.factors.classifier < 0.60) {
+            return AutonomyDecision.ASK_CLARIFICATION;
+        }
+
+        // 3. Incerteza de Execução: Sei o que quer, mas a ferramenta/rota está obscura
+        if (diagnostics.uncertaintyType === UncertaintyType.EXECUTION || diagnostics.factors.router < 0.60) {
+            // Se o risco for baixo, podemos tentar EXECUTE no modo AGGRESSIVE, 
+            // mas no BALANCED perguntamos a ferramenta.
+            if (level !== AutonomyLevel.AGGRESSIVE) {
+                return AutonomyDecision.ASK_TOOL_SELECTION;
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // 🟠 CAPABILITY RESOLUTION (Self-Healing)
     // ═══════════════════════════════════════════════════════════════════
     if (ctx.capabilityGap?.hasGap) {
+        // Cruzamento: Se a confiança na rota é baixa E tem gap, não sugerimos instalação direto
+        if (diagnostics && diagnostics.factors.router < 0.70) {
+            return AutonomyDecision.ASK_TOOL_SELECTION; // "Talvez nem precise dessa ferramenta"
+        }
+
         // Se a tarefa é informativa, ignoramos o gap (regra anti-regressão)
         if (ctx.nature === TaskNature.INFORMATIVE) {
-            return AutonomyDecision.EXECUTE; // Respond direto via LLM
+            return AutonomyDecision.EXECUTE;
         }
 
         // Se é uma lacuna bloqueante, sempre confirmar instalação
@@ -67,67 +101,35 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
             return AutonomyDecision.CONFIRM;
         }
 
-        // Se é uma melhoria (enhancement), podemos sugerir ou confirmar
         return AutonomyDecision.CONFIRM;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 🟡 DUVIDA OU SUGESTÃO: Tratamento diferenciado
-    // "acho que deveria mover" -> CONFIRM (mais natural)
-    // "por que os arquivos estão aí?" -> ASK (precisa de info)
-    // ═══════════════════════════════════════════════════════════════════
-    if (ctx.intentSubtype === 'doubt') {
-        return AutonomyDecision.ASK;
-    }
+    // [Mantendo lógica legada para compatibilidade se não houver diagnostics]
+    if (ctx.intentSubtype === 'doubt') return AutonomyDecision.ASK;
+    if (ctx.intentSubtype === 'suggestion') return ctx.riskLevel === 'low' ? AutonomyDecision.CONFIRM : AutonomyDecision.ASK;
+    if (ctx.intentSubtype === 'uncertain' && ctx.intent !== 'conversation') return AutonomyDecision.ASK;
 
-    if (ctx.intentSubtype === 'suggestion') {
-        // Sugestões de baixo risco podem ser confirmadas, não apenas perguntadas
-        return ctx.riskLevel === 'low'
-            ? AutonomyDecision.CONFIRM
-            : AutonomyDecision.ASK;
-    }
-
-    // NOVO: Incerteza total → perguntar
-    if (ctx.intentSubtype === 'uncertain' && ctx.intent !== 'conversation') {
-        return AutonomyDecision.ASK;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🟡 BAIXA CONFIANÇA: Se < 0.98 em modo balanceado, perguntar por segurança
-    // ──────── EXCEPT: Se a rota for DIRECT_LLM e risco baixo, permitimos.
-    // ═══════════════════════════════════════════════════════════════════
+    // 🟡 BAIXA CONFIANÇA (Fallback)
     if (level === AutonomyLevel.BALANCED && confidence < 0.98 && ctx.riskLevel !== 'low') {
         if (ctx.route !== ExecutionRoute.DIRECT_LLM) {
             return AutonomyDecision.ASK;
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 🟡 AMARELO: Falta informação → perguntar
-    // EXCEPT: Se for tarefa INFORMATIVA, permitimos responder sem dados.
-    // ═══════════════════════════════════════════════════════════════════
     if (!ctx.hasAllParams && ctx.nature === TaskNature.EXECUTABLE) {
         return AutonomyDecision.ASK;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
     // 🟢 VERDE: Risco baixo ou Autonomia Agressiva → executar
-    // ═══════════════════════════════════════════════════════════════════
     if (level === AutonomyLevel.AGGRESSIVE || ctx.riskLevel === 'low') {
         return AutonomyDecision.EXECUTE;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
     // 🟡 AMARELO: Risco médio → decidir baseado na confiança (BALANCED)
-    // ═══════════════════════════════════════════════════════════════════
     if (ctx.riskLevel === 'medium') {
-        // Se a confiança for ultra-alta, podemos arriscar a execução automática
         return (confidence >= 0.95) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // FALLBACK: Perguntar se não houver certeza
-    // ═══════════════════════════════════════════════════════════════════
     return AutonomyDecision.ASK;
 }
 

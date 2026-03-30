@@ -85,11 +85,12 @@ export class CognitiveOrchestrator {
         // 5. Capability Resolver (THINK: Detectar lacunas cognitivas/ferramentas)
         const capabilityGap = this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
 
-        // 6. Confidence Scorer (Agregação de incerteza)
+        // 6. Confidence Scorer (Agregação de incerteza com pesos dinâmicos)
         const aggregatedConfidence = this.confidenceScorer.calculate({
-            classifierConfidence: 0.9, // TODO: Pegar do TaskClassifier real se disponível
+            classifierConfidence: input.taskType ? 0.95 : 0.60, // Fallback se taskType for nulo
             routerConfidence: routeDecision.confidence,
-            memoryHits: memoryHits
+            memoryHits: memoryHits,
+            nature: routeDecision.nature
         });
 
         // 7. Decision Engine (DECIDE: O que fazer baseado no risco, confiança e gaps)
@@ -118,11 +119,22 @@ export class CognitiveOrchestrator {
         // 7. Mapear Decisão para Estratégia de Execução (ACT)
 
         // PRIORIDADE 1: Perguntar ou Confirmar (DecisionEngine comanda)
-        if (autonomyDecision === AutonomyDecision.ASK) {
+        if (autonomyDecision === AutonomyDecision.ASK ||
+            autonomyDecision === AutonomyDecision.ASK_CLARIFICATION ||
+            autonomyDecision === AutonomyDecision.ASK_TOOL_SELECTION ||
+            autonomyDecision === AutonomyDecision.ASK_EXECUTION_STRATEGY) {
+
+            const strategyMap: Record<string, string> = {
+                [AutonomyDecision.ASK_CLARIFICATION]: "intent_unclear",
+                [AutonomyDecision.ASK_TOOL_SELECTION]: "execution_unclear",
+                [AutonomyDecision.ASK_EXECUTION_STRATEGY]: "cognitive_conflict",
+                [AutonomyDecision.ASK]: "low_confidence_fallback"
+            };
+
             return {
                 strategy: CognitiveStrategy.ASK,
-                confidence: 1.0,
-                reason: "autonomy_engine_ask",
+                confidence: aggregatedConfidence.score,
+                reason: strategyMap[autonomyDecision] || "autonomy_engine_ask",
                 route: routeDecision,
                 autonomy: autonomyDecision,
                 memoryHits,
