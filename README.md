@@ -7,9 +7,21 @@
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="IalClaw Logo Banner" width="760" />
 </p>
 
-![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Powered by OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
+![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Inspired by OpenClaw](https://img.shields.io/badge/inspired%20by-OpenClaw-orange)
 
-IalClaw is an **Adaptive Cognitive Agent** (100% local and private) developed in Node.js (TypeScript). Developed on top of OpenClaw, it evolves from a standard RAG-based assistant into a mature cognitive system with self-awareness of its own capabilities and confidence levels.
+IalClaw is an **Adaptive Cognitive Agent** (100% local and private) developed in Node.js (TypeScript). 
+
+IalClaw is an original system, designed from scratch based on its own cognitive architecture. While inspired by ideas present in projects like OpenClaw, it does not use code or structure from those projects, being an independent implementation.
+
+---
+
+## 🧠 Architecture Origin
+
+IalClaw was designed from the ground up based on its own specifications (design and architecture files).
+
+The system was inspired by concepts explored in the autonomous agent community, including projects like OpenClaw, but it does not reuse code or the structure of those projects.
+
+---
 
 ---
 
@@ -117,7 +129,7 @@ This transforms the agent from reactive to reflective and explainable.
 - **SQLite** - Vector & Relational Storage
 - **Telegram Bot API** - Primary Interface
 - **SSE/WebSocket** - Real-time Telemetry
-- **OpenClaw** - Cognitive Architecture Foundation
+- **OpenClaw** - Conceptual reference (not used as code base)
 
 ---
 
@@ -419,9 +431,19 @@ Contributions are welcome! Feel free to open an **issue** to discuss new ideas o
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="Banner do Logo do IalClaw" width="760" />
 </p>
 
-![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Baseado em OpenClaw](https://img.shields.io/badge/powered%20by-OpenClaw-orange)
+![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Inspirado no OpenClaw](https://img.shields.io/badge/inspired%20by-OpenClaw-orange)
 
-O IalClaw é um **Agente Cognitivo Adaptativo** (100% local e privado), desenvolvido em Node.js (TypeScript). Construído sobre o OpenClaw, ele evolui de um assistente RAG comum para um sistema cognitivo maduro com autoconsciência de suas capacidades e níveis de confiança.
+O IalClaw é um **Agente Cognitivo Adaptativo** (100% local e privado), desenvolvido em Node.js (TypeScript). 
+
+O IalClaw é um sistema original, projetado do zero com base em uma arquitetura cognitiva própria. Embora inspirado por ideias presentes em projetos como OpenClaw, não utiliza código ou estrutura desses projetos, sendo uma implementação independente.
+
+---
+
+## 🧠 Origem da Arquitetura
+
+O IalClaw foi projetado do zero a partir de especificações próprias (arquivos de design e arquitetura).
+
+O sistema foi inspirado por conceitos explorados na comunidade de agentes autônomos, incluindo projetos como OpenClaw, mas não reutiliza código nem estrutura desses projetos.
 
 ---
 
@@ -529,7 +551,7 @@ Isso transforma o agente de reativo para reflexivo e explicável.
 - **SQLite** - Armazenamento Vetorial e Relacional
 - **Telegram Bot API** - Interface Principal
 - **SSE/WebSocket** - Telemetria em Tempo Real
-- **OpenClaw** - Base da Arquitetura Cognitiva
+- **OpenClaw** - Referência conceitual (não utilizado como base de código)
 
 ---
 
