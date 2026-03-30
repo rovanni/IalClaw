@@ -15,7 +15,7 @@ export class TelegramOutputHandler {
     public async sendResponse(ctx: Context, response: string, requiresAudio: boolean = false) {
         if (requiresAudio) {
             try {
-                const audiosDir = path.join(process.cwd(), 'workspace', 'audios');
+                const audiosDir = path.join(process.cwd(), 'workspace', 'audios', 'outputs');
                 if (!fs.existsSync(audiosDir)) {
                     fs.mkdirSync(audiosDir, { recursive: true });
                 }

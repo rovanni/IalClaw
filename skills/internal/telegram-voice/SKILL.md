@@ -16,14 +16,14 @@ This skill empowers the agent to handle voice-based communication on Telegram. I
 
 When a user sends an audio file (typically `.ogg`), follow these steps:
 
-1.  **Conversion**: Convert the Telegram `.ogg` file to a 16kHz mono `.wav` file required by Whisper.
+1.  **Conversion**: Convert the Telegram `.ogg` file (located at `workspace/audios/inputs/input.ogg`) to a 16kHz mono `.wav` file required by Whisper.
     ```bash
-    ffmpeg -i audio.ogg -ar 16000 -ac 1 audio.wav
+    ffmpeg -y -i workspace/audios/inputs/input.ogg -ar 16000 -ac 1 workspace/audios/inputs/input.wav
     ```
 
 2.  **Transcription**: Use the GPU-optimized Whisper CLI to transcribe the audio.
     ```bash
-    /home/rover/whisper.cpp/build/bin/whisper-cli -m /home/rover/whisper.cpp/models/ggml-base.bin -f audio.wav -l pt
+    /home/rover/whisper.cpp/build/bin/whisper-cli -m /home/rover/whisper.cpp/models/ggml-base.bin -f workspace/audios/inputs/input.wav -l pt
     ```
     *Note: The `-l pt` flag ensures transcription in Portuguese.*
 
@@ -33,15 +33,17 @@ When a user sends an audio file (typically `.ogg`), follow these steps:
 
 When a voice response is requested or appropriate (e.g., responding to a voice message), follow these steps:
 
-1.  **Speech Generation**: Use the `thorial-tts.sh` script to generate an `.mp3` file.
+1.  **Speech Generation**: Use the `thorial-tts.sh` script to generate an `.mp3` file in the outputs directory.
     ```bash
-    /home/rover/.openclaw/workspace/scripts/thorial-tts.sh "[RESPONSE_TEXT]" /tmp/output.mp3
+    /home/rover/.openclaw/workspace/scripts/thorial-tts.sh "[RESPONSE_TEXT]" workspace/audios/outputs/output.mp3
+    ```
+
+2.  **Conversion**: Convert the `.mp3` to a Telegram-compatible Voice message (`.ogg` Opus).
+    ```bash
+    ffmpeg -y -i workspace/audios/outputs/output.mp3 -c:a libopus workspace/audios/outputs/output.ogg
     ```
     *Default Voice: pt-BR-AntonioNeural (Masculino)*
 
-2.  **Telegram Conversion**: Convert the `.mp3` to a Telegram-compatible `.ogg` (opus) file.
-    ```bash
-    ffmpeg -i /tmp/output.mp3 -c:a libopus -b:a 64k /home/rover/.openclaw/workspace/audios/output.ogg -y
     ```
 
 3.  **Delivery**: Inform the user that the voice message is located at `/home/rover/.openclaw/workspace/audios/output.ogg`.

@@ -149,13 +149,13 @@ export class TelegramInputHandler {
                 await ctx.replyWithChatAction('record_voice');
 
                 try {
-                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'input.ogg');
+                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'inputs', 'input.ogg');
                     await this.downloadTelegramFile(ctx, audioData.file_id, destPath);
 
                     this.logger.info('audio_downloaded', 'Audio downloaded successfully', { path: destPath });
 
                     return {
-                        text: `Process please user voice message at workspace/audios/input.ogg`,
+                        text: `Process please user voice message at workspace/audios/inputs/input.ogg`,
                         source_type: 'audio',
                         requires_audio_reply: true
                     };
