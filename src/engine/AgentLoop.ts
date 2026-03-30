@@ -2406,9 +2406,11 @@ FORMATO DE SAÍDA:
             // ═════════════════════════════════════════════════════════════
             // GARANTIR OUTPUT MÍNIMO VÁLIDO
             // ═════════════════════════════════════════════════════════════
-            if (!response.final_answer || response.final_answer.trim().length < 50) {
+            const minLength = this.currentTaskType === 'conversation' ? 2 : 50;
+            if (!response.final_answer || response.final_answer.trim().length < minLength) {
                 this.logger.warn('short_circuit_empty', '[SHORT-CIRCUIT] LLM retornou resposta vazia ou muito curta', {
-                    response_length: response.final_answer?.length || 0
+                    response_length: response.final_answer?.length || 0,
+                    min_required: minLength
                 });
                 return {
                     answer: t('content.generation_failed'),

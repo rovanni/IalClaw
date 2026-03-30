@@ -77,13 +77,11 @@ const HEURISTIC_RULES: HeuristicRule[] = [
     {
         type: 'skill_installation',
         patterns: [
-            /\bnpx\s+skills?\s+(add|install)/i,
-            /\bskills?\s+add\b/i,
-            /\b(instalar|instale)\s+(uma\s+)?skill\b/i,
-            /\bskill\b.*\b(instalar|instale|add|install)\b/i,
-            /\b(install|add)\s+skill\b/i
+            /\b(instalar|instale|adicionar|adicione)\s+(uma\s+)?skill\b/i,
+            /\b(install|add)\s+skill\b/i,
+            /^(npx|npm)\s+skills?\s+(add|install)/i
         ],
-        keywords: ['skill', 'npx skills', 'instalar skill', 'add skill'],
+        keywords: ['instalar skill', 'add skill', 'npx skills install'],
         confidence: 0.98
     },
     {
@@ -173,7 +171,7 @@ const HEURISTIC_RULES: HeuristicRule[] = [
     {
         type: 'data_analysis',
         patterns: [
-            /\b(analisar|analyze|análise)\b/i,
+            /\b(analisar|analizar|analyze|análise)\b/i,
             /\b(dados|data)\b.*\b(analisar|processar|visualizar)\b/i,
             /\b(gráfico|chart|plot)\b/i,
             /\b(estatística|statistics)\b/i
@@ -425,11 +423,9 @@ export class TaskClassifier {
 
     private isSkillInstallation(normalized: string): boolean {
         const skillPatterns = [
-            /\bnpx\s+skills?\s+(add|install)/i,
-            /\bskills?\s+add\b/i,
-            /\b(instalar|instale)\s+(uma\s+)?skill\b/i,
-            /\bskill\b.*\b(instalar|instale|add|install)\b/i,
-            /\b(install|add)\s+skill\b/i
+            /\b(instale|instalar|adicionar|adicione)\s+(uma\s+)?skill\b/i,
+            /\b(install|add)\s+skill\b/i,
+            /^(npx|npm)\s+skills?\s+(add|install)/i
         ];
 
         return skillPatterns.some(pattern => pattern.test(normalized));
