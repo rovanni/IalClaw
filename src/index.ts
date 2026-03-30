@@ -631,7 +631,7 @@ if (hasTelegramBotToken) {
                 `• Estilo: ${profile.response_style}\n` +
                 `• Aprendizado: ${profile.learning_mode}\n` +
                 `• Autonomia: ${profile.autonomy_level}\n\n` +
-                `_Digite /reset-onboarding para reconfigurar_`,
+                `_Digite /reset_onboarding para reconfigurar_`,
                 { parse_mode: 'Markdown' }
             );
         } else {
@@ -639,7 +639,7 @@ if (hasTelegramBotToken) {
         }
     });
 
-    bot.command('reset-onboarding', async (ctx) => {
+    bot.command('reset_onboarding', async (ctx) => {
         if (!ctx.from) return;
         onboardingService.resetOnboarding(String(ctx.from.id));
         const result = inputHandler.checkOnboarding(ctx.from.id);
@@ -649,7 +649,7 @@ if (hasTelegramBotToken) {
     });
 
     bot.on('message', async (ctx) => {
-        if (ctx.message?.text === '/start' || ctx.message?.text === '/profile' || ctx.message?.text === '/reset-onboarding') return;
+        if (ctx.message?.text === '/start' || ctx.message?.text === '/profile' || ctx.message?.text === '/reset_onboarding') return;
         if (!ctx.from) return;
 
         const userId = ctx.from.id;
@@ -690,7 +690,7 @@ if (hasTelegramBotToken) {
         { command: 'status', description: 'Ver estado da sessão atual' },
         { command: 'start', description: 'Mensagem de boas-vindas' },
         { command: 'profile', description: 'Ver seu perfil' },
-        { command: 'reset-onboarding', description: 'Refazer o onboarding' },
+        { command: 'reset_onboarding', description: 'Refazer o onboarding' },
     ]).catch((err) => {
         logger.error('set_commands_failed', err, t('log.index.set_commands_failed'));
     });
