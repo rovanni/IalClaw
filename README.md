@@ -33,13 +33,64 @@ This project implements a complete cognitive architecture. While functional, it 
 
 ## 🧠 Cognitive Architecture v3.1 (Fundamental Layers)
 
+### 🧭 Cognitive Pipeline (THINK → DECIDE → ACT)
+
+```mermaid
+flowchart LR
+    A[User Input] --> B[THINK]
+
+    subgraph THINK
+        B1[CapabilityResolver]
+        B2[ConfidenceScorer]
+    end
+
+    B --> B1 --> B2 --> C[DECIDE]
+
+    subgraph DECIDE
+        C1[DecisionEngine]
+    end
+
+    C --> C1 --> D[ACT]
+
+    subgraph ACT
+        D1[CognitiveOrchestrator]
+    end
+
+    D --> D1 --> E[Response / Execution]
+```
+
 ```md
-THINK  → CapabilityResolver + ConfidenceScorer  
-DECIDE → DecisionEngine  
+THINK  → CapabilityResolver + ConfidenceScorer
+DECIDE → DecisionEngine
 ACT    → CognitiveOrchestrator
 ```
 
 ## 🔗 Integrated Cognitive Flow
+
+### 🔍 Cognitive Decision Flow
+
+```mermaid
+flowchart TD
+    A[User Input] --> B[Intent Understanding]
+    B --> C[TaskNature Classification]
+
+    C --> D[Capability Resolution]
+    D --> E[Confidence Decomposition]
+
+    E --> F{Uncertainty Type}
+
+    F -->|INTENT| G[Ask Clarification]
+    F -->|EXECUTION| H[Ask Tool Selection]
+    F -->|CAPABILITY| I[Confirm Dependency]
+    F -->|CONFLICT| J[Ask Strategy]
+    F -->|NONE| K[Execute]
+
+    G --> Z[Final Response]
+    H --> Z
+    I --> Z
+    J --> Z
+    K --> Z
+```
 
 The system follows the flow:
 **Input → Intent → TaskNature → Capability → Confidence → Decision → Action**
@@ -96,6 +147,23 @@ Each uncertainty type leads to a specific action:
 - **CAPABILITY** → `CONFIRM` (installation or dependency resolution)
 - **NONE + High confidence** → `EXECUTE`
 
+### 📊 Decision Matrix (DecisionEngine)
+
+> This matrix represents how cognitive diagnostics translate into actionable decisions.
+
+```mermaid
+flowchart TD
+    A[Confidence Score] --> B[Decomposition]
+    B --> C[Uncertainty Detection]
+
+    C --> D{Decision}
+
+    D -->|Low Intent| E[ASK_CLARIFICATION]
+    D -->|Low Execution| F[ASK_TOOL_SELECTION]
+    D -->|Capability Gap| G[CONFIRM]
+    D -->|High Confidence| H[EXECUTE]
+```
+
 #### 🧠 Cognitive Behavior
 This model allows the agent to:
 - Understand **why** it is in doubt.
@@ -107,6 +175,40 @@ This model allows the agent to:
 Traditionally, agents use a single confidence score. IalClaw evolves this concept into a diagnostic model:
 **Confidence → Decomposition → Uncertainty → Decision**
 This transforms the agent from reactive to reflective and explainable.
+
+---
+
+## 🤖 Multi-Agent Orchestration (Planned Architecture)
+
+### 🧩 Multi-Agent Architecture
+
+```mermaid
+flowchart LR
+    A[User Input] --> B[Cognitive Core]
+
+    subgraph Cognitive Core
+        B1[CapabilityResolver]
+        B2[ConfidenceScorer]
+        B3[DecisionEngine]
+    end
+
+    B --> B1 --> B2 --> B3 --> C{Decision}
+
+    C -->|EXECUTE| D[AgentRouter]
+    C -->|ASK / CONFIRM| E[User Interaction]
+
+    subgraph Agent Layer
+        D --> F1[CodingAgent]
+        D --> F2[SearchAgent]
+        D --> F3[ExecutionAgent]
+    end
+
+    F1 --> G[CognitiveOrchestrator]
+    F2 --> G
+    F3 --> G
+
+    G --> H[Final Response]
+```
 
 ---
 
@@ -455,6 +557,32 @@ Este projeto implementa uma arquitetura cognitiva completa. Embora funcional, es
 
 ## 🧠 Arquitetura Cognitiva v3.1 (Camadas Fundamentais)
 
+### 🧭 Pipeline Cognitivo (THINK → DECIDE → ACT)
+
+```mermaid
+flowchart LR
+    A[User Input] --> B[THINK]
+
+    subgraph THINK
+        B1[CapabilityResolver]
+        B2[ConfidenceScorer]
+    end
+
+    B --> B1 --> B2 --> C[DECIDE]
+
+    subgraph DECIDE
+        C1[DecisionEngine]
+    end
+
+    C --> C1 --> D[ACT]
+
+    subgraph ACT
+        D1[CognitiveOrchestrator]
+    end
+
+    D --> D1 --> E[Response / Execution]
+```
+
 ```md
 THINK  → CapabilityResolver + ConfidenceScorer  
 DECIDE → DecisionEngine  
@@ -462,6 +590,31 @@ ACT    → CognitiveOrchestrator
 ```
 
 ## 🔗 Fluxo Cognitivo Integrado
+
+### 🔍 Fluxo de Decisão Cognitiva
+
+```mermaid
+flowchart TD
+    A[Entrada do Usuário] --> B[Entendimento de Intenção]
+    B --> C[Classificação TaskNature]
+
+    C --> D[Resolução de Capacidade]
+    D --> E[Decomposição de Confiança]
+
+    E --> F{Tipo de Incerteza}
+
+    F -->|INTENCÃO| G[Pedir Clarificação]
+    F -->|EXECUÇÃO| H[Pedir Escolha de Ferramenta]
+    F -->|CAPACIDADE| I[Confirmar Dependência]
+    F -->|CONFLITO| J[Pedir Estratégia]
+    F -->|NENHUM| K[Executar]
+
+    G --> Z[Resposta Final]
+    H --> Z
+    I --> Z
+    J --> Z
+    K --> Z
+```
 
 O sistema segue o fluxo:
 **Input → Intent → TaskNature → Capability → Confidence → Decision → Action**
@@ -518,6 +671,23 @@ Cada tipo de incerteza leva a uma ação específica:
 - **CAPABILITY** → `CONFIRM` (instalação ou resolução de dependência)
 - **NONE + Alta confiança** → `EXECUTE`
 
+### 📊 Matriz de Decisão (DecisionEngine)
+
+> Esta matriz representa como diagnósticos cognitivos se traduzem em decisões acionáveis.
+
+```mermaid
+flowchart TD
+    A[Score de Confiança] --> B[Decomposição]
+    B --> C[Detecção de Incerteza]
+
+    C --> D{Decisão}
+
+    D -->|Baixa Intenção| E[ASK_CLARIFICATION]
+    D -->|Baixa Execução| F[ASK_TOOL_SELECTION]
+    D -->|Gap de Capacidade| G[CONFIRM]
+    D -->|Alta Confiança| H[EXECUTE]
+```
+
 #### 🧠 Comportamento Cognitivo
 Esse modelo permite que o agente:
 - entenda **por que** está em dúvida
@@ -529,6 +699,40 @@ Esse modelo permite que o agente:
 Tradicionalmente, agentes utilizam um único score de confiança. O IalClaw evolui esse conceito para um modelo diagnóstico:
 **Confidence → Decomposition → Uncertainty → Decision**
 Isso transforma o agente de reativo para reflexivo e explicável.
+
+---
+
+## 🤖 Orquestração Multi-Agente (Arquitetura Planejada)
+
+### 🧩 Arquitetura Multi-Agente
+
+```mermaid
+flowchart LR
+    A[Entrada do Usuário] --> B[Núcleo Cognitivo]
+
+    subgraph Núcleo Cognitivo
+        B1[CapabilityResolver]
+        B2[ConfidenceScorer]
+        B3[DecisionEngine]
+    end
+
+    B --> B1 --> B2 --> B3 --> C{Decisão}
+
+    C -->|EXECUTAR| D[Roteador de Agentes]
+    C -->|PEDIR / CONFIRMAR| E[Interação com o Usuário]
+
+    subgraph Camada de Agentes
+        D --> F1[Agente de Codificação]
+        D --> F2[Agente de Busca]
+        D --> F3[Agente de Execução]
+    end
+
+    F1 --> G[Orquestrador Cognitivo]
+    F2 --> G
+    F3 --> G
+
+    G --> H[Resposta Final]
+```
 
 ---
 
