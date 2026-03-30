@@ -354,12 +354,17 @@ export class TaskClassifier {
             return { type: 'skill_installation', confidence: 0.98, source: 'heuristic' };
         }
 
-        // 3. CRIAÇÃO DE SLIDES/HTML - SEMPRE content_generation (NÃO file_conversion)
+        // 3. PERGUNTAS SOBRE O SISTEMA/PASSADO - information_request
+        if (this.isMetaQuestion(normalized)) {
+            return { type: 'information_request', confidence: 0.95, source: 'heuristic' };
+        }
+
+        // 4. CRIAÇÃO DE SLIDES/HTML - content_generation
         if (this.isContentGeneration(normalized)) {
             return { type: 'content_generation', confidence: 0.95, source: 'heuristic' };
         }
 
-        // 4. Conversão de arquivos - MAS NÃO se for melhoria/organização
+        // 5. Conversão de arquivos - MAS NÃO se for melhoria/organização
         if (this.isFileConversion(normalized)) {
             return { type: 'file_conversion', confidence: 0.95, source: 'heuristic' };
         }
@@ -428,8 +433,22 @@ export class TaskClassifier {
      * - "melhorar HTML deixando mais legível" → content_generation
      */
     private isContentGeneration(normalized: string): boolean {
-        // EXCEÇÃO: "fazer uma varredura" ou "fazer um scan" NÃO é content_generation
+        // EXCEÇÃO 1: Se é uma pergunta sobre o passado ou como funciona (meta-pergunta)
+        if (this.isMetaQuestion(normalized)) {
+            return false;
+        }
+
+        // EXCEÇÃO 2: "fazer uma varredura" ou "fazer um scan" NÃO é content_generation
         if (/\b(varredura|varedura|scan|escanear)\b/i.test(normalized)) {
+            return false;
+        }
+
+        // EXCEÇÃO 3: Pergunta genérica sem imperativo de criação
+        const lacksImperative = !/\b(crie|gere|faça|faca|monte|redija|elabora|escreva|write|create|generate)\b/i.test(normalized);
+        const isQuestion = normalized.includes('?') || /^(o que|como|qual|quais|quem|onde|quando|por que|porque|você|voce|podia|poderia|seria)\b/i.test(normalized);
+
+        if (isQuestion && lacksImperative && /\b(slides?|html|texto|post|artigo)\b/i.test(normalized)) {
+            // Se o usuário pergunta "o que são slides" ou "você usou slides", não é criação
             return false;
         }
 
@@ -474,6 +493,23 @@ export class TaskClassifier {
         }
 
         return false;
+    }
+
+    /**
+     * Detecta "meta-perguntas" sobre o agente, seu estado ou ações passadas.
+     * Ex: "você usou...", "como você fez...", "o que você é..."
+     */
+    private isMetaQuestion(normalized: string): boolean {
+        const metaPatterns = [
+            /\b(você|voce|tu|sua|seu)\b.*\b(utilizou|usou|fez|criou|conseguiu|pode|consegue|saberia)\b/i,
+            /\bcomo\b.*\b(consegue|funciona|opera|faz|conseguiu)\b/i,
+            /\b(qual|o que|quem)\b.*\b(é|es|sois|voce|você)\b/i,
+            /\b(você|voce)\b.*\b(conhece|sabe|entende)\b/i
+        ];
+
+        const isQuestionFormat = normalized.includes('?') || /^(como|o que|qual|quais|quando|onde|quem)\b/i.test(normalized);
+
+        return isQuestionFormat && metaPatterns.some(pattern => pattern.test(normalized));
     }
 
     private isFileConversion(normalized: string): boolean {

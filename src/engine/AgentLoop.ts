@@ -239,6 +239,13 @@ export class AgentLoop {
 
             const hasSource = /\b(usar|utilizar|com|arquivo|conte[úu]do)\b/i.test(input) ||
                 /\/[\w\-\.\/]+\.(md|html|txt|json|pdf)/i.test(input);
+
+            // SE É PERGUNTA (e não tem fonte), não exigir fonte imediata no classificador
+            // Deixa o LLM responder a pergunta no loop normal
+            if (!hasSource && (input.includes('?') || /^(como|qual|o que|você|voce)\b/i.test(input))) {
+                return true;
+            }
+
             return hasSource;
         }
 
