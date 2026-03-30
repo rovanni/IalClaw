@@ -64,6 +64,12 @@ if systemctl is-active --quiet ialclaw 2>/dev/null; then
     WAS_RUNNING=true
     RUN_MODE="systemd"
     echo "      $(t 'info.stop_systemd' 2>/dev/null || echo "Parando serviço systemd...")"
+    
+    # Tentar verificar se sudo precisa de senha para evitar travamento
+    if ! sudo -n true 2>/dev/null; then
+        echo "      ${YELLOW}[AVISO]${RESET} Sudo pode solicitar senha para gerenciar o serviço."
+    fi
+    
     sudo systemctl stop ialclaw
 elif [ -f ".ialclaw/pid" ]; then
     PID=$(cat .ialclaw/pid)
@@ -140,6 +146,11 @@ if [ "$WAS_RUNNING" = true ]; then
     printf "%b\n" "${STEP}[*]${RESET} ${BOLD}$(t 'step.restart')${RESET}"
     if [ "$RUN_MODE" = "systemd" ]; then
         echo "      $(t 'info.restart_systemd' 2>/dev/null || echo "Reiniciando via systemctl...")"
+        
+        if ! sudo -n true 2>/dev/null; then
+            echo "      ${YELLOW}[AVISO]${RESET} Sudo pode solicitar senha."
+        fi
+        
         sudo systemctl start ialclaw
     else
         echo "      $(t 'info.restart_daemon' 2>/dev/null || echo "Reiniciando via daemon...")"

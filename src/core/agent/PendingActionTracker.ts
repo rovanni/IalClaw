@@ -14,7 +14,14 @@ export function setPendingAction(
     session.pending_actions = session.pending_actions.filter(existing => {
         if (existing.type !== action.type) return true;
         if (existing.type === 'install_skill') {
-            return existing.payload.skillName.toLowerCase() !== action.payload.skillName.toLowerCase();
+            const existingName = existing.payload.skillName?.toLowerCase() || '';
+            const actionName = action.payload.skillName?.toLowerCase() || '';
+            return existingName !== actionName;
+        }
+        if (existing.type === 'install_capability') {
+            const existingCap = existing.payload.capability?.toLowerCase() || '';
+            const actionCap = action.payload.capability?.toLowerCase() || '';
+            return existingCap !== actionCap;
         }
         return true;
     });

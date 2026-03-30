@@ -36,6 +36,11 @@ echo -e "Detectado Node:    ${GREEN}$NODE_EXEC${NC}"
 # Aplicar substituições no template e salvar no systemd
 sed "s|%USER%|$REAL_USER|g; s|%PATH%|$CURRENT_DIR|g; s|/usr/bin/node|$NODE_EXEC|g" ialclaw.service.start > /etc/systemd/system/ialclaw.service
 
+echo -e "${CYAN}Configurando sudoers para atualizações sem senha...${NC}"
+SUDOERS_FILE="/etc/sudoers.d/ialclaw"
+echo "$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop ialclaw, /usr/bin/systemctl start ialclaw, /usr/bin/systemctl restart ialclaw" > "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_FILE"
+
 echo -e "${CYAN}Recarregando systemd...${NC}"
 systemctl daemon-reload
 
