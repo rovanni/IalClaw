@@ -16,6 +16,10 @@ export class SkillResolver {
         this.resolutionManager = new SkillResolutionManager();
     }
 
+    getResolutionManager(): SkillResolutionManager {
+        return this.resolutionManager;
+    }
+
     setPendingSkillList(items: PendingSkillItem[]): void {
         this.resolutionManager.setPendingList(items);
     }
@@ -26,13 +30,13 @@ export class SkillResolver {
 
     resolve(userInput: string): ResolvedSkill | null {
         if (!userInput) return null;
-        
+
         const skills = this.loader.getAll();
         const installer = this.findByName(skills, 'skill-installer');
         if (!installer) return null;
 
         const result = this.resolutionManager.resolve(userInput);
-        
+
         if (result.action === 'install' && result.skillName) {
             return {
                 skill: installer,

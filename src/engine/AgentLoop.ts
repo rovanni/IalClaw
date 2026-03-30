@@ -206,6 +206,25 @@ export class AgentLoop {
     private chatId: string = 'default';
 
     /**
+     * [HYBRID] Executa uma resposta direta do LLM e adiciona uma sugestão de ferramenta.
+     */
+    private async executeHybridStrategy(userInput: string, initialMessages: MessagePayload[], suggestedTool?: string): Promise<{ answer: string; newMessages: MessagePayload[] }> {
+        // 1. Gera a resposta informativa básica (mesmo que content_generation)
+        const directResult = await this.executeContentGenerationDirect(userInput, initialMessages);
+
+        // 2. Se houver ferramenta, anexa o CTA de ampliação
+        if (suggestedTool) {
+            const cta = t('hybrid.suggest_tool', { tool: suggestedTool });
+            return {
+                answer: `${directResult.answer}\n\n${cta}`,
+                newMessages: directResult.newMessages
+            };
+        }
+
+        return directResult;
+    }
+
+    /**
      * Detecta fonte de conteúdo no input (caminho de arquivo).
      */
     private detectSource(input: string): string | null {
@@ -573,6 +592,19 @@ export class AgentLoop {
                 task_type: this.currentTaskType
             });
             return this.executeContentGenerationDirect(userInput, initialMessages);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 🧠 HYBRID STRATEGY: Resposta direta + Sugestão de Tool
+        // ═══════════════════════════════════════════════════════════════════
+        const orchestration = (policy as any)?.orchestrationResult;
+        if (orchestration?.strategy === 'hybrid') {
+            const suggestedTool = orchestration?.suggestedTool;
+            this.logger.info('hybrid_strategy_activated', '[HYBRID] Estratégia híbrida ativada', {
+                suggestedTool,
+                taskType: this.currentTaskType
+            });
+            return this.executeHybridStrategy(userInput, initialMessages, suggestedTool);
         }
 
         // ═══════════════════════════════════════════════════════════════════

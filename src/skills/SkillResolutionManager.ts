@@ -1,4 +1,5 @@
 import { LoadedSkill, PendingSkillItem } from './types';
+import { t } from '../i18n';
 
 export type SkillSearchResult = {
     name: string;
@@ -20,7 +21,7 @@ export class SkillResolutionManager {
     private lastSearchQuery: string = '';
     private lastSearchResults: SkillSearchResult[] = [];
 
-    constructor() {}
+    constructor() { }
 
     clearPendingList(): void {
         this.pendingSkillList = null;
@@ -82,10 +83,20 @@ export class SkillResolutionManager {
             }
         }
 
+        // Caso o usuário digite apenas o número (ex: "2" ou "a 2")
+        const simpleIndexMatch = trimmed.match(/^(?:a|o|n|numero|nº)?\s*(\d+)$/i);
+        if (simpleIndexMatch) {
+            const idx = parseInt(simpleIndexMatch[1], 10);
+            const item = this.pendingSkillList.find(s => s.index === idx);
+            if (item) {
+                return item.name;
+            }
+        }
+
         const nameMatch = trimmed.match(/^(?:instala|instalar|instale|adicione|adicionar|usar|execute)\s+(?:essa|esse|a|o)?\s*[:\-]?\s*([a-zA-Z][a-zA-Z0-9_-]*)/i);
         if (nameMatch) {
             const key = nameMatch[1].toLowerCase();
-            const item = this.pendingSkillList.find(s => 
+            const item = this.pendingSkillList.find(s =>
                 s.name.toLowerCase() === key ||
                 s.index.toString() === key
             );
@@ -141,7 +152,7 @@ export class SkillResolutionManager {
             return {
                 action: 'ask_input',
                 skillName,
-                message: `Nenhuma skill encontrada para "${skillName}". Tente outro nome.`
+                message: t('skills.resolution.no_found', { skillName })
             };
         }
 
@@ -165,25 +176,36 @@ export class SkillResolutionManager {
             action: 'list',
             skillName,
             searchResults,
-            message: `Encontrei ${searchResults.length} skills para "${skillName}":`
+            message: t('skills.resolution.found_count', { count: searchResults.length, skillName })
         };
     }
 
-    private searchMarketplace(query: string): SkillSearchResult[] {
+    /**
+     * Realiza busca no marketplace e popula a lista pendente.
+     */
+    public search(query: string): ResolutionResult {
+        return this.processSkillResolution(query);
+    }
+
+    public searchMarketplace(query: string): SkillSearchResult[] {
         const lowerQuery = query.toLowerCase();
-        
+
         const knownSkills: SkillSearchResult[] = [
-            { name: 'pptx', description: 'Skill oficial de criação de apresentações PPTX', source: 'anthropics/skills', rank: 1, installs: '48.999' },
-            { name: 'excel', description: 'Manipulação de planilhas Excel', source: 'anthropics/skills', rank: 2, installs: '45.000' },
-            { name: 'markdown-pptx', description: 'Conversão de Markdown para PPTX', source: 'community', rank: 3, installs: '12.000' },
-            { name: 'md-to-pptx', description: 'Markdown to PowerPoint converter', source: 'community', rank: 4, installs: '8.500' },
-            { name: 'youtube', description: 'Download e manipulação de vídeos YouTube', source: 'anthropics/skills', rank: 5, installs: '35.000' },
-            { name: 'pdf', description: 'Manipulação de arquivos PDF', source: 'anthropics/skills', rank: 6, installs: '30.000' },
-            { name: 'image', description: 'Processamento de imagens', source: 'anthropics/skills', rank: 7, installs: '25.000' },
-            { name: 'code', description: 'Análise e geração de código', source: 'anthropics/skills', rank: 8, installs: '20.000' }
+            { name: 'pptx', description: t('skills.marketplace.pptx.desc'), source: 'anthropics/skills', rank: 1, installs: '48.999' },
+            { name: 'excel', description: t('skills.marketplace.excel.desc'), source: 'anthropics/skills', rank: 2, installs: '45.000' },
+            { name: 'markdown-pptx', description: t('skills.marketplace.markdown_pptx.desc'), source: 'community', rank: 3, installs: '12.000' },
+            { name: 'md-to-pptx', description: t('skills.marketplace.md_to_pptx.desc'), source: 'community', rank: 4, installs: '8.500' },
+            { name: 'youtube', description: t('skills.marketplace.youtube.desc'), source: 'anthropics/skills', rank: 5, installs: '35.000' },
+            { name: 'pdf', description: t('skills.marketplace.pdf.desc'), source: 'anthropics/skills', rank: 6, installs: '30.000' },
+            { name: 'image', description: t('skills.marketplace.image.desc'), source: 'anthropics/skills', rank: 7, installs: '25.000' },
+            { name: 'code', description: t('skills.marketplace.code.desc'), source: 'anthropics/skills', rank: 8, installs: '20.000' },
+            { name: 'crypto-tracker', description: t('skills.marketplace.crypto_tracker.desc'), source: 'skills.sh', rank: 1, installs: '18.432' },
+            { name: 'paxg-monitor', description: t('skills.marketplace.paxg_monitor.desc'), source: 'skills.sh', rank: 3, installs: '7.891' },
+            { name: 'defi-analyzer', description: t('skills.marketplace.defi_analyzer.desc'), source: 'skills.sh', rank: 5, installs: '12.210' },
+            { name: 'token-price-alert', description: t('skills.marketplace.token_price_alert.desc'), source: 'skills.sh', rank: 7, installs: '5.432' }
         ];
 
-        return knownSkills.filter(s => 
+        return knownSkills.filter(s =>
             s.name.toLowerCase().includes(lowerQuery) ||
             s.description.toLowerCase().includes(lowerQuery)
         );

@@ -18,6 +18,7 @@ export enum ExecutionMode {
 
 export enum TaskNature {
     INFORMATIVE = 'informative',   // Pode responder direto (conceitual)
+    HYBRID = 'hybrid',             // Responde direto + opcionalmente usa tool
     EXECUTABLE = 'executable'      // Precisa de dados ou ferramentas
 }
 
@@ -150,10 +151,17 @@ export class ActionRouter {
      */
     private detectTaskNature(input: string): TaskNature {
         const hasDataIndicators =
-            /arquivo|file|dados|dataset|csv|json|planilha|dataset|tabela|spreadsheet/i.test(input);
+            /arquivo|file|dados|dataset|csv|json|planilha|dataset|tabela|spreadsheet|mercado|market|gold|paxg/i.test(input);
 
         const isConceptual =
-            /mercado|tend[eê]ncia|cen[aá]rio|an[aá]lise|explica|como|quem|qual|pre[çc]o|valor/i.test(input);
+            /analis[ae]|explain|explica|como|quem|qual|pre[çc]o|valor|tend[eê]ncia|cen[aá]rio/i.test(input);
+
+        const isDirectCommand =
+            /^\b(mover|move|mova|deletar|remover|remova|rm|criar|create|cria|save|salvar|salva|escrever|write|executar|run|rodar)\b/i.test(input);
+
+        if (isConceptual && hasDataIndicators && !isDirectCommand) {
+            return TaskNature.HYBRID;
+        }
 
         if (isConceptual && !hasDataIndicators) {
             return TaskNature.INFORMATIVE;

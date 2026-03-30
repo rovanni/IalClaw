@@ -366,5 +366,20 @@
   "onboarding.suggestion.code": "Quer que eu ajude com algum código em seu Workspace?",
   "onboarding.suggestion.research": "Quer que eu pesquise algo novo hoje?",
   "onboarding.suggestion.content": "Quer ajuda para escrever algo?",
-  "onboarding.pronto": "✅ Onboarding concluído!"
+  "onboarding.pronto": "✅ Onboarding concluído!",
+  "hybrid.suggest_tool": "Deseja que eu utilize a ferramenta **{tool}** para obter dados mais detalhados?",
+  "skills.resolution.no_found": "Nenhuma skill encontrada para \"{skillName}\". Tente outro nome.",
+  "skills.resolution.found_count": "Encontrei {count} skills para \"{skillName}\":",
+  "skills.marketplace.pptx.desc": "Skill oficial de criação de apresentações PPTX",
+  "skills.marketplace.excel.desc": "Manipulação de planilhas Excel",
+  "skills.marketplace.markdown_pptx.desc": "Conversão de Markdown para PPTX",
+  "skills.marketplace.md_to_pptx.desc": "Markdown to PowerPoint converter",
+  "skills.marketplace.youtube.desc": "Download e manipulação de vídeos YouTube",
+  "skills.marketplace.pdf.desc": "Manipulação de arquivos PDF",
+  "skills.marketplace.image.desc": "Processamento de imagens",
+  "skills.marketplace.code.desc": "Análise e geração de código",
+  "skills.marketplace.crypto_tracker.desc": "Rastreamento em tempo real de preços e análise de mercado cripto",
+  "skills.marketplace.paxg_monitor.desc": "Monitor específico para PAX Gold e stablecoins lastreadas em ouro",
+  "skills.marketplace.defi_analyzer.desc": "Análise completa de protocolos DeFi e yield farming",
+  "skills.marketplace.token_price_alert.desc": "Alertas de preço configuráveis para qualquer criptomoeda"
 }

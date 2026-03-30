@@ -1,4 +1,4 @@
-import { ActionRouter, ExecutionRoute } from '../autonomy/ActionRouter';
+import { ActionRouter, ExecutionRoute, TaskNature } from '../autonomy/ActionRouter';
 import { decideAutonomy, AutonomyDecision, AutonomyLevel } from '../autonomy/DecisionEngine';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
@@ -11,6 +11,7 @@ export enum CognitiveStrategy {
     FLOW = "flow",
     TOOL = "tool",
     LLM = "llm",
+    HYBRID = "hybrid",      // LLM + Tool opcional
     ASK = "ask",
     CONFIRM = "confirm"
 }
@@ -33,6 +34,7 @@ export interface CognitiveDecision {
     route?: any;       // ActionRouter result
     autonomy?: any;    // DecisionEngine result
     memoryHits?: any[]; // memória relevante
+    suggestedTool?: string; // Sugestão para estratégia HYBRID
 }
 
 /**
@@ -122,7 +124,21 @@ export class CognitiveOrchestrator {
             };
         }
 
-        // PRIORIDADE 2: Se precisa de Tool (Ação no mundo real)
+        // PRIORIDADE 2: Se é tarefa HÍBRIDA (Responde e depois sugere/usa tool)
+        if (routeDecision.nature === TaskNature.HYBRID) {
+            const suggestedTool = this.suggestHybridTool(text, taskType || null);
+            return {
+                strategy: CognitiveStrategy.HYBRID,
+                confidence: 0.9,
+                reason: "hybrid_informative_executable",
+                route: routeDecision,
+                autonomy: autonomyDecision,
+                memoryHits,
+                suggestedTool
+            };
+        }
+
+        // PRIORIDADE 3: Se precisa de Tool (Ação no mundo real)
         if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
             if (autonomyDecision === AutonomyDecision.CONFIRM) {
                 return {
@@ -156,7 +172,7 @@ export class CognitiveOrchestrator {
             };
         }
 
-        // PRIORIDADE 3: Fallback LLM (Conversação direta)
+        // PRIORIDADE 4: Fallback LLM (Conversação direta)
         return {
             strategy: CognitiveStrategy.LLM,
             confidence: routeDecision.confidence,
@@ -174,5 +190,33 @@ export class CognitiveOrchestrator {
         } catch {
             return [];
         }
+    }
+
+    /**
+     * Sugere uma ferramenta para tarefas híbridas.
+     */
+    private suggestHybridTool(input: string, taskType: TaskType | null): string | undefined {
+        const text = input.toLowerCase();
+
+        // Mapeamento heurístico de ferramentas para o orquestrador
+        const heuristics: Record<string, string> = {
+            'cripto': 'crypto-tracker',
+            'crypto': 'crypto-tracker',
+            'mercado': 'crypto-tracker', // Simplificação para o exemplo
+            'bitcoin': 'crypto-tracker',
+            'ethereum': 'crypto-tracker',
+            'paxg': 'paxg-monitor',
+            'ouro': 'paxg-monitor',
+            'gold': 'paxg-monitor'
+        };
+
+        for (const [key, tool] of Object.entries(heuristics)) {
+            if (text.includes(key)) return tool;
+        }
+
+        // Fallback baseado no taskType se for data_analysis
+        if (taskType === 'data_analysis') return 'crypto-tracker';
+
+        return undefined;
     }
 }

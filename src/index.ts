@@ -8,8 +8,7 @@ import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { isOllamaEnabled, isOllamaRunning, startOllama } from './utils/ollamaCheck';
 import { DatabaseManager } from './db/DatabaseManager';
-import { CognitiveMemory } from './memory/CognitiveMemory';
-import { ContextBuilder } from './memory/ContextBuilder';
+import { CognitiveMemory, ContextBuilder, DecisionMemory, MemoryLifecycleManager, MemoryService, MemoryType, ProviderEmbeddingService } from './memory';
 import { AgentLoop } from './engine/AgentLoop';
 import { ProviderFactory } from './engine/ProviderFactory';
 import { SkillRegistry } from './engine/SkillRegistry';
@@ -24,11 +23,7 @@ import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
 import { createLogger } from './shared/AppLogger';
 import { debugBus } from './shared/DebugBus';
-import { ProviderEmbeddingService } from './memory/EmbeddingService';
-import { MemoryService } from './memory/MemoryService';
-import { MemoryLifecycleManager } from './memory/MemoryLifecycleManager';
-import { MemoryType } from './memory/MemoryTypes';
-import { DecisionMemory } from './memory/DecisionMemory';
+// Memória é importada via bloco consolidado acima
 import { setLanguage, t } from './i18n';
 import { resolveAppLanguage } from './config/languageConfig';
 import { OnboardingService } from './services/OnboardingService';
@@ -349,7 +344,31 @@ registry.register({
         const lines = defs
             .map(d => `• ${d.name} — ${d.description || 'sem descricao'}`)
             .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-        return `Tools disponiveis (${defs.length}):\n${lines.join('\n')}`;
+        return `Tools disponíveis (${defs.length}):\n${lines.join('\n')}`;
+    }
+});
+
+// Tool para buscar skills no marketplace oficial (simulado)
+registry.register({
+    name: "search_marketplace",
+    description: "Busca skills no marketplace oficial skills.sh. Use quando o usuário pedir por funcionalidades que o agente ainda não possui.",
+    parameters: {
+        type: "object",
+        properties: {
+            query: { type: "string", description: "Termo de busca (ex: 'crypto', 'social media', 'parsing')" }
+        },
+        required: ["query"]
+    }
+}, {
+    execute: async (args: any) => {
+        const result = skillResolver.getResolutionManager().search(args.query);
+        if (result.action === 'none' || !result.searchResults?.length) {
+            return `Nenhuma skill encontrada para "${args.query}" no marketplace skills.sh.`;
+        }
+        const lines = result.searchResults.map((s, i) => {
+            return `${i + 1}. **[${s.name}]** — "${s.description}"\n   ⭐ Rank #${s.rank || '?'} | 📥 ${s.installs || '?'} instalações`;
+        });
+        return `📦 **Skills encontradas para "${args.query}" em skills.sh:**\n\n${lines.join('\n\n')}\n\nQual delas você deseja instalar? (informe o número ou o nome)`;
     }
 });
 
