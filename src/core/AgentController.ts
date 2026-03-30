@@ -17,6 +17,7 @@ import { emitDebug } from '../shared/DebugBus';
 // Removidos duplicados, unificados no import da linha 3
 import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
 import { Lang } from '../i18n/types';
+import { resolveLanguage, buildLanguageDirective } from './language/LanguageControlLayer';
 import { TaskType } from './agent/TaskClassifier';
 import { OnboardingService } from '../services/OnboardingService';
 import {
@@ -695,6 +696,16 @@ export class AgentController {
             ? `\nProjeto ativo: ${session.current_project_id}. Use tools para executar acoes reais nesse projeto.`
             : '';
         const assistantName = this.getAssistantName(sessionId);
+
+        // ── LANGUAGE CONTROL LAYER ──────────────────────────────────────
+        const langResolution = resolveLanguage(effectiveUserQuery, session);
+        const languageDirective = buildLanguageDirective(langResolution.lang);
+        this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt', {
+            lang: langResolution.lang,
+            detected_from_input: langResolution.detectedFromInput,
+            confidence: langResolution.confidence.toFixed(2)
+        });
+
         const messages: MessagePayload[] = [
             {
                 role: 'system',
@@ -703,7 +714,7 @@ Quando voce apresentar uma lista numerada de opcoes (ex: 1. Fazer X, 2. Fazer Y)
 Se o usuario responder apenas com um numero ("1", "2") ou repetir o nome de uma opcao, trate isso como a escolha correspondente a SUA ultima pergunta.
 APENAS se nao houver nenhuma lista ativa ou contexto recente, informe educadamente que nao entendeu a selecao.
 Nao peca confirmacao redundante.
-\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
+\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${languageDirective}${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
             }
         ];
         for (const msg of history) {
@@ -851,6 +862,15 @@ Nao peca confirmacao redundante.
         );
 
         const assistantName = this.getAssistantName(sessionId);
+
+        // ── LANGUAGE CONTROL LAYER (Skill Flow) ────────────────────────
+        const skillLangResolution = resolveLanguage(originalQuery, SessionManager.getCurrentSession());
+        const skillLanguageDirective = buildLanguageDirective(skillLangResolution.lang);
+        this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt (skill)', {
+            lang: skillLangResolution.lang,
+            skill: skill.name
+        });
+
         const systemPrompt =
             `Voce e o ${assistantName}, um agente cognitivo 100% local e privado.\n` +
             `A skill abaixo foi ativada pelo usuario. Siga suas instrucoes rigorosamente.\n` +
@@ -864,7 +884,8 @@ Nao peca confirmacao redundante.
             `Nao continue conversa generica quando houver uma selecao valida.\n\n` +
             `GIT E GITHUB:\n` +
             `Nao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\n` +
-            `So fale sobre commit/push/PR se o usuario pedir isso explicitamente.\n\n` +
+            `So fale sobre commit/push/PR se o usuario pedir isso explicitamente.` +
+            `${skillLanguageDirective}\n\n` +
             `## Skill ativa: ${skill.name}\n\n` +
             `${adaptedBody}\n\n` +
             `${contextStr}`;
@@ -1091,13 +1112,9 @@ Nao peca confirmacao redundante.
     }
 
     private resolveSessionLanguage(input: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Lang {
-        const detected = detectLanguage(input);
-        const lang = detected || session?.language || 'pt-BR';
-        if (session) {
-            session.language = lang;
-        }
-        setLanguage(lang);
-        return lang;
+        const resolution = resolveLanguage(input, session);
+        setLanguage(resolution.lang);
+        return resolution.lang;
     }
 
     private formatProgressMessage(event: AgentProgressEvent): string {

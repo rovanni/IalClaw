@@ -1,5 +1,109 @@
 import fs from 'fs';
 import path from 'path';
+import { createLogger } from '../shared/AppLogger';
+
+const logger = createLogger('SkillRegistry');
+
+const PACKAGE_MANAGERS: Record<string, boolean> = {
+    'apt': true,
+    'apt-get': true,
+    'yum': true,
+    'dnf': true,
+    'pacman': true,
+    'apk': true,
+    'brew': true,
+    'pip': true,
+    'pip3': true,
+    'npm': true,
+    'yarn': true,
+    'pnpm': true,
+    'cargo': true,
+    'gem': true,
+    'composer': true,
+};
+
+function detectRequiresElevation(command: string): boolean {
+    const cmdLower = command.toLowerCase().trim();
+    
+    if (cmdLower.startsWith('sudo ')) {
+        return true;
+    }
+    
+    const firstWord = cmdLower.split(/\s+/)[0];
+    if (PACKAGE_MANAGERS[firstWord] === true) {
+        return true;
+    }
+    
+    const installPatterns = [
+        /^\s*apt\s+/,
+        /^\s*apt-get\s+/,
+        /^\s*yum\s+/,
+        /^\s*dnf\s+/,
+        /^\s*pacman\s+/,
+        /^\s*apk\s+/,
+        /^\s*install\s+/,
+        /^\s*update\s+-g\s+/,
+    ];
+    
+    for (const pattern of installPatterns) {
+        if (pattern.test(cmdLower)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function makeNonInteractive(command: string): string {
+    let cmd = command;
+    
+    const aptMatch = cmd.match(/^\s*(apt|apt-get)\s+/i);
+    if (aptMatch) {
+        if (!/\s+-y\s+/.test(cmd) && !/\s+--yes\s+/.test(cmd)) {
+            cmd = cmd.replace(/^\s*(apt|apt-get)\s+/i, `$1 -y `);
+        }
+    }
+    
+    const yumMatch = cmd.match(/^\s*(yum|dnf)\s+/i);
+    if (yumMatch) {
+        if (!/\s+-y\s+/.test(cmd)) {
+            cmd = cmd.replace(/^\s*(yum|dnf)\s+/i, `$1 -y `);
+        }
+    }
+    
+    const pacmanMatch = cmd.match(/^\s*pacman\s+/i);
+    if (pacmanMatch) {
+        if (!/\s+--noconfirm\s+/.test(cmd)) {
+            cmd = cmd.replace(/^\s*pacman\s+/i, 'pacman --noconfirm ');
+        }
+    }
+    
+    const apkMatch = cmd.match(/^\s*apk\s+/i);
+    if (apkMatch) {
+        if (!/\s+--no-interactive\s+/.test(cmd) && !/\s+-I\s+/.test(cmd)) {
+            cmd = cmd.replace(/^\s*apk\s+/i, 'apk --no-interactive ');
+        }
+    }
+    
+    return cmd;
+}
+
+function buildSudoCommand(command: string, usePassword: boolean, password?: string): string {
+    let cmd = command;
+    
+    if (cmd.trim().toLowerCase().startsWith('sudo ')) {
+        cmd = cmd.trim().substring(5).trim();
+    }
+    
+    cmd = makeNonInteractive(cmd);
+    
+    if (usePassword && password) {
+        const safePassword = password.replace(/'/g, "'\\''");
+        return `echo '${safePassword}' | sudo -S ${cmd}`;
+    }
+    
+    return `sudo -n ${cmd}`;
+}
 
 export type ToolDefinition = {
     name: string;
@@ -818,17 +922,17 @@ Instale com: pip install ${missingModule}`;
 
         /**
          * exec_command: executa um comando shell.
-         * Para comandos sudo, forneça a senha no parâmetro 'password'.
+         * Detecção automática de comandos privilegiados e execução não interativa.
          */
         this.register({
             name: "exec_command",
-            description: "Executa um comando shell no sistema. Use para instalar pacotes, verificar versões, etc. Para comandos sudo, forneça a senha.",
+            description: "Executa um comando shell no sistema. Use para instalar pacotes, verificar versões, etc. Detecção automática de comandos que requerem privilégios.",
             parameters: {
                 type: "object",
                 properties: {
                     command: { type: "string", description: "Comando a executar (ex: 'apt install pandoc', 'pip install python-pptx')" },
-                    sudo: { type: "boolean", description: "Se true, executa com sudo" },
-                    password: { type: "string", description: "Senha para sudo (se necessário)" }
+                    sudo: { type: "boolean", description: "Se true, executa com sudo (opcional - detectado automaticamente)" },
+                    password: { type: "string", description: "Senha para sudo (opcional - se não fornecido, tenta sudo -n)" }
                 },
                 required: ["command"]
             }
@@ -837,7 +941,6 @@ Instale com: pip install ${missingModule}`;
                 const { execSync } = require('child_process');
                 let cmd = args.command;
                 
-                // Bloquear comandos perigosos
                 const dangerousCommands = [
                     /rm\s+-rf\s+\//,
                     /chmod\s+777/,
@@ -860,37 +963,70 @@ Instale com: pip install ${missingModule}`;
                     }
                 }
                 
-                // Construir comando final
+                const requiresElevation = args.sudo || detectRequiresElevation(cmd);
+                
+                if (requiresElevation) {
+                    logger.info('log.execution.sudo_detected', 'Comando privilegiado detectado', { 
+                        command: cmd,
+                        auto_detected: !args.sudo
+                    });
+                }
+                
                 let finalCmd = cmd;
-                if (args.sudo) {
-                    if (args.password) {
-                        // Passar senha para sudo via stdin
-                        finalCmd = `echo '${args.password}' | sudo -S ${cmd}`;
+                if (requiresElevation) {
+                    const usePassword = !!args.password;
+                    
+                    if (usePassword) {
+                        logger.debug('log.execution.sudo_with_password', 'Executando sudo com senha fornecida');
                     } else {
-                        finalCmd = `sudo ${cmd}`;
+                        logger.info('log.execution.sudo_non_interactive_applied', 'Aplicando modo não interativo (sudo -n)', { 
+                            command: cmd 
+                        });
                     }
+                    
+                    finalCmd = buildSudoCommand(cmd, usePassword, args.password);
                 }
                 
                 try {
                     const stdout = execSync(finalCmd, { 
                         encoding: 'utf8',
-                        timeout: 120000
+                        timeout: 120000,
+                        stdio: ['pipe', 'pipe', 'pipe']
                     });
                     return `✅ Comando executado:\n${stdout || '(sem output)'}`;
                 } catch (e: any) {
                     const stderr = e.stderr?.toString() || '';
                     const stdout = e.stdout?.toString() || '';
+                    const exitCode = e.status;
                     
-                    // Verificar erros comuns
-                    if (stderr.includes('incorrect password') || stderr.includes('senha incorreta')) {
-                        return `❌ Senha incorreta.`;
-                    }
-                    
-                    if (stderr.includes('password') || stderr.includes('senha') || stderr.includes('[sudo]')) {
-                        if (!args.password) {
-                            return `❌ Comando requer senha sudo. Forneça o parâmetro 'password'.`;
+                    if (requiresElevation) {
+                        const isPasswordError = 
+                            stderr.includes('password') || 
+                            stderr.includes('senha') || 
+                            stderr.includes('[sudo]') ||
+                            stderr.includes('incorrect password') ||
+                            stderr.includes('senha incorreta') ||
+                            exitCode === 1;
+                        
+                        if (isPasswordError) {
+                            logger.warn('log.execution.sudo_failed_non_interactive', 'Falha em execução sudo não interativa', { 
+                                command: cmd,
+                                exitCode,
+                                stderr_preview: stderr.slice(0, 200)
+                            });
+                            
+                            return `❌ Falha ao executar comando privilegiado.
+
+O comando requer elevação de privilégios mas a autenticação falhou.
+- Exit code: ${exitCode}
+- Motivo: ${stderr.includes('password') || stderr.includes('[sudo]') ? 'Senha requerida ou incorreta' : 'Permissão negada'}
+
+Para resolver:
+1. Configure sudo sem senha: sudo visudo
+2. Ou forneça o parâmetro 'password' no comando
+
+Retorne CONFIRM ou ASK para tratar este erro.`;
                         }
-                        return `❌ Erro de autenticação: ${stderr}`;
                     }
                     
                     if (stderr.includes('not found') || stderr.includes('não encontrado') || stderr.includes('command not found')) {

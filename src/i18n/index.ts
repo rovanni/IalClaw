@@ -73,13 +73,43 @@ export function detectLanguage(text: string): Lang | null {
     const normalized = String(text || '').toLowerCase();
     if (!normalized.trim()) return null;
 
+    // ── Override explícito (máxima prioridade) ──────────────────────────
     if (/\b(lang|language)\s*[:=]?\s*(en|en-us|english)\b/.test(normalized)) return 'en-US';
     if (/\b(idioma|lingua|língua)\s*[:=]?\s*(pt|pt-br|português|portugues)\b/.test(normalized)) return 'pt-BR';
-    if (/\b(speak english|answer in english|respond in english)\b/.test(normalized)) return 'en-US';
-    if (/\b(fale em portugu[eê]s|responda em portugu[eê]s)\b/.test(normalized)) return 'pt-BR';
+    if (/\b(speak english|answer in english|respond in english|switch to english|in english)\b/.test(normalized)) return 'en-US';
+    if (/\b(fale em portugu[eê]s|responda em portugu[eê]s|mude para portugu[eê]s|em portugu[eê]s)\b/.test(normalized)) return 'pt-BR';
 
-    const enHints = ['the ', 'please', 'could you', 'would you', 'thanks', 'memory', 'project', 'error'];
-    const ptHints = [' você', ' por favor', 'memória', 'projeto', 'erro', 'obrigado', 'responda'];
+    // ── Scoring heurístico ──────────────────────────────────────────────
+    const enHints = [
+        'the ', 'please', 'could you', 'would you', 'thanks', 'thank you',
+        'memory', 'project', 'error', 'install', 'create', 'delete',
+        'i want', 'i need', 'can you', 'how to', 'what is', 'show me',
+        'help me', 'tell me', 'give me', 'do you', 'is there', 'are there',
+        'should', 'which', 'where', 'when', 'about', 'after', 'before',
+        'between', 'without', 'within'
+    ];
+    const ptHints = [
+        ' você', ' por favor', 'memória', 'projeto', 'erro', 'obrigado',
+        'responda', 'instale', 'instalar', 'criar', 'deletar', 'apagar',
+        'eu quero', 'eu preciso', 'pode ', 'como ', 'o que é', 'mostre',
+        'me ajude', 'me diga', 'me dê', 'existe ', 'quero ', 'preciso ',
+        'depois', 'antes', 'entre', 'sem ', 'dentro', 'agora',
+        'quando', 'onde', 'qual', 'porque', 'são ', 'está ', 'estão '
+    ];
+
+    // ── Padrões gramaticais (peso 2x) ───────────────────────────────────
+    const enGrammar = [
+        /\bi\s+(want|need|have|am|was|will|would|can|could|should)\b/,
+        /\b(it|he|she|they|we)\s+(is|are|was|were|has|have|will)\b/,
+        /\b(don't|doesn't|didn't|won't|can't|isn't|aren't)\b/,
+        /\b(this|that|these|those)\s+(is|are)\b/
+    ];
+    const ptGrammar = [
+        /\b(eu|ele|ela|nós|eles|elas)\s+(quero|preciso|tenho|sou|estava|vou|posso|poderia)\b/,
+        /\b(não|nao)\s+(é|e|consigo|sei|tenho|posso|funciona)\b/,
+        /\b(esse|essa|esses|essas|isto|isso|aquilo)\s+(é|e|são|esta|está)\b/,
+        /\b(meu|minha|meus|minhas|seu|sua|seus|suas)\b/
+    ];
 
     let enScore = 0;
     let ptScore = 0;
@@ -90,7 +120,16 @@ export function detectLanguage(text: string): Lang | null {
     for (const hint of ptHints) {
         if (normalized.includes(hint)) ptScore++;
     }
+    for (const pattern of enGrammar) {
+        if (pattern.test(normalized)) enScore += 2;
+    }
+    for (const pattern of ptGrammar) {
+        if (pattern.test(normalized)) ptScore += 2;
+    }
 
-    if (enScore === ptScore) return null;
+    // Exigir diferença mínima para evitar falsos positivos
+    const diff = Math.abs(enScore - ptScore);
+    if (diff < 2) return null;
+
     return enScore > ptScore ? 'en-US' : 'pt-BR';
 }
