@@ -408,15 +408,21 @@
 
     #chat-input {
       flex: 1;
-      min-height: 58px;
-      padding: 16px 20px;
-      border-radius: 22px;
+      min-height: 44px;
+      max-height: 200px;
+      padding: 14px 20px;
+      border-radius: 18px;
       border: 1px solid var(--border-color);
       background: var(--bg-input);
       color: var(--text-main);
       outline: none;
       box-shadow: var(--shadow-sm);
       font-size: var(--font-md);
+      font-family: inherit;
+      resize: none;
+      line-height: 1.5;
+      overflow-y: auto;
+      transition: all 0.2s ease;
     }
 
     #chat-input:focus {
@@ -851,8 +857,8 @@
       <div id="typing-indicator" data-i18n="dashboard.typing.thinking">IalClaw esta pensando...</div>
 
       <div class="input-area">
-        <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off"
-          data-i18n-placeholder="dashboard.input.placeholder">
+        <textarea id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off"
+          data-i18n-placeholder="dashboard.input.placeholder" rows="1"></textarea>
         <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz"
           data-i18n-title="dashboard.voice.title">🎤</button>
         <button id="tts-toggle" class="icon-btn" type="button" title="Ler respostas finais"
@@ -1012,7 +1018,6 @@
       actionBtn.textContent = state.label;
       actionBtn.title = state.title;
       actionBtn.classList.toggle('is-stop', state.action === 'stop');
-      actionBtn.disabled = chatInput.disabled && state.action !== 'stop';
     }
 
     function scrollConversationToBottom() {
@@ -1505,13 +1510,12 @@
     }
     async function sendMessage(prefill) {
       const text = (typeof prefill === 'string' ? prefill : chatInput.value).trim();
-      if (!text || chatInput.disabled) return;
+      if (!text || (pendingRequest && !prefill)) return;
 
       if (!prefill) {
         chatInput.value = '';
+        chatInput.style.height = 'auto'; // Reset height after clearing
       }
-
-      chatInput.disabled = true;
       pendingRequest = true;
       updateChatActionButtons();
       statusLabel.innerText = tf('dashboard.action.send_title', undefined, 'Send message');
@@ -1559,7 +1563,6 @@
         pendingRequest = false;
         typing.style.display = 'none';
         typing.textContent = tf('dashboard.typing.thinking', undefined, 'IalClaw is thinking...');
-        chatInput.disabled = false;
         updateChatActionButtons();
         activeChatRequestController = null;
         chatInput.focus();
@@ -1591,7 +1594,7 @@
     }
 
     function handleInputKeyboard(event) {
-      if (event.key === 'Enter') {
+      if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         if (pendingRequest) return;
         sendMessage();
@@ -1629,6 +1632,10 @@
     }
 
     chatInput.addEventListener('keydown', handleInputKeyboard);
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = (chatInput.scrollHeight) + 'px';
+    });
     if (newChatBtn) newChatBtn.addEventListener('click', startNewConversation);
     if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', () => openDrawer('menu'));

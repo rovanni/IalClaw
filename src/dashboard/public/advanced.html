@@ -830,6 +830,8 @@
       #chat-input {
       flex: 1;
       width: 100%;
+      min-height: 40px;
+      max-height: 200px;
       padding: 10px 12px;
       background: var(--bg-input);
       border: 1px solid transparent;
@@ -838,6 +840,9 @@
       outline: none;
       font-size: var(--font-md);
       font-family: var(--font-mono);
+      resize: none;
+      line-height: 1.4;
+      overflow-y: auto;
       transition: all 0.2s;
       }
 
@@ -1072,8 +1077,8 @@
                 </aside>
               </div>
               <div class="input-area">
-                <input type="text" id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off"
-                  data-i18n-placeholder="dashboard.input.placeholder_advanced">
+                <textarea id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off"
+                  data-i18n-placeholder="dashboard.input.placeholder_advanced" rows="1"></textarea>
                 <button id="speech-btn" class="console-btn" title="Entrada por voz"
                   data-i18n-title="dashboard.voice.title">🎤</button>
                 <button id="tts-toggle" class="console-btn" title="Ler respostas finais"
@@ -1760,10 +1765,10 @@
 
           async function sendMessage() {
             const text = chatInput.value.trim();
-            if (!text || chatInput.disabled) return;
+            if (!text || requestInFlight) return;
 
             chatInput.value = '';
-            chatInput.disabled = true;
+            chatInput.style.height = 'auto'; // Reset height
             requestInFlight = true;
             updateChatActionButtons();
             speechBtn.disabled = true;
@@ -1811,7 +1816,6 @@
             } finally {
               typingIndicator.style.display = 'none';
               typingIndicator.textContent = tf('dashboard.typing.processing', undefined, '[SYSTEM] processing...');
-              chatInput.disabled = false;
               requestInFlight = false;
               updateChatActionButtons();
               activeChatRequestController = null;
@@ -1852,7 +1856,7 @@
           }
 
           function handleInputKeyboard(event) {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               if (requestInFlight) return;
               sendMessage();
@@ -1955,6 +1959,10 @@
 
           actionBtn.addEventListener('click', handlePrimaryAction);
           chatInput.addEventListener('keydown', handleInputKeyboard);
+          chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = (chatInput.scrollHeight) + 'px';
+          });
           newChatBtn.addEventListener('click', startNewConversation);
           replayBtn.addEventListener('click', promptReplay);
           memoryToggleBtn.addEventListener('click', toggleMemoryDrawer);
