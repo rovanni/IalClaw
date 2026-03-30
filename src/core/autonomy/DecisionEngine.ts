@@ -1,5 +1,6 @@
 // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
+import { ExecutionRoute } from './ActionRouter';
 
 export enum AutonomyDecision {
     EXECUTE = "execute",   // Executar automaticamente
@@ -23,6 +24,7 @@ export interface AutonomyContext {
     confidence?: number;       // Confiança na classificação/roteamento
     autonomyLevel?: AutonomyLevel; // Nível de autonomia global
     intentSubtype?: string;    // command, suggestion, doubt
+    route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
 }
 
 /**
@@ -71,9 +73,12 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
 
     // ═══════════════════════════════════════════════════════════════════
     // 🟡 BAIXA CONFIANÇA: Se < 0.98 em modo balanceado, perguntar por segurança
+    // ──────── EXCEPT: Se a rota for DIRECT_LLM e risco baixo, permitimos.
     // ═══════════════════════════════════════════════════════════════════
     if (level === AutonomyLevel.BALANCED && confidence < 0.98 && ctx.riskLevel !== 'low') {
-        return AutonomyDecision.ASK;
+        if (ctx.route !== ExecutionRoute.DIRECT_LLM) {
+            return AutonomyDecision.ASK;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -182,6 +187,7 @@ export function createAutonomyContext(
         riskLevel?: 'low' | 'medium' | 'high';
         isDestructive?: boolean;
         isReversible?: boolean;
+        route?: ExecutionRoute;
     } = {}
 ): AutonomyContext {
     return {

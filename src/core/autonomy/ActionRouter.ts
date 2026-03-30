@@ -67,7 +67,7 @@ export class ActionRouter {
      */
     private readonly SUBTYPE_PATTERNS = {
         SUGGESTION: /\b(acho que|deveria|poderia|seria bom|talvez|quem sabe|sugiro|recommend|should|could|maybe)\b/i,
-        DOUBT: /\?|^(por que|como|onde|qual|quais|when|why|where|how)\b/i
+        DOUBT: /\?|^(por que|como|onde|qual|quais|when|why|where|how|consegue|consegue[ms]|pode|podem)\b/i
     };
 
     /**
@@ -86,9 +86,11 @@ export class ActionRouter {
         let route = ExecutionRoute.TOOL_LOOP;
         let confidence = requiresTool ? 0.99 : 0.50;
 
-        if (!requiresTool && (taskType === 'content_generation' || taskType === 'information_request' || taskType === 'conversation')) {
+        const infoTypes: TaskType[] = ['content_generation', 'information_request', 'conversation', 'data_analysis'];
+
+        if (!requiresTool && (infoTypes.includes(taskType as TaskType))) {
             route = ExecutionRoute.DIRECT_LLM;
-            confidence = taskType === 'conversation' ? 1.0 : 0.90;
+            confidence = (taskType === 'conversation' || taskType === 'information_request') ? 1.0 : 0.95;
         }
 
         // 4. Ajustar confiança baseada no subtipo

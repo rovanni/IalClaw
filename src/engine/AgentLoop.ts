@@ -538,7 +538,8 @@ export class AgentLoop {
                 hasAllParams: taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType),
                 riskLevel: this.detectRiskLevel(this.currentTaskType, userInput),
                 isDestructive: false,
-                isReversible: true
+                isReversible: true,
+                route: decision.route
             }
         );
 
@@ -559,6 +560,19 @@ export class AgentLoop {
             subtype: autonomyCtx.intentSubtype,
             taskType: this.currentTaskType
         });
+
+        // ═══════════════════════════════════════════════════════════════════
+        // SHORT-CIRCUIT: content_generation / conversation / info (apenas se for puramente cognitivo)
+        // ═══════════════════════════════════════════════════════════════════
+        const isLowRisk = this.detectRiskLevel(this.currentTaskType, userInput) === 'low';
+        if (decision.route === ExecutionRoute.DIRECT_LLM && isLowRisk) {
+            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
+                mode: 'cognitive_direct',
+                bypass_loop: true,
+                task_type: this.currentTaskType
+            });
+            return this.executeContentGenerationDirect(userInput, initialMessages);
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // 🔴 CONFIRM: Ação destrutiva ou risco alto → confirmar
@@ -597,7 +611,6 @@ export class AgentLoop {
             }
 
             // Tratamento especial para comandos simples ou perguntas informativas
-            const userInput = initialMessages.filter(m => m.role === 'user').pop()?.content || '';
             if (userInput.startsWith('/help')) {
                 return {
                     answer: t('agent.command.help'),
@@ -626,22 +639,6 @@ export class AgentLoop {
 
             // Fallback genérico
             return { answer: t('autonomy.ask_context'), newMessages: [] };
-        }
-
-        // 🟢 EXECUTE: Segue fluxo (short-circuit ou loop)
-        // A decisão de EXECUTE permite continuar...
-
-        // ═══════════════════════════════════════════════════════════════════
-        // SHORT-CIRCUIT: content_generation (apenas se for puramente cognitivo)
-        // ═══════════════════════════════════════════════════════════════════
-        const isLowRisk = this.detectRiskLevel(this.currentTaskType, userInput) === 'low';
-        if (decision.route === ExecutionRoute.DIRECT_LLM && isLowRisk) {
-            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
-                mode: 'cognitive_direct',
-                bypass_loop: true,
-                task_type: this.currentTaskType
-            });
-            return this.executeContentGenerationDirect(userInput, initialMessages);
         }
 
         // Se a rota for TOOL_LOOP, mas o tipo for content_generation, loggar o motivo
