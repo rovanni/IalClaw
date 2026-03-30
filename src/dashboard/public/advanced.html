@@ -705,11 +705,15 @@
       border: none;
       border-radius: 8px;
       padding: 0 14px;
-      height: 40px;
+      height: 48px;
       font-weight: 700;
       font-size: var(--font-sm);
       cursor: pointer;
       transition: background 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
     .console-btn.console-btn-stop {
@@ -1061,9 +1065,9 @@
               <span>❓</span> <span data-i18n="dashboard.button.help">Ajuda</span>
             </a>
 
-            <select id="language-select" class="mode-select" style="width: 90px; font-size: var(--font-xs);">
-              <option value="pt-BR">PT-BR</option>
-              <option value="en-US">EN-US</option>
+            <select id="language-select" class="mode-select" style="width: 130px; font-size: var(--font-xs);">
+              <option value="pt-BR" data-i18n="dashboard.language.portuguese">🇧🇷 Portugues</option>
+              <option value="en-US" data-i18n="dashboard.language.english">🇺🇸 English</option>
             </select>
             <span style="color: var(--text-muted); font-size: var(--font-xs);">ZOOM</span>
             <button class="zoom-btn" onclick="changeZoom(-0.1)">-</button>
@@ -1136,9 +1140,13 @@
                 <textarea id="chat-input" placeholder="> Comando cognitivo..." autocomplete="off"
                   data-i18n-placeholder="dashboard.input.placeholder_advanced" rows="2"></textarea>
                 <button id="speech-btn" class="console-btn" title="Entrada por voz"
-                  data-i18n-title="dashboard.voice.title">🎤</button>
+                  data-i18n-title="dashboard.voice.title">
+                  <span>🎤</span>
+                </button>
                 <button id="tts-toggle" class="console-btn" title="Ler respostas finais"
-                  data-i18n-title="dashboard.voice.tts_title">🔊</button>
+                  data-i18n-title="dashboard.voice.tts_title">
+                  <span>🔊</span>
+                </button>
                 <button id="action-btn" class="console-btn" title="Enviar mensagem">
                   <span>➤</span> <span data-i18n="dashboard.action.send">Enviar</span>
                 </button>

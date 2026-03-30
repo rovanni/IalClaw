@@ -244,17 +244,21 @@
       padding: 0;
       cursor: pointer;
       font-size: 1.2rem;
+      width: 48px;
+      height: 48px;
+      flex-shrink: 0;
     }
 
     .icon-btn.text-btn {
       width: auto;
       min-width: 90px;
-      height: 44px;
+      height: 48px;
       padding: 0 16px;
       border-radius: 12px;
       font-weight: 600;
       font-size: var(--font-sm);
       background: var(--bg-surface);
+      gap: 8px;
     }
 
     .ghost-btn,
@@ -493,7 +497,7 @@
       align-items: center;
       justify-content: center;
       gap: 10px;
-      height: 58px;
+      height: 48px;
       padding: 0 24px;
       border: none;
       border-radius: 18px;
@@ -821,9 +825,9 @@
       </a>
     </nav>
     <div class="header-side" style="justify-content:flex-end;">
-      <select id="language-select" class="mode-select" style="width: 120px;">
-        <option value="pt-BR">PT-BR</option>
-        <option value="en-US">EN-US</option>
+      <select id="language-select" class="mode-select" style="width: 130px;">
+        <option value="pt-BR" data-i18n="dashboard.language.portuguese">🇧🇷 Portugues</option>
+        <option value="en-US" data-i18n="dashboard.language.english">🇺🇸 English</option>
       </select>
       <button id="theme-toggle-btn" class="icon-btn text-btn" type="button">
         <span>🌓</span> <span data-i18n="dashboard.theme.toggle">Tema</span>
@@ -843,7 +847,7 @@
   <aside id="menu-drawer" class="drawer drawer-left" aria-hidden="true">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title" data-i18n="dashboard.nav.menu">Menu</div>
+        <div class="drawer-title"><span>☰</span> <span data-i18n="dashboard.nav.menu">Menu</span></div>
         <div class="drawer-subtitle" data-i18n="dashboard.menu.subtitle">Conversas e ajustes ficam aqui para manter o
           chat limpo.</div>
       </div>
@@ -853,9 +857,9 @@
       <section class="drawer-section">
         <div class="section-label" data-i18n="dashboard.menu.execution">Execucao</div>
         <select id="execution-mode" class="mode-select" aria-label="Modo de execucao">
-          <option value="strict" data-i18n="dashboard.mode.strict">Seguro</option>
-          <option value="balanced" selected data-i18n="dashboard.mode.balanced">Equilibrado</option>
-          <option value="aggressive" data-i18n="dashboard.mode.aggressive">Livre</option>
+          <option value="strict" data-i18n="dashboard.mode.strict">🛡️ Seguro</option>
+          <option value="balanced" selected data-i18n="dashboard.mode.balanced">⚖️ Equilibrado</option>
+          <option value="aggressive" data-i18n="dashboard.mode.aggressive">🚀 Livre</option>
         </select>
         <div class="mode-status">
           <span data-i18n="dashboard.mode.current">Modo atual</span>
@@ -871,7 +875,7 @@
           <button class="btn-primary" id="new-chat-btn" type="button">
             <span>+</span> <span data-i18n="dashboard.button.new_chat">Nova conversa</span>
           </button>
-          <button id="theme-toggle-btn" class="ghost-btn" type="button">
+          <button id="theme-toggle-btn-drawer" class="ghost-btn" type="button">
             <span>🌓</span> <span data-i18n="dashboard.theme.toggle">Tema</span>
           </button>
           <a href="/help" class="ghost-link">
@@ -898,7 +902,7 @@
   <aside id="logs-drawer" class="drawer drawer-right" aria-hidden="true">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title" data-i18n="dashboard.nav.logs">Logs</div>
+        <div class="drawer-title"><span>📋</span> <span data-i18n="dashboard.nav.logs">Logs</span></div>
         <div class="drawer-subtitle" data-i18n="dashboard.logs.subtitle">Debug e progresso interno aparecem so quando
           voce abrir este painel.</div>
       </div>
@@ -1722,6 +1726,8 @@
 
     if (newChatBtn) newChatBtn.addEventListener('click', startNewConversation);
     if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
+    const themeToggleBtnDrawer = document.getElementById('theme-toggle-btn-drawer');
+    if (themeToggleBtnDrawer) themeToggleBtnDrawer.addEventListener('click', toggleTheme);
     if (menuToggleBtn) menuToggleBtn.addEventListener('click', () => openDrawer('menu'));
     if (logsToggleBtn) logsToggleBtn.addEventListener('click', () => openDrawer('logs'));
     if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawers);
