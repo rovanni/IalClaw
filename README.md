@@ -33,25 +33,44 @@ IalClaw is aware of what it can and cannot do:
 - **Provisioner Integration**: Classified gaps are resolved via the `system-provisioner`, allowing the agent to suggest or perform installations with user confirmation.
 - **Anti-Regression Rules**: Prevents unnecessary tool or environment checks for purely informative/conversational tasks.
 
-### 3. Confidence Awareness (Decomposition)
-Instead of a single numeric score, the system uses **Decomposed Confidence**:
-- **Intent Confidence**: How well the system understood "what" you want.
-- **Action Confidence**: how well the system knows "how" to do it (routing).
-- **Uncertainty Diagnostics**: Specifically identifies if the doubt is about the intent, the execution, or a conflict between both.
-- **Memory Bonus**: Reinforcement learning based on past historical successes.
+### 3. Cognitive Diagnostics & Uncertainty Model
+IalClaw doesn't just use a simple confidence score (0–1). It implements a **Cognitive Diagnostic Model** based on uncertainty types.
 
-### 4. Task Nature Classification
-The agent distinguishes between different task "natures" to optimize resources:
-- **INFORMATIVE**: Purely conceptual or conversational (Direct LLM).
-- **EXECUTABLE**: Requires specific tools or data manipulation (Tool Loop).
-- **HYBRID**: Combines a conceptual response with an optional or suggested execution.
+#### 🧩 Uncertainty Types
+The system classifies uncertainty into specific categories:
+- **INTENT** → Did not clearly understand the user's request.
+- **EXECUTION** → Understood the request but doesn't know how to execute it.
+- **KNOWLEDGE** → Lacks enough information in memory or context.
+- **CAPABILITY** → Knows how to execute but a necessary tool is missing (**Capability Gap**).
+- **CONFLICT** → High confidence in intent but low in execution (or vice-versa).
+- **NONE** → Total confidence.
 
-### 5. Decision Intelligence
-Autonomous decision-making is governed by a risk-aware engine:
-- **EXECUTE**: Automatic action for low-risk, high-confidence tasks.
-- **ASK_CLARIFICATION**: Used when intent is ambiguous.
-- **ASK_TOOL_SELECTION**: Used when the goal is clear but the tool choice is uncertain.
-- **CONFIRM**: Mandatory for high-risk, destructive, or capability-gap resolution tasks.
+#### ⚖️ Confidence Decomposition
+Confidence is dynamically weighted based on the nature of the task:
+| Task Nature | Intent Weight | Execution Weight |
+|---|---|---|
+| **Informative** | 70% | 30% |
+| **Executable** | 30% | 70% |
+
+#### 🚦 Decision Mapping
+Each uncertainty type leads to a specific action:
+- **INTENT** → `ASK_CLARIFICATION`
+- **EXECUTION** → `ASK_TOOL_SELECTION`
+- **CONFLICT** → `ASK_EXECUTION_STRATEGY`
+- **CAPABILITY** → `CONFIRM` (installation or dependency resolution)
+- **NONE + High confidence** → `EXECUTE`
+
+#### 🧠 Cognitive Behavior
+This model allows the agent to:
+- Understand **why** it is in doubt.
+- Choose the best way to interact with the user.
+- Avoid incorrect actions with partial confidence.
+- Explain its decisions transparently.
+
+## 🔍 From Confidence to Cognitive Diagnostics
+Traditionally, agents use a single confidence score. IalClaw evolves this concept into a diagnostic model:
+**Confidence → Decomposition → Uncertainty → Decision**
+This transforms the agent from reactive to reflective and explainable.
 
 ---
 
@@ -402,25 +421,44 @@ O IalClaw tem consciência do que pode e não pode fazer:
 - **Integração com Provisioner**: Lacunas classificadas são resolvidas via `system-provisioner`, permitindo que o agente sugira ou realize instalações com confirmação do usuário.
 - **Regras Anti-Regressão**: Evita verificações desnecessárias de ferramentas ou ambiente para tarefas puramente informativas ou de conversação.
 
-### 3. Consciência de Confiança (Decomposição)
-Em vez de um único score numérico, o sistema usa **Confiança Decomposta**:
-- **Confiança de Intenção**: O quão bem o sistema entendeu "o que" você quer.
-- **Confiança de Ação**: O quão bem o sistema sabe "como" fazer (roteamento).
-- **Diagnóstico de Incerteza**: Identifica especificamente se a dúvida é sobre a intenção, a execução ou um conflito entre ambos.
-- **Bônus de Memória**: Aprendizado por reforço baseado em sucessos históricos passados.
+### 3. Diagnóstico Cognitivo & Modelo de Incerteza
+O IalClaw não utiliza apenas um score de confiança (0–1). Ele implementa um modelo de diagnóstico cognitivo baseado em tipos de incerteza.
 
-### 4. Classificação de Natureza da Tarefa (Task Nature)
-O agente distingue entre diferentes "naturezas" de tarefa para otimizar recursos:
-- **INFORMATIVE**: Puramente conceitual ou conversacional (LLM Direto).
-- **EXECUTABLE**: Exige ferramentas específicas ou manipulação de dados (Loop de Ferramentas).
-- **HYBRID**: Combina uma resposta conceitual com uma execução opcional ou sugerida.
+#### 🧩 Tipos de Incerteza (Uncertainty Types)
+O sistema classifica a incerteza em categorias específicas:
+- **INTENT** → não entendeu claramente o pedido do usuário
+- **EXECUTION** → entendeu o pedido, mas não sabe como executar
+- **KNOWLEDGE** → falta informação suficiente na memória ou contexto
+- **CAPABILITY** → sabe como executar, mas falta ferramenta (**Capability Gap**)
+- **CONFLICT** → alta confiança na intenção, mas baixa na execução (ou vice-versa)
+- **NONE** → confiança total
 
-### 5. Inteligência de Decisão
-A tomada de decisão autônoma é governada por um motor consciente de risco:
-- **EXECUTE**: Ação automática para tarefas de baixo risco e alta confiança.
-- **ASK_CLARIFICATION**: Usado quando a intenção está ambígua.
-- **ASK_TOOL_SELECTION**: Usado quando o objetivo está claro, mas a escolha da ferramenta é incerta.
-- **CONFIRM**: Obrigatório para tarefas de alto risco, destrutivas ou de resolução de lacunas de capacidade.
+#### ⚖️ Confiança Decomposta (Confidence Decomposition)
+A confiança é ponderada dinamicamente com base na natureza da tarefa:
+| Natureza da Tarefa | Peso Intenção | Peso Execução |
+| :--- | :--- | :--- |
+| **Informativa** | 70% | 30% |
+| **Executável** | 30% | 70% |
+
+#### 🚦 Mapeamento de Decisão (Decision Mapping)
+Cada tipo de incerteza leva a uma ação específica:
+- **INTENT** → `ASK_CLARIFICATION`
+- **EXECUTION** → `ASK_TOOL_SELECTION`
+- **CONFLICT** → `ASK_EXECUTION_STRATEGY`
+- **CAPABILITY** → `CONFIRM` (instalação ou resolução de dependência)
+- **NONE + Alta confiança** → `EXECUTE`
+
+#### 🧠 Comportamento Cognitivo
+Esse modelo permite que o agente:
+- entenda **por que** está em dúvida
+- escolha a melhor forma de interagir com o usuário
+- evite ações incorretas com confiança parcial
+- explique suas decisões de forma transparente
+
+## 🔍 De Confiança para Diagnóstico Cognitivo
+Tradicionalmente, agentes utilizam um único score de confiança. O IalClaw evolui esse conceito para um modelo diagnóstico:
+**Confidence → Decomposition → Uncertainty → Decision**
+Isso transforma o agente de reativo para reflexivo e explicável.
 
 ---
 
