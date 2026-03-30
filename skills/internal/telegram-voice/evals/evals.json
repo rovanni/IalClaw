@@ -1,0 +1,25 @@
+{
+    "skill_name": "telegram-voice",
+    "evals": [
+        {
+            "id": 1,
+            "prompt": "Eu acabei de enviar um áudio (audio.ogg). Você pode transcrever o que eu disse?",
+            "expected_output": "O modelo deve converter o áudio.ogg para .wav, rodar o whisper-cli e apresentar a transcrição.",
+            "files": [
+                "audio.ogg"
+            ]
+        },
+        {
+            "id": 2,
+            "prompt": "Responda à minha mensagem anterior com uma mensagem de voz.",
+            "expected_output": "O modelo deve gerar um arquivo .mp3 usando thorial-tts.sh e depois converter para .ogg para o Telegram.",
+            "files": []
+        },
+        {
+            "id": 3,
+            "prompt": "Gere uma resposta de voz usando a voz feminina Francisca.",
+            "expected_output": "O modelo deve usar a voz pt-BR-FranciscaNeural no script de TTS.",
+            "files": []
+        }
+    ]
+}
