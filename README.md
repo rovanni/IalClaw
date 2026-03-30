@@ -1,7 +1,7 @@
 [🇧🇷 Ver versão em Português](#-versão-em-português)
 
 # IalClaw Cognitive System v3.1
-### Adaptive cognitive agent with self-evaluation and autonomous decision-making
+### Adaptive cognitive agent that doesn't just respond — it evaluates its own capabilities, measures its uncertainty, and decides how to act.
 
 <p align="center">
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="IalClaw Logo Banner" width="760" />
@@ -21,6 +21,30 @@ This project implements a complete cognitive architecture. While functional, it 
 
 ## 🧠 Cognitive Architecture v3.1 (Fundamental Layers)
 
+```md
+THINK  → CapabilityResolver + ConfidenceScorer  
+DECIDE → DecisionEngine  
+ACT    → CognitiveOrchestrator
+```
+
+## 🔗 Integrated Cognitive Flow
+
+The system follows the flow:
+**Input → Intent → TaskNature → Capability → Confidence → Decision → Action**
+
+This ensures consistent, explainable, and adaptive decisions.
+
+## 🧩 Task Nature (TaskNature)
+
+The system automatically classifies the task as:
+- **Informative** → direct response via LLM.
+- **Executable** → requires tools or actions.
+- **Hybrid** → combines response + optional execution.
+
+## 🚀 Differential
+
+Unlike traditional agents that use only a confidence score, IalClaw uses cognitive diagnostics to understand the root of uncertainty and act in a contextual and secure manner.
+
 ### 1. Unified Cognitive Pipeline (THINK → DECIDE → ACT)
 The system operates through a structured cognitive loop that ensures consistent and explainable behavior:
 - **THINK (`CapabilityResolver`)**: Evaluates the user task against the system's available tools. It detects "Capability Gaps" (blocking vs enhancement) and proposes self-healing solutions.
@@ -30,7 +54,7 @@ The system operates through a structured cognitive loop that ensures consistent 
 ### 2. Capability Awareness & Self-Healing
 IalClaw is aware of what it can and cannot do:
 - **Gap Detection**: Automatically identifies missing dependencies (e.g., FFmpeg for video, Git for VCS).
-- **Provisioner Integration**: Classified gaps are resolved via the `system-provisioner`, allowing the agent to suggest or perform installations with user confirmation.
+- **Capability Resolution**: The agent doesn't just detect limitations; it proposes and executes strategies to overcome them (**self-healing**).
 - **Anti-Regression Rules**: Prevents unnecessary tool or environment checks for purely informative/conversational tasks.
 
 ### 3. Cognitive Diagnostics & Uncertainty Model
@@ -74,7 +98,7 @@ This transforms the agent from reactive to reflective and explainable.
 
 ---
 
-## 🏗️ Core Infrastructure (Base Components)
+## 🏗️ Cognitive Infrastructure and Execution (Base Components)
 
 - **Graph-RAG & Hybrid Memory**: Cognitive Nodes with vector embeddings (Ollama + SQLite) merged with Graph Score.
 - **Memory Consolidation ("Dreaming")**: `MemoryDreamer` prunes irrelevant episodic memories and decays the graph to optimize retrieval.
@@ -389,7 +413,7 @@ Contributions are welcome! Feel free to open an **issue** to discuss new ideas o
 # 🇧🇷 Versão em Português
 
 # IalClaw Cognitive System v3.1
-### Agente cognitivo adaptativo com auto-avaliação e tomada de decisão autônoma
+### Agente cognitivo adaptativo que não apenas responde — ele avalia suas próprias capacidades, mede sua incerteza e decide como agir.
 
 <p align="center">
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="Banner do Logo do IalClaw" width="760" />
@@ -409,6 +433,30 @@ Este projeto implementa uma arquitetura cognitiva completa. Embora funcional, es
 
 ## 🧠 Arquitetura Cognitiva v3.1 (Camadas Fundamentais)
 
+```md
+THINK  → CapabilityResolver + ConfidenceScorer  
+DECIDE → DecisionEngine  
+ACT    → CognitiveOrchestrator
+```
+
+## 🔗 Fluxo Cognitivo Integrado
+
+O sistema segue o fluxo:
+**Input → Intent → TaskNature → Capability → Confidence → Decision → Action**
+
+Isso garante decisões consistentes, explicáveis e adaptativas.
+
+## 🧩 Natureza da Tarefa (TaskNature)
+
+O sistema classifica automaticamente a tarefa como:
+- **Informativa** → resposta direta via LLM.
+- **Executável** → requer ferramentas ou ações.
+- **Híbrida** → combina resposta + execução opcional.
+
+## 🚀 Diferencial
+
+Diferente de agentes tradicionais que usam apenas um score de confiança, o IalClaw utiliza diagnóstico cognitivo para entender a origem da incerteza e agir de forma contextual e segura.
+
 ### 1. Pipeline Cognitivo Unificado (THINK → DECIDE → ACT)
 O sistema opera através de um ciclo cognitivo estruturado que garante comportamento consistente e explicável:
 - **THINK (`CapabilityResolver`)**: Avalia a tarefa do usuário em relação às ferramentas disponíveis. Detecta "Lacunas de Capacidade" (bloqueantes vs melhorias) e propõe soluções de autorrecuperação (self-healing).
@@ -418,7 +466,7 @@ O sistema opera através de um ciclo cognitivo estruturado que garante comportam
 ### 2. Consciência de Capacidade (Self-Healing)
 O IalClaw tem consciência do que pode e não pode fazer:
 - **Detecção de Lacunas**: Identifica automaticamente dependências ausentes (ex: FFmpeg para vídeo, Git para VCS).
-- **Integração com Provisioner**: Lacunas classificadas são resolvidas via `system-provisioner`, permitindo que o agente sugira ou realize instalações com confirmação do usuário.
+- **Resolução de Capacidade**: O agente não apenas detecta limitações, mas propõe e executa estratégias para superá-las (**self-healing**).
 - **Regras Anti-Regressão**: Evita verificações desnecessárias de ferramentas ou ambiente para tarefas puramente informativas ou de conversação.
 
 ### 3. Diagnóstico Cognitivo & Modelo de Incerteza
@@ -462,7 +510,7 @@ Isso transforma o agente de reativo para reflexivo e explicável.
 
 ---
 
-## 🏗️ Infraestrutura Core (Componentes Base)
+## 🏗️ Infraestrutura Cognitiva e Execução (Componentes Base)
 
 - **Graph-RAG & Memória Híbrida**: Nós cognitivos com embeddings vetoriais (Ollama + SQLite) mesclados com Graph Score.
 - **Consolidação de Memória ("Sonho")**: `MemoryDreamer` poda memórias episódicas irrelevantes e decai o grafo para otimizar a recuperação.
