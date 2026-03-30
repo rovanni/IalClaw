@@ -165,3 +165,4 @@ CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_cache_hash ON query_cache(query_hash);
 CREATE INDEX IF NOT EXISTS idx_memory_embeddings_accessed ON memory_embeddings(last_accessed);
+CREATE INDEX IF NOT EXISTS idx_nodes_ranking ON nodes(score, importance, freshness);

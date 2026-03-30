@@ -107,7 +107,7 @@ export class MemoryService {
         const limit = options?.limit ?? 6;
         const reinforce = options?.reinforce !== false;
         const queryEmbedding = await this.embeddingService.generate(query);
-        
+
         if (!queryEmbedding) {
             this.logger.warn('embedding_unavailable', 'Embedding indisponível para query, usando fallback');
             return this.fallbackQuery(query, limit);
@@ -131,8 +131,8 @@ export class MemoryService {
                 GROUP BY source
             ) ec ON ec.source = n.id
             WHERE n.type = 'memory'
-            ORDER BY n.modified DESC
-            LIMIT 300
+            ORDER BY (n.importance + n.score) DESC, n.modified DESC
+            LIMIT 200
         `).all() as MemoryRow[];
 
         const ranked = rows
@@ -254,8 +254,10 @@ export class MemoryService {
         }
 
         if (!best) return null;
-        const shouldUpdate = best.score >= 0.9
-            || (best.score >= 0.78 && this.entityOverlapScore(best.row.content, input.entities) >= 0.2)
+        // AJUSTE: flexibilizar threshold com entity overlap para melhor merge semântico
+        const entityOverlap = this.entityOverlapScore(best.row.content, input.entities);
+        const shouldUpdate = best.score >= 0.85 + entityOverlap
+            || (best.score >= 0.78 && entityOverlap >= 0.2)
             || this.looksContradictory(best.row.content, input.content);
 
         return shouldUpdate ? best.row : null;

@@ -105,7 +105,10 @@ ${memoryBlock}
         }
 
         const lines = nodes.map(n => {
-            const content = n.content || n.content_preview || n.name || 'Memória sem conteúdo';
+            let content = n.content || n.content_preview || n.name || 'Memória sem conteúdo';
+            if (content.length > 300) {
+                content = content.slice(0, 300) + '... (truncated)';
+            }
             return `- ${n.name}: ${content}`;
         });
         return lines.join('\n');

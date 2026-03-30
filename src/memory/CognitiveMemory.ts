@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { LLMProvider } from '../engine/ProviderFactory';
+import { createLogger } from '../shared/AppLogger';
 
 export type NodeResult = {
     id: string;
@@ -28,6 +29,7 @@ export class CognitiveMemory {
     private recentNodeLastAccessedAt = new Map<string, number>();
     private recentNodeAccessCount = new Map<string, number>();
     private activeCodeFiles = new Set<string>();
+    private logger = createLogger('CognitiveMemory');
 
     private readonly RECENCY_HALF_LIFE_MS = 1000 * 60 * 60;
     private readonly RECENCY_WEIGHT = 0.16;
@@ -60,10 +62,19 @@ export class CognitiveMemory {
 
         if (targetAgentId) {
             query += ` AND (subtype != 'agent' OR id = ?)`;
-            return this.db.prepare(query).all(targetAgentId) as NodeResult[];
         }
 
-        return this.db.prepare(query).all() as NodeResult[];
+        return this.db.prepare(query).all(targetAgentId ? [targetAgentId] : []) as NodeResult[];
+    }
+
+    public getConversationHistory(sessionId: string, limit: number = 20): any[] {
+        return this.db.prepare(`
+            SELECT role, content, created_at
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        `).all(sessionId, limit).reverse();
     }
 
     public searchByContent(text: string, limit: number = 5): NodeResult[] {
@@ -208,12 +219,14 @@ export class CognitiveMemory {
             return this.fetchNodesByIds(ids);
         }
 
-        // Busca todos os nodes rankeados por score inicial
+        // Busca apenas os top 200 nodes mais promissores por ranking básico
         const nodes = this.db
             .prepare(`
-        SELECT id, type, name, score, importance, freshness, content, content_preview, embedding
-        FROM nodes
-      `)
+                SELECT id, type, name, score, importance, freshness, content, content_preview, embedding
+                FROM nodes
+                ORDER BY (score + importance + freshness) DESC
+                LIMIT 200
+            `)
             .all() as NodeResult[];
 
         for (const node of nodes) {
@@ -329,7 +342,8 @@ export class CognitiveMemory {
         // 3. Depth Factor
         const depthFactor = 1 / ((node.depth || 0) + 1);
 
-        let score = (similarity * 0.4) + (composite * 0.5) + (depthFactor * 0.1);
+        // AJUSTE: melhor equilíbrio entre semântica e grafo
+        let score = (similarity * 0.5) + (composite * 0.35) + (depthFactor * 0.15);
 
         // 4. Context Bonus/Penalty
         if (node.type === 'code') {
@@ -345,8 +359,10 @@ export class CognitiveMemory {
                 score += this.NEIGHBOR_BASE_WEIGHT * neighborStrength;
             }
 
-            if ((this.recentNodeAccessCount.get(node.id) || 0) > 5) {
-                score *= 0.9;
+            // MELHORIA: evitar overfitting penalizando nós acessados > 10 vezes
+            const accessCount = this.recentNodeAccessCount.get(node.id) || 0;
+            if (accessCount > 10) {
+                score *= 0.85;
             }
         } else if (this.recentlyUsedNodes.has(node.id)) {
             score *= 0.8;
@@ -396,36 +412,29 @@ export class CognitiveMemory {
         response?: string;
     }) {
         const { nodes_used } = input;
+        if (!nodes_used || nodes_used.length === 0) return;
 
-        // Gerar embedding para o nó de conhecimento novo / ou atualizar a intenção da query
-        const queryEmb = await this.provider.embed(input.query);
+        const updateNode = this.db.prepare(`UPDATE nodes SET score = MIN(1.0, score + 0.05), freshness = 1.0, modified = ? WHERE id = ?`);
+        const updateEdges = this.db.prepare(`UPDATE edges SET weight = MIN(1.0, weight + 0.05), traversal_count = traversal_count + 1 WHERE source = ? OR target = ?`);
+        const insertLearning = this.db.prepare(`INSERT OR IGNORE INTO learning_events (query, selected_nodes, success, created_at) VALUES (?, ?, ?, ?)`);
 
-        const updateNode = this.db.prepare(`UPDATE nodes SET score = score + 0.1 WHERE id = ?`);
-        const updateEdges = this.db.prepare(`UPDATE edges SET weight = weight + 0.05, traversal_count = traversal_count + 1 WHERE source = ? OR target = ?`);
-        const insertLearning = this.db.prepare(`INSERT INTO learning_events (query, selected_nodes, success, created_at) VALUES (?, ?, ?, datetime('now'))`);
-
-        // In a full implementation we would create new Concept nodes and save their embeddings.
-        // For this update, we just emulate the structural reinforcement.
+        const now = new Date().toISOString();
 
         try {
-            const tx = this.db.transaction(() => {
+            this.db.transaction(() => {
                 for (const node of nodes_used) {
-                    updateNode.run(node.id);
+                    updateNode.run(now, node.id);
                     updateEdges.run(node.id, node.id);
                     this.recentlyUsedNodes.add(node.id);
                     this.markNodeUsage(node.id);
                 }
-                insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0);
-            });
-            tx();
+                insertLearning.run(input.query, JSON.stringify(nodes_used.map(n => n.id)), input.success ? 1 : 0, now);
+            })();
         } catch (err) {
-            this.db.exec('ROLLBACK');
-            throw err;
+            this.logger.error('learn_failed', `Erro ao salvar aprendizado: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         this.refreshRecentlyUsedCodeNeighbors();
-
-        // Evict oldest entries to prevent unbounded growth
         this.enforceMemoryBounds();
     }
 
@@ -697,64 +706,6 @@ export class CognitiveMemory {
         return Number(result.changes || 0);
     }
 
-    public getProjectNodes(limit: number = 10): NodeResult[] {
-        return this.db.prepare(`
-            SELECT id, type, subtype, name, score, importance, freshness, content, content_preview
-            FROM nodes
-            WHERE subtype = 'project'
-            ORDER BY importance DESC, score DESC
-            LIMIT ?
-        `).all(limit) as NodeResult[];
-    }
-
-    public async saveExecutionFix(input: {
-        content: string;
-        project_id?: string;
-        error_type?: string;
-        fingerprint?: string;
-        timestamp?: number;
-    }) {
-        const createdAt = new Date(input.timestamp || Date.now()).toISOString();
-        const nodeId = `execution-fix:${this.hash(`${input.project_id || 'global'}:${input.fingerprint || createdAt}:${createdAt}`)}`;
-        const embedding = await this.provider.embed(input.content);
-        const preview = input.content.slice(0, 280);
-        const tags = JSON.stringify([
-            'execution_fix',
-            input.project_id || 'global',
-            input.error_type || 'unknown'
-        ]);
-
-        this.db.prepare(`
-      INSERT OR REPLACE INTO nodes
-      (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-            nodeId,
-            'memory',
-            'execution_fix',
-            `Execution fix ${input.error_type || 'unknown'}`,
-            input.content,
-            preview,
-            JSON.stringify(embedding),
-            'execution_fix',
-            tags,
-            0.85,
-            0.75,
-            1.0,
-            1,
-            createdAt,
-            createdAt
-        );
-    }
-
-    public getConversationHistory(conversationId: string, limit: number = 20): any[] {
-        return this.db.prepare(`
-      SELECT * FROM messages
-      WHERE conversation_id = ?
-      ORDER BY id ASC
-      LIMIT ?
-    `).all(conversationId, limit) as any[];
-    }
 
     private fetchNodesByIds(ids: string[]): NodeResult[] {
         if (ids.length === 0) return [];
@@ -953,5 +904,28 @@ export class CognitiveMemory {
         }
 
         return maxDecay;
+    }
+
+    public saveExecutionFix(data: {
+        content: string;
+        error_type: string;
+        fingerprint: string;
+    }): void {
+        const now = new Date().toISOString();
+        const id = `fix:${data.fingerprint}`;
+
+        this.db.prepare(`
+            INSERT OR REPLACE INTO nodes
+            (id, type, subtype, name, content, content_preview, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, 'concept', 'execution_fix', ?, ?, ?, 'execution_fix', ?, 0.9, 1.0, 1.0, 1, ?, ?)
+        `).run(
+            id,
+            data.error_type,
+            data.content,
+            data.content.slice(0, 280),
+            JSON.stringify(['fix', data.error_type]),
+            now,
+            now
+        );
     }
 }
