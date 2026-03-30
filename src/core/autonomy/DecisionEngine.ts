@@ -1,6 +1,6 @@
 // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
-import { ExecutionRoute } from './ActionRouter';
+import { ExecutionRoute, TaskNature } from './ActionRouter';
 
 export enum AutonomyDecision {
     EXECUTE = "execute",   // Executar automaticamente
@@ -25,6 +25,7 @@ export interface AutonomyContext {
     autonomyLevel?: AutonomyLevel; // Nível de autonomia global
     intentSubtype?: string;    // command, suggestion, doubt
     route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
+    nature?: TaskNature;       // Natureza da tarefa (informativa vs executável)
 }
 
 /**
@@ -83,8 +84,9 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
 
     // ═══════════════════════════════════════════════════════════════════
     // 🟡 AMARELO: Falta informação → perguntar
+    // EXCEPT: Se for tarefa INFORMATIVA, permitimos responder sem dados.
     // ═══════════════════════════════════════════════════════════════════
-    if (!ctx.hasAllParams) {
+    if (!ctx.hasAllParams && ctx.nature === TaskNature.EXECUTABLE) {
         return AutonomyDecision.ASK;
     }
 
@@ -188,6 +190,7 @@ export function createAutonomyContext(
         isDestructive?: boolean;
         isReversible?: boolean;
         route?: ExecutionRoute;
+        nature?: TaskNature;
     } = {}
 ): AutonomyContext {
     return {
@@ -196,7 +199,9 @@ export function createAutonomyContext(
         hasAllParams: params.hasAllParams ?? true,
         riskLevel: params.riskLevel ?? AutonomyHelpers.detectRisk(intent),
         isDestructive: params.isDestructive ?? AutonomyHelpers.isDestructiveCommand(intent),
-        isReversible: params.isReversible ?? AutonomyHelpers.isReversibleAction(intent)
+        isReversible: params.isReversible ?? AutonomyHelpers.isReversibleAction(intent),
+        route: params.route,
+        nature: params.nature ?? TaskNature.EXECUTABLE
     };
 }
 

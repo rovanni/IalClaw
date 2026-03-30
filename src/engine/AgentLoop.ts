@@ -539,7 +539,8 @@ export class AgentLoop {
                 riskLevel: this.detectRiskLevel(this.currentTaskType, userInput),
                 isDestructive: false,
                 isReversible: true,
-                route: decision.route
+                route: decision.route,
+                nature: decision.nature
             }
         );
 
@@ -608,6 +609,10 @@ export class AgentLoop {
 
             if (this.currentTaskType === 'file_search') {
                 return { answer: t('file.ask_search_query'), newMessages: [] };
+            }
+
+            if (this.currentTaskType === 'data_analysis') {
+                return { answer: t('data.ask_for_source'), newMessages: [] };
             }
 
             // Tratamento especial para comandos simples ou perguntas informativas

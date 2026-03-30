@@ -275,6 +275,7 @@
   "content.ask_for_source": "Qual conteúdo você deseja usar?\n\nVocê pode:\n• Colar o texto aqui\n• Informar o caminho de um arquivo\n• Descrever o conteúdo que deseja",
   "content.generation_failed": "Não consegui gerar o conteúdo corretamente. Pode reformular sua solicitação ou fornecer mais detalhes?",
   "content.generation_error": "Erro ao gerar conteúdo: {error}. Tente novamente com mais detalhes.",
+  "data.ask_for_source": "Quais dados você deseja analisar?\n\nVocê pode:\n• Colar os dados aqui\n• Informar o caminho de um arquivo (CSV, JSON, etc)\n• Descrever o conjunto de dados",
   "file.ask_for_source": "Qual arquivo você deseja converter?\n\nInforme o caminho do arquivo de origem.",
   "file.ask_search_query": "O que você deseja procurar?\n\nInforme o nome do arquivo ou diretório.",
   "agent.ask.source_file": "Qual arquivo você deseja utilizar?\n\nVocê pode informar o caminho ou colar o conteúdo.",

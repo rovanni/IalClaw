@@ -90,6 +90,8 @@ export class CognitiveOrchestrator {
             isReversible: true,    // Placeholder
             confidence: Math.min(1.0, routeDecision.confidence + confidenceBonus),
             intentSubtype: routeDecision.subtype,
+            route: routeDecision.route,
+            nature: routeDecision.nature,
             autonomyLevel: context?.autonomyLevel
         };
 

@@ -16,6 +16,11 @@ export enum ExecutionMode {
     PURE_TOOL = 'pure_tool'           // Apenas execução de ferramenta
 }
 
+export enum TaskNature {
+    INFORMATIVE = 'informative',   // Pode responder direto (conceitual)
+    EXECUTABLE = 'executable'      // Precisa de dados ou ferramentas
+}
+
 export enum IntentSubtype {
     COMMAND = 'command',       // "mova os arquivos"
     SUGGESTION = 'suggestion', // "acho que deveria mover"
@@ -26,6 +31,7 @@ export enum IntentSubtype {
 export interface RouteDecision {
     route: ExecutionRoute;
     subtype: IntentSubtype;
+    nature: TaskNature;
     confidence: number;
 }
 
@@ -79,21 +85,24 @@ export class ActionRouter {
         // 1. Detectar Subtipo
         const subtype = this.detectSubtype(normalizedInput);
 
-        // 2. Verificar Agibilidade (Actionability)
+        // 2. Detectar Natureza (Informação vs Execução)
+        const nature = this.detectTaskNature(normalizedInput);
+
+        // 3. Verificar Agibilidade (Actionability)
         const requiresTool = this.requiresToolExecution(normalizedInput);
 
-        // 3. Rota Inicial
+        // 4. Rota Inicial
         let route = ExecutionRoute.TOOL_LOOP;
         let confidence = requiresTool ? 0.99 : 0.50;
 
         const infoTypes: TaskType[] = ['content_generation', 'information_request', 'conversation', 'data_analysis'];
 
-        if (!requiresTool && (infoTypes.includes(taskType as TaskType))) {
+        if (!requiresTool && (infoTypes.includes(taskType as TaskType) || nature === TaskNature.INFORMATIVE)) {
             route = ExecutionRoute.DIRECT_LLM;
             confidence = (taskType === 'conversation' || taskType === 'information_request') ? 1.0 : 0.95;
         }
 
-        // 4. Ajustar confiança baseada no subtipo
+        // 5. Ajustar confiança baseada no subtipo
         if (subtype === IntentSubtype.SUGGESTION) {
             confidence *= 0.8; // Reduz confiança para sugestões
         } else if (subtype === IntentSubtype.DOUBT) {
@@ -102,7 +111,7 @@ export class ActionRouter {
             confidence *= 0.5; // Reduz ainda mais para incertos (exceto conversação)
         }
 
-        const decision: RouteDecision = { route, subtype, confidence };
+        const decision: RouteDecision = { route, subtype, nature, confidence };
 
         this.logger.debug('route_decision', `[ROUTER] Decisão de rota: ${route} (${subtype})`, {
             input: normalizedInput.slice(0, 50),
@@ -134,6 +143,23 @@ export class ActionRouter {
         }
 
         return IntentSubtype.COMMAND;
+    }
+
+    /**
+     * Detecta a natureza da tarefa: INFORMATIVA (conceitual) vs EXECUTÁVEL (dados/ferramentas).
+     */
+    private detectTaskNature(input: string): TaskNature {
+        const hasDataIndicators =
+            /arquivo|file|dados|dataset|csv|json|planilha|dataset|tabela|spreadsheet/i.test(input);
+
+        const isConceptual =
+            /mercado|tend[eê]ncia|cen[aá]rio|an[aá]lise|explica|como|quem|qual|pre[çc]o|valor/i.test(input);
+
+        if (isConceptual && !hasDataIndicators) {
+            return TaskNature.INFORMATIVE;
+        }
+
+        return TaskNature.EXECUTABLE;
     }
 
     /**
