@@ -5,7 +5,10 @@ const MAX_PENDING_ACTIONS = 3;
 
 export function setPendingAction(
     session: SessionContext,
-    action: Omit<PendingAction, 'id' | 'timestamp' | 'expires_at'>
+    action: {
+        type: PendingAction['type'];
+        payload: PendingAction['payload'];
+    }
 ): PendingAction {
     const now = Date.now();
     cleanupExpiredPendingActions(session, now);
@@ -29,9 +32,11 @@ export function setPendingAction(
     const pending: PendingAction = {
         id: `pending_${now}_${Math.random().toString(36).slice(2, 8)}`,
         type: action.type,
+        status: 'awaiting_confirmation',
         payload: action.payload,
         timestamp: now,
-        expires_at: now + PENDING_ACTION_TTL_MS
+        expires_at: now + PENDING_ACTION_TTL_MS,
+        createdAt: now
     };
 
     session.pending_actions.push(pending);
@@ -87,7 +92,17 @@ export function shouldDropPendingActionOnTopicShift(text: string): boolean {
 }
 
 function cleanupExpiredPendingActions(session: SessionContext, now: number): void {
-    session.pending_actions = session.pending_actions.filter(action => action.expires_at > now);
+    session.pending_actions = session.pending_actions.filter(action => {
+        // Ações expiradas (TTL padrão)
+        if (action.expires_at <= now) return false;
+
+        // Ações completadas há mais de 30 segundos
+        if (action.status === 'completed' && action.completedAt) {
+            if (now - action.completedAt > 30000) return false;
+        }
+
+        return true;
+    });
 }
 
 function normalizeText(text: string): string {

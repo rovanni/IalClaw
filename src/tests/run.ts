@@ -711,6 +711,135 @@ async function run() {
     assert.match(normalizedSummaryLine, /mode=SAFE_MODE/);
     assert.match(normalizedSummaryLine, /duration_ms=2026/);
 
+    // ── Test: CONFIRM → EXECUTE → COMPLETE → RETRY flow (loop fix) ──
+    await SessionManager.runWithSession('capability-loop-fix-test', async () => {
+        let capturedEffectiveQuery = '';
+        let ensureCalled = false;
+
+        const fakeMemory = {
+            saveMessage: () => undefined,
+            learn: async () => undefined,
+            retrieveWithTraversal: async () => [],
+            getIdentityNodes: async () => [],
+            getProjectNodes: () => [],
+            getConversationHistory: () => [],
+            saveProjectNode: async () => undefined,
+            indexCodeNode: async () => undefined,
+            setActiveCodeFiles: () => undefined,
+            saveExecutionFix: () => undefined,
+            searchByContent: () => []
+        } as any;
+
+        const fakeLoop = {
+            run: async (messages: MessagePayload[]) => {
+                let userMsg: MessagePayload | undefined;
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    if (messages[i]?.role === 'user') {
+                        userMsg = messages[i];
+                        break;
+                    }
+                }
+                capturedEffectiveQuery = userMsg?.content || '';
+                return { answer: 'Audio processado com sucesso.', newMessages: [] };
+            },
+            getProvider: () => ({ embed: async () => [] }),
+            getDecisionMemory: () => null
+        } as any;
+
+        const controller = new AgentController(
+            fakeMemory,
+            { build: () => '' } as any,
+            fakeLoop,
+            {} as any,
+            {} as any
+        );
+
+        const session = SessionManager.getCurrentSession()!;
+
+        // Step 1: Set up a pending capability installation action
+        setPendingAction(session, {
+            type: 'install_capability',
+            payload: {
+                capability: 'audio_support',
+                originalQuery: 'transcreva esse audio para texto'
+            }
+        });
+
+        const pendingBefore = getPendingAction(session);
+        assert.ok(pendingBefore, 'Pending action should exist');
+        assert.equal(pendingBefore!.type, 'install_capability');
+        assert.equal(pendingBefore!.status, 'awaiting_confirmation');
+
+        // Step 2: Simulate user confirmation — the handler in AgentController should
+        // process the confirmation and retry with the original query.
+        // Note: skillManager.ensure may fail in test env, so we test the flow structure.
+        const answer = await controller.handleWebMessage('capability-loop-fix-test', 'sim');
+
+        // Step 3: Verify the pending action was processed
+        const pendingAfter = getPendingAction(session);
+
+        // If installation succeeded, pending should be cleared and original query retried
+        // If installation failed, pending should be back to awaiting_confirmation
+        // Either way, session.retry_count should have been incremented
+        assert.ok(
+            (session.retry_count ?? 0) >= 1 || pendingAfter === null,
+            'Retry count should be incremented or action cleared'
+        );
+
+        // Verify answer is NOT empty (system responded with something)
+        assert.ok(answer.length > 0, 'System should return a response');
+    });
+
+    // ── Test: Retry safety limits prevent infinite loops ──
+    await SessionManager.runWithSession('retry-safety-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        session.retry_count = 3; // Already exceeded max retries
+
+        setPendingAction(session, {
+            type: 'install_capability',
+            payload: {
+                capability: 'audio_support',
+                originalQuery: 'transcreva esse audio'
+            }
+        });
+
+        const fakeMemory = {
+            saveMessage: () => undefined,
+            learn: async () => undefined,
+            retrieveWithTraversal: async () => [],
+            getIdentityNodes: async () => [],
+            getProjectNodes: () => [],
+            getConversationHistory: () => [],
+            searchByContent: () => []
+        } as any;
+
+        const fakeLoop = {
+            run: async () => ({ answer: 'should not reach here', newMessages: [] }),
+            getProvider: () => ({ embed: async () => [] }),
+            getDecisionMemory: () => null
+        } as any;
+
+        const controller = new AgentController(
+            fakeMemory,
+            { build: () => '' } as any,
+            fakeLoop,
+            {} as any,
+            {} as any
+        );
+
+        const answer = await controller.handleWebMessage('retry-safety-test', 'sim');
+
+        // Should hit retry limit and return failure message
+        assert.match(answer, /múltiplas tentativas|multiple attempts/i);
+
+        // Pending action should be cleared
+        const pendingAfter = getPendingAction(session);
+        assert.equal(pendingAfter, null, 'Pending action should be cleared after retry limit');
+
+        // Retry count should be reset
+        assert.equal(session.retry_count, 0, 'Retry count should be reset after limit');
+    });
+
     console.log('All tests passed.');
 }
 

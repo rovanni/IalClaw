@@ -9,6 +9,7 @@ export interface ConversationMessage {
 export interface PendingAction {
     id: string;
     type: 'install_skill' | 'install_capability';
+    status: 'awaiting_confirmation' | 'executing' | 'completed';
     payload: {
         skillName?: string;
         capability?: string;
@@ -16,6 +17,8 @@ export interface PendingAction {
     };
     timestamp: number;
     expires_at: number;
+    createdAt: number;
+    completedAt?: number;
 }
 
 const STM_MAX_MESSAGES = 10; // 5 exchanges
@@ -39,6 +42,7 @@ export interface SessionContext {
     pending_actions: PendingAction[];
     task_type?: string;
     task_confidence?: number;
+    retry_count?: number;
     lastAccessedAt?: number;
 }
 

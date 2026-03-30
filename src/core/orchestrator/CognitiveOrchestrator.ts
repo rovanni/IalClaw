@@ -8,6 +8,8 @@ import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { DecisionMemory } from '../../memory/DecisionMemory';
 import { CapabilityResolver, ResolutionProposal } from '../autonomy/CapabilityResolver';
 import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceScorer';
+import { getPendingAction } from '../agent/PendingActionTracker';
+import { SessionManager } from '../../shared/SessionManager';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -83,7 +85,16 @@ export class CognitiveOrchestrator {
         const policy = getSecurityPolicy().getPolicy(text);
 
         // 5. Capability Resolver (THINK: Detectar lacunas cognitivas/ferramentas)
-        const capabilityGap = this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
+        // Se já existe uma ação de instalação em execução ou retentativa pós-instalação,
+        // pulamos a detecção para evitar loops
+        const currentSession = SessionManager.getCurrentSession();
+        const pending = currentSession ? getPendingAction(currentSession) : null;
+        const isInstalling = pending?.status === 'executing';
+        const isRetrying = pending?.status === 'completed' && (currentSession?.retry_count ?? 0) > 0;
+
+        const capabilityGap = (isInstalling || isRetrying)
+            ? { hasGap: false, status: 'available' } as any
+            : this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
 
         // 6. Confidence Scorer (Agregação de incerteza com pesos dinâmicos)
         const aggregatedConfidence = this.confidenceScorer.calculate({

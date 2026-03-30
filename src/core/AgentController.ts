@@ -381,21 +381,55 @@ export class AgentController {
                 }
 
                 if (isConfirmation(userQuery)) {
-                    // Se for instalação de capacidade, executar ANTES de processar
-                    if (pending.type === 'install_capability' && pending.payload.capability) {
-                        logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
-                            capabilityNumber: pending.payload.capability
+                    // Evitar re-execução se já estiver em andamento ou concluído
+                    if (pending.status === 'executing' || pending.status === 'completed') {
+                        logger.warn('pending_action_already_processed', '[ORCHESTRATOR] Ação já está em processamento ou concluída', {
+                            status: pending.status
                         });
-
-                        await skillManager.ensure(pending.payload.capability as any, 'auto-install');
-
-                        // Após instalar, tentamos usar o query original se disponível
-                        effectiveUserQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
-                    } else {
-                        effectiveUserQuery = this.buildPendingActionQuery(pending as any);
+                        return t('loop.fallback.default_answer');
                     }
 
-                    clearPendingAction(session, pending.id);
+                    // Se for instalação de capacidade, executar ANTES de processar
+                    if (pending.type === 'install_capability' && pending.payload.capability) {
+                        // Safety: prevent infinite retries
+                        session.retry_count = (session.retry_count || 0) + 1;
+                        if (session.retry_count > 2) {
+                            clearPendingAction(session, pending.id);
+                            session.retry_count = 0;
+                            const failMsg = '⚠️ Não foi possível completar após múltiplas tentativas. Tente instalar manualmente.';
+                            this.memory.saveMessage(sessionId, 'user', userQuery);
+                            this.memory.saveMessage(sessionId, 'assistant', failMsg);
+                            return failMsg;
+                        }
+
+                        logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
+                            capability: pending.payload.capability
+                        });
+
+                        pending.status = 'executing';
+                        const success = await skillManager.ensure(pending.payload.capability as any, 'auto-install');
+
+                        if (!success) {
+                            pending.status = 'awaiting_confirmation'; // Permite tentar novamente se falhar
+                            const failedMsg = t('agent.install.browser.failed'); // Mensagem de erro apropriada
+                            this.memory.saveMessage(sessionId, 'assistant', failedMsg);
+                            return failedMsg;
+                        }
+
+                        pending.status = 'completed';
+                        pending.completedAt = Date.now();
+                        // Após instalar, retomar o query original
+                        effectiveUserQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
+                        // Limpar ação pendente após conclusão para evitar estado stale no retry
+                        clearPendingAction(session, pending.id);
+                    } else {
+                        session.retry_count = 0; // Reset para ações não-capability
+                        pending.status = 'executing';
+                        effectiveUserQuery = this.buildPendingActionQuery(pending as any);
+                        pending.status = 'completed';
+                        pending.completedAt = Date.now();
+                    }
+
                     logger.info('pending_action_confirmed', t('log.agent.pending_action_confirmed'), {
                         action_type: pending.type,
                         payload: pending.payload
@@ -547,6 +581,14 @@ export class AgentController {
                         this.logger.info('pending_install_capability_set', t('log.agent.pending_install_capability_set'), {
                             capability: gap.resource
                         });
+
+                        // Retornar prompt de confirmação DIRETAMENTE — NÃO cair no loop LLM
+                        const confirmMsg = decision.reason;
+                        this.memory.saveMessage(sessionId, 'user', userQuery);
+                        this.memory.saveMessage(sessionId, 'assistant', confirmMsg);
+                        SessionManager.addToHistory(sessionId, 'user', userQuery);
+                        SessionManager.addToHistory(sessionId, 'assistant', confirmMsg);
+                        return confirmMsg;
                     }
                 }
                 break;
