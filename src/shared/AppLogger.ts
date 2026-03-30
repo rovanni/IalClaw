@@ -322,7 +322,8 @@ function formatCognitiveDetails(payload: LogPayload, traceLabel?: string): strin
         'model',
         'tools_count',
         'messages_count',
-        'reason'
+        'reason',
+        'error'
     ];
 
     const details: string[] = [];
@@ -380,7 +381,8 @@ export function formatConsoleLogLine(payload: LogPayload): string {
         'tools_count',
         'response_length',
         'diagnostic_code',
-        'reason'
+        'reason',
+        'error'
     ];
 
     for (const key of interestingKeys) {

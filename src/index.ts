@@ -692,7 +692,7 @@ if (hasTelegramBotToken) {
         { command: 'profile', description: 'Ver seu perfil' },
         { command: 'reset-onboarding', description: 'Refazer o onboarding' },
     ]).catch((err) => {
-        logger.warn('set_commands_failed', t('log.index.set_commands_failed'), { error: String(err) });
+        logger.error('set_commands_failed', err, t('log.index.set_commands_failed'));
     });
 
     logger.info('bot_starting', t('log.index.bot_starting'));
