@@ -60,15 +60,22 @@ export class MemoryLifecycleManager {
         return [];
     }
 
-    public async storeExplicit(input: string, type: any, importance: number): Promise<void> {
-        await this.memoryService.upsertMemory({
+    public async storeExplicit(input: string, context: AgentMemoryContext, type: any = 'semantic'): Promise<any> {
+        const res = await this.memoryService.upsertMemory({
             content: input.trim(),
-            type,
-            importance,
+            type: type || 'semantic',
+            importance: 0.7,
             relevance: 1.0,
             entities: [],
-            context: { role: 'user', sessionId: 'manual_store' }
+            context
         });
+        return {
+            stored: true,
+            action: res.action,
+            memoryId: res.memoryId,
+            type: type || 'semantic',
+            score: 0.7
+        };
     }
 
     public async queryMemory(query: string, options: { limit: number }): Promise<any[]> {

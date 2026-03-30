@@ -66,14 +66,22 @@ export class DecisionMemory {
         `).all(taskType);
     }
 
-    public async getToolHistory(toolName: string, taskType: string): Promise<any[]> {
-        return this.db.prepare(`
-            SELECT success, timestamp
+    public async getToolHistory(toolName: string, taskType: string): Promise<{ failure: number; rate: number; count: number }> {
+        const rows = this.db.prepare(`
+            SELECT success
             FROM tool_decisions
             WHERE tool = ? AND task_type = ?
             ORDER BY timestamp DESC
             LIMIT 10
-        `).all(toolName, taskType);
+        `).all(toolName, taskType) as any[];
+
+        const count = rows.length;
+        if (count === 0) return { failure: 0, rate: 1, count: 0 };
+        const successes = rows.filter(r => r.success === 1).length;
+        const failures = count - successes;
+        const rate = successes / count;
+
+        return { failure: failures, rate, count };
     }
 
     public async query(taskType: string, step: string, limit: number = 10): Promise<ToolDecision[]> {
