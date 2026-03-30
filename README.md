@@ -136,6 +136,7 @@ To make IalClaw start automatically on boot:
     sudo bash scripts/setup-service.sh
     ```
 2.  **Check Status**: `systemctl status ialclaw`
+3.  **Check Logs**: `journalctl -u ialclaw -f`
 
 ---
 
@@ -472,7 +473,8 @@ Para fazer o IalClaw iniciar automaticamente no boot:
     ```bash
     sudo bash scripts/setup-service.sh
     ```
-2.  **Verificar**: `systemctl status ialclaw`
+2.  **Verificar Status**: `systemctl status ialclaw`
+3.  **Acompanhar Logs**: `journalctl -u ialclaw -f`
 
 ---
 
