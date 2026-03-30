@@ -361,5 +361,15 @@ Nunca mantenha residuos em `skills/public/<nome>/`, `skills/temp/<nome>/` ou no 
 - Nunca pedir confirmacao redundante apos o usuario selecionar uma opcao valida.
 - Nunca pular o passo de auditoria, mesmo que o usuário solicite.
 - Nunca instalar uma skill com decisão `blocked` ou `quarantined`.
-- Sempre informar o usuário do resultado — inclusive quando a auditoria passa.
+- Always inform the user of the result — inclusive quando a auditoria passa.
 - Em caso de dúvida sobre segurança, prefira não instalar.
+
+---
+
+## 👤 Autoria
+Criada por **Luciano Rovanni do Nascimento**
+
+## 📫 Conecte-se Comigo  
+[![GitHub](https://img.shields.io/badge/GitHub-rovanni-%23181717?style=flat&logo=github)](https://github.com/rovanni)  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-%230077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/luciano-rovanni-97856846/)
+```

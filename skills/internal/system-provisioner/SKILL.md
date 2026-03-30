@@ -77,3 +77,12 @@ Verify the installation (`tool --version`) and proceed with the original user ta
 - **Self-Healing**: Aim to guide the system towards a state where it can fulfill the user's original request.
 - **Transparency**: Maintain a clear log of system modifications.
 - **Fallback**: If the user denies installation, suggest manual steps or try to find a way to complete the task without that specific tool.
+
+---
+
+## 👤 Autoria
+Criada por **Luciano Rovanni do Nascimento**
+
+## 📫 Conecte-se Comigo  
+[![GitHub](https://img.shields.io/badge/GitHub-rovanni-%23181717?style=flat&logo=github)](https://github.com/rovanni)  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-%230077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/luciano-rovanni-97856846/)

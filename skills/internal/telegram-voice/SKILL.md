@@ -95,3 +95,10 @@ If the user requests a different voice, adjust the `thorial-tts.sh` parameters i
   - Uses `node tts-converter.js` internally.
   - Default: `pt-BR-AntonioNeural`, `--rate -5%`.
 - **Output Audio Dir**: `/home/rover/.openclaw/workspace/audios/`
+
+## 👤 Autoria
+Criada por **Luciano Rovanni do Nascimento**
+
+## 📫 Conecte-se Comigo  
+[![GitHub](https://img.shields.io/badge/GitHub-rovanni-%23181717?style=flat&logo=github)](https://github.com/rovanni)  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-%230077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/luciano-rovanni-97856846/)

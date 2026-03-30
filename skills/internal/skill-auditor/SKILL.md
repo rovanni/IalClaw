@@ -295,3 +295,11 @@ Observação: o runtime atual ainda não aplica bloqueio automático ao iniciar.
 
 - `references/patterns.md` — catálogo completo de padrões de risco com exemplos reais
 - `references/scoring.md` — tabela detalhada de pesos e critérios de score
+---
+
+## 👤 Autoria
+Criada por **Luciano Rovanni do Nascimento**
+
+## 📫 Conecte-se Comigo  
+[![GitHub](https://img.shields.io/badge/GitHub-rovanni-%23181717?style=flat&logo=github)](https://github.com/rovanni)  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-%230077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/luciano-rovanni-97856846/)
