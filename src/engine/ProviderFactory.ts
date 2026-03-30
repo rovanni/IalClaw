@@ -84,7 +84,7 @@ class OllamaProvider implements LLMProvider {
         // Limite total de tempo (padrão: 6 minutos)
         this.maxTotalMs = parseInt(process.env.OLLAMA_MAX_TOTAL_MS || '360000');
 
-        this.logger.info('provider_initialized', 'Provider Ollama inicializado.', {
+        this.logger.info('provider_initialized', '[2/5] Provider Ollama inicializado.', {
             host,
             uses_api_key: Boolean(apiKey),
             timeout_ms: this.timeoutMs,

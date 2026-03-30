@@ -61,10 +61,17 @@ const LEVEL_COLOR: Record<LogLevel, string> = {
 };
 
 const LEVEL_ICON: Record<LogLevel, string> = {
-    debug: '│',
-    info: 'ℹ',
-    warn: '⚠',
-    error: '✖',
+    debug: '🔍',
+    info: 'ℹ️',
+    warn: '⚠️',
+    error: '❌',
+};
+
+const STAGE_ICON: Record<CognitiveStage, string> = {
+    start: '🚀',
+    decision: '🧠',
+    execution: '⚙️',
+    result: '✅',
 };
 
 const STAGE_COLOR: Record<CognitiveStage, string> = {
@@ -352,7 +359,9 @@ function formatCognitiveConsoleLine(payload: LogPayload, stage: CognitiveStage):
     const detailPart = details.length > 0 ? ` ${ANSI.DIM}(${details.join(' ')})${ANSI.RESET}` : '';
     const errorPart = formatConsoleError(payload.error);
 
-    return `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}[${stageLabel}]${ANSI.RESET} ${label}${detailPart}${messagePart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
+    const icon = STAGE_ICON[stage];
+
+    return `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} [${stageLabel}]${ANSI.RESET} ${label}${detailPart}${messagePart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
 }
 
 export function formatConsoleLogLine(payload: LogPayload): string {

@@ -14,7 +14,7 @@ export class DatabaseManager {
     constructor(dbPath: string = 'ialclaw.sqlite') {
         const resolvedDbPath = path.resolve(dbPath);
         const exists = fs.existsSync(resolvedDbPath);
-        dbLogger.info('db_path', exists ? `Banco de dados localizado em: ${resolvedDbPath}` : `Banco de dados será criado em: ${resolvedDbPath}`);
+        dbLogger.info('db_path', exists ? `[1/5] Banco de dados localizado em: ${resolvedDbPath}` : `[1/5] Banco de dados será criado em: ${resolvedDbPath}`);
 
 
         // Garante que o diretório existe
@@ -119,7 +119,7 @@ export class DatabaseManager {
 
     private initialize() {
         const schemaPath = path.resolve(__dirname, 'schema.sql');
-        dbLogger.info('schema_path', `Arquivo de schema esperado em: ${schemaPath}`);
+        dbLogger.info('schema_path', `[1/5] Arquivo de schema esperado em: ${schemaPath}`);
 
         if (!fs.existsSync(schemaPath)) {
             dbLogger.error('schema_not_found', `Schema file not found at ${schemaPath}`);
@@ -160,7 +160,7 @@ export class DatabaseManager {
             }
 
             this.ready = true;
-            dbLogger.info('db_initialized', `Database initialized at: ${this.db.name}`);
+            dbLogger.info('db_initialized', `[1/5] Database initialized at: ${this.db.name}`);
         } catch (err) {
             dbLogger.error('schema_init_failed', err);
             throw err;
