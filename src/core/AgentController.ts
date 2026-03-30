@@ -424,28 +424,37 @@ export class AgentController {
 
             const resolution = this.skillResolution.resolve(effectiveUserQuery);
 
-            if (resolution.action === 'install' && resolution.skillName) {
-                const installer = this.skillResolver.resolve(`instale ${resolution.skillName}`);
-                if (installer) {
-                    logger.info('skill_resolved', t('log.agent.skill_resolved'), {
-                        skill_name: resolution.skillName
-                    });
-                    return this.runWithSkill(sessionId, effectiveUserQuery, installer.query, installer.skill, onProgress, shouldStop);
+            // Se for apenas um número e NÃO temos uma lista pendente de skills, 
+            // ignoramos a resolução de skill para deixar o LLM tratar como opção de chat normal.
+            const isJustNumber = /^\d+$/.test(effectiveUserQuery.trim());
+            const hasPendingSkills = (this.skillResolution.getPendingList()?.length || 0) > 0;
+
+            if (isJustNumber && !hasPendingSkills) {
+                // Deixa passar para o fluxo normal do LLM
+            } else {
+                if (resolution.action === 'install' && resolution.skillName) {
+                    const installer = this.skillResolver.resolve(`instale ${resolution.skillName}`);
+                    if (installer) {
+                        logger.info('skill_resolved', t('log.agent.skill_resolved'), {
+                            skill_name: resolution.skillName
+                        });
+                        return this.runWithSkill(sessionId, effectiveUserQuery, installer.query, installer.skill, onProgress, shouldStop);
+                    }
                 }
-            }
 
-            if (resolution.action === 'list' && resolution.searchResults) {
-                const listText = this.formatSkillList(resolution.searchResults);
-                this.memory.saveMessage(sessionId, 'assistant', listText);
-                logger.info('skill_list_shown', '[SKILL] Lista de skills apresentada', {
-                    count: resolution.searchResults.length
-                });
-                return listText;
-            }
+                if (resolution.action === 'list' && resolution.searchResults) {
+                    const listText = this.formatSkillList(resolution.searchResults);
+                    this.memory.saveMessage(sessionId, 'assistant', listText);
+                    logger.info('skill_list_shown', '[SKILL] Lista de skills apresentada', {
+                        count: resolution.searchResults.length
+                    });
+                    return listText;
+                }
 
-            if (resolution.action === 'ask_input' && resolution.message) {
-                this.memory.saveMessage(sessionId, 'assistant', resolution.message);
-                return resolution.message;
+                if (resolution.action === 'ask_input' && resolution.message) {
+                    this.memory.saveMessage(sessionId, 'assistant', resolution.message);
+                    return resolution.message;
+                }
             }
 
             if (resolution.action === 'none') {
@@ -596,7 +605,12 @@ export class AgentController {
         const messages: MessagePayload[] = [
             {
                 role: 'system',
-                content: `Voce e o ${assistantName}, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\nSe o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\nNao peca confirmacao redundante.\nNao ignore a escolha.\nNao continue conversa generica quando houver uma selecao valida.\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
+                content: `Voce e o ${assistantName}, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:
+Quando voce apresentar uma lista numerada de opcoes (ex: 1. Fazer X, 2. Fazer Y), mantenha explicitamente o contexto da acao.
+Se o usuario responder apenas com um numero ("1", "2") ou repetir o nome de uma opcao, trate isso como a escolha correspondente a SUA ultima pergunta.
+APENAS se nao houver nenhuma lista ativa ou contexto recente, informe educadamente que nao entendeu a selecao.
+Nao peca confirmacao redundante.
+\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
             }
         ];
         for (const msg of history) {

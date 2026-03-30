@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { Context, InputFile } from 'grammy';
 import { SessionManager } from '../shared/SessionManager';
 import { workspaceService } from '../services/WorkspaceService';
@@ -13,10 +14,51 @@ export class TelegramOutputHandler {
 
     public async sendResponse(ctx: Context, response: string, requiresAudio: boolean = false) {
         if (requiresAudio) {
-            // Logic for Edge-TTS generation could go here. 
-            // Fallback to text:
-            await this.sendTextChunks(ctx, `${t('telegram.output.audio_fallback_prefix')}\n${response}`);
-            return;
+            try {
+                const audiosDir = path.join(process.cwd(), 'workspace', 'audios');
+                if (!fs.existsSync(audiosDir)) {
+                    fs.mkdirSync(audiosDir, { recursive: true });
+                }
+
+                const mp3Path = path.join(audiosDir, 'output.mp3');
+                const oggPath = path.join(audiosDir, 'output.ogg');
+
+                // Cleanup previous files
+                if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
+                if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath);
+
+                // Use the TTS script path from the telegram-voice skill
+                // Note: Path adapted for the user's Linux VPS environment
+                const ttsScript = process.env.TTS_SCRIPT_PATH || '/home/rover/.openclaw/workspace/scripts/thorial-tts.sh';
+
+                this.logger.debug('generating_tts', 'Generating TTS...', { script: ttsScript });
+
+                // 1. Generate Speech
+                const escapedResponse = response.replace(/"/g, '\\"').replace(/\n/g, ' ');
+                execSync(`bash "${ttsScript}" "${escapedResponse}" "${mp3Path}"`, { stdio: 'ignore' });
+
+                if (!fs.existsSync(mp3Path)) {
+                    throw new Error('TTS script failed to generate MP3 file');
+                }
+
+                // 2. Convert to OGG Opus (Telegram Voice format)
+                execSync(`ffmpeg -y -i "${mp3Path}" -c:a libopus "${oggPath}"`, { stdio: 'ignore' });
+
+                if (!fs.existsSync(oggPath)) {
+                    throw new Error('FFmpeg failed to convert MP3 to OGG');
+                }
+
+                // 3. Send as Voice
+                await ctx.replyWithVoice(new InputFile(oggPath));
+
+                this.logger.info('voice_sent', 'Voice response sent successfully');
+                return;
+            } catch (err: any) {
+                this.logger.error('voice_generation_failed', err, 'Failed to generate or send voice response');
+                // Fallback to text
+                await this.sendTextChunks(ctx, `${t('telegram.output.audio_fallback_prefix')}\n${response}`);
+                return;
+            }
         }
 
         const attachment = this.resolveArtifactAttachment();
@@ -46,7 +88,7 @@ export class TelegramOutputHandler {
         for (let i = 0; i < text.length; i += CHUNK_SIZE) {
             const chunk = text.substring(i, i + CHUNK_SIZE);
             const chunkIndex = Math.floor(i / CHUNK_SIZE);
-            
+
             // Retry automático com backoff
             let lastError: Error | null = null;
             for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
@@ -69,7 +111,7 @@ export class TelegramOutputHandler {
                         max_retries: this.MAX_RETRIES,
                         error_message: err.message
                     });
-                    
+
                     if (attempt === this.MAX_RETRIES - 1) {
                         // Última tentativa falhou
                         this.logger.error('chunk_send_failed', err, t('log.telegram.output.chunk_failed'), {
@@ -77,7 +119,7 @@ export class TelegramOutputHandler {
                             chunk_preview: chunk.substring(0, 100),
                             total_attempts: this.MAX_RETRIES
                         });
-                        
+
                         // Fallback: tentar enviar sem Markdown
                         try {
                             await Promise.race([
@@ -93,7 +135,7 @@ export class TelegramOutputHandler {
                             throw new Error(t('telegram.output.error.critical_send_failed', { message: lastError?.message }));
                         }
                     }
-                    
+
                     // Backoff exponencial: 1s, 2s, 4s
                     await this.sleep(Math.pow(2, attempt) * 1000);
                 }
@@ -155,7 +197,7 @@ export class TelegramOutputHandler {
                     max_retries: this.MAX_RETRIES,
                     error_message: err.message
                 });
-                
+
                 if (attempt === this.MAX_RETRIES - 1) {
                     this.logger.error('attachment_send_failed', err, t('log.telegram.output.attachment_failed'), {
                         filename,
@@ -164,7 +206,7 @@ export class TelegramOutputHandler {
                     // Não lançar erro, apenas logar - o texto principal já foi enviado
                     return;
                 }
-                
+
                 // Backoff exponencial
                 await this.sleep(Math.pow(2, attempt) * 1000);
             }
@@ -187,21 +229,21 @@ export class TelegramOutputHandler {
             if (!fs.existsSync(logsDir)) {
                 fs.mkdirSync(logsDir, { recursive: true });
             }
-            
+
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `failed-response-${chatId || 'unknown'}-${timestamp}.txt`;
             const filepath = path.join(logsDir, filename);
-            
+
             const content = `[IALCLAW] RESPOSTA NÃO ENTREGUE\nData: ${new Date().toISOString()}\nChat ID: ${chatId || 'desconhecido'}\n\n${response}`;
-            
+
             fs.writeFileSync(filepath, content, 'utf-8');
-            
+
             this.logger.error('response_saved_to_file', null, t('log.telegram.output.response_saved_to_file'), {
                 filepath,
                 chat_id: chatId,
                 response_length: response.length
             });
-            
+
             console.error(`\n[IALCLAW] ⚠️  FALHA CRÍTICA: Impossível enviar resposta ao usuário.`);
             console.error(`[IALCLAW] 💾 Resposta salva em: ${filepath}`);
             console.error(`[IALCLAW] 📝 Comprimento: ${response.length} caracteres\n`);

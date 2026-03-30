@@ -1,6 +1,7 @@
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as https from 'https';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 import { OnboardingService } from '../services/OnboardingService';
@@ -136,17 +137,38 @@ export class TelegramInputHandler {
 
         // Handling audio/voice
         if (ctx.message?.voice || ctx.message?.audio) {
-            this.logger.info('audio_received', t('log.telegram.input.audio_received'), {
-                telegram_user_id: userId,
-                telegram_chat_id: chatId,
-                kind: ctx.message.voice ? 'voice' : 'audio'
-            });
-            await ctx.replyWithChatAction('record_voice');
-            return {
-                text: t('telegram.input.process_voice_placeholder'),
-                source_type: 'audio',
-                requires_audio_reply: true
-            };
+            const audioData = ctx.message.voice || ctx.message.audio;
+            if (audioData) {
+                this.logger.info('audio_received', t('log.telegram.input.audio_received'), {
+                    telegram_user_id: userId,
+                    telegram_chat_id: chatId,
+                    kind: ctx.message.voice ? 'voice' : 'audio',
+                    file_id: audioData.file_id
+                });
+
+                await ctx.replyWithChatAction('record_voice');
+
+                try {
+                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'input.ogg');
+                    await this.downloadTelegramFile(ctx, audioData.file_id, destPath);
+
+                    this.logger.info('audio_downloaded', 'Audio downloaded successfully', { path: destPath });
+
+                    return {
+                        text: `Process please user voice message at workspace/audios/input.ogg`,
+                        source_type: 'audio',
+                        requires_audio_reply: true
+                    };
+                } catch (err: any) {
+                    this.logger.error('audio_download_failed', err, 'Failed to download telegram audio');
+                    // Fallback to placeholder if download fails
+                    return {
+                        text: t('telegram.input.process_voice_placeholder'),
+                        source_type: 'audio',
+                        requires_audio_reply: true
+                    };
+                }
+            }
         }
 
         this.logger.warn('unsupported_message', t('log.telegram.input.unsupported_message'), {
@@ -159,5 +181,34 @@ export class TelegramInputHandler {
         });
         await ctx.reply(t('telegram.input.unsupported_reply'));
         return null;
+    }
+
+    private async downloadTelegramFile(ctx: Context, fileId: string, destPath: string): Promise<void> {
+        const file = await ctx.api.getFile(fileId);
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const url = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+
+        const dir = path.dirname(destPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        return new Promise((resolve, reject) => {
+            const fileStream = fs.createWriteStream(destPath);
+            https.get(url, response => {
+                if (response.statusCode !== 200) {
+                    reject(new Error(`Failed to download file: ${response.statusCode}`));
+                    return;
+                }
+                response.pipe(fileStream);
+                fileStream.on('finish', () => {
+                    fileStream.close();
+                    resolve();
+                });
+            }).on('error', err => {
+                fs.unlink(destPath, () => { });
+                reject(err);
+            });
+        });
     }
 }
