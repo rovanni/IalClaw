@@ -353,15 +353,28 @@ function formatCognitiveConsoleLine(payload: LogPayload, stage: CognitiveStage):
     const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
     const stageLabel = stage.toUpperCase();
     const color = STAGE_COLOR[stage];
-    const label = formatCognitiveLabel(payload, stage);
+    let label = formatCognitiveLabel(payload, stage);
     const details = formatCognitiveDetails(payload, traceLabel);
-    const messagePart = payload.message && payload.message !== label ? ` - ${payload.message}` : '';
+    let message = payload.message || '';
     const detailPart = details.length > 0 ? ` ${ANSI.DIM}(${details.join(' ')})${ANSI.RESET}` : '';
     const errorPart = formatConsoleError(payload.error);
 
     const icon = STAGE_ICON[stage];
 
-    return `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} [${stageLabel}]${ANSI.RESET} ${label}${detailPart}${messagePart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
+    // Detect sequence prefix [n/m]
+    let sequencePrefix = '';
+    const seqMatch = message.match(/^(\[\d+\/\d+\])\s*(?:-\s*)?/);
+    if (seqMatch) {
+        sequencePrefix = `${ANSI.YELLOW}${seqMatch[1]}${ANSI.RESET} - `;
+        message = message.slice(seqMatch[0].length);
+        if (label.startsWith(seqMatch[1])) {
+            label = label.slice(seqMatch[0].length);
+        }
+    }
+
+    const messagePart = message && message !== label ? ` - ${message}` : '';
+
+    return `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} [${stageLabel}]${ANSI.RESET} ${sequencePrefix}${label}${detailPart}${messagePart}${errorPart ? `\n  ${ANSI.RED}error: ${errorPart}${ANSI.RESET}` : ''}`;
 }
 
 export function formatConsoleLogLine(payload: LogPayload): string {
@@ -373,7 +386,17 @@ export function formatConsoleLogLine(payload: LogPayload): string {
     const traceLabel = compactTraceId(typeof payload.trace_id === 'string' ? payload.trace_id : undefined);
     const color = LEVEL_COLOR[payload.level];
     const icon = LEVEL_ICON[payload.level];
-    const header = `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} ${payload.level.toUpperCase()}${ANSI.RESET} ${payload.component}:${payload.event}`;
+
+    let message = payload.message || '';
+    let sequencePrefix = '';
+
+    const seqMatch = message.match(/^(\[\d+\/\d+\])\s*(?:-\s*)?/);
+    if (seqMatch) {
+        sequencePrefix = `${ANSI.YELLOW}${seqMatch[1]}${ANSI.RESET} - `;
+        message = message.slice(seqMatch[0].length);
+    }
+
+    const header = `${ANSI.DIM}${payload.timestamp}${ANSI.RESET} ${color}${icon} ${payload.level.toUpperCase()}${ANSI.RESET} ${sequencePrefix}${payload.component}:${payload.event}`;
     const scopeBits = [traceLabel ? `trace=${traceLabel}` : null].filter(Boolean) as string[];
 
     const interestingKeys = [
