@@ -61,8 +61,15 @@
       --chat-bot-text: #e5edf8;
     }
 
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+    }
 
     body {
       overflow: hidden;
@@ -74,7 +81,11 @@
       color: var(--text-main);
     }
 
-    button, input, select { font: inherit; }
+    button,
+    input,
+    select {
+      font: inherit;
+    }
 
     #status-bar {
       min-height: 72px;
@@ -89,10 +100,29 @@
       flex-shrink: 0;
     }
 
-    .header-side { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .header-stack { display: flex; flex-direction: column; min-width: 0; }
-    .brand { font-size: var(--font-lg); font-weight: 700; letter-spacing: -0.02em; }
-    .brand-caption { color: var(--text-muted); font-size: var(--font-sm); }
+    .header-side {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .header-stack {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .brand {
+      font-size: var(--font-lg);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-caption {
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+    }
 
     .view-switch {
       display: inline-flex;
@@ -169,7 +199,8 @@
       background: var(--bg-surface);
     }
 
-    .ghost-btn, .ghost-link {
+    .ghost-btn,
+    .ghost-link {
       padding: 10px 14px;
       cursor: pointer;
       text-decoration: none;
@@ -180,16 +211,50 @@
       box-sizing: border-box;
     }
 
-    .ghost-btn.subtle { background: transparent; border: none; }
+    .ghost-btn.subtle {
+      background: transparent;
+      border: none;
+    }
 
-    ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
 
-    #workspace { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 24px; overflow: hidden; }
-    #chat-panel { width: min(100%, 960px); min-height: 0; display: flex; flex-direction: column; }
-    #chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 16px; }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    #workspace {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+    }
+
+    #chat-panel {
+      width: min(100%, 960px);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #chat-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 0 16px;
+    }
 
     #empty-state {
       max-width: 720px;
@@ -226,12 +291,42 @@
       font-size: clamp(1rem, 1.4vw, 1.08rem);
     }
 
-    #chat-container { display: flex; flex-direction: column; gap: 18px; padding: 0 8px 24px; }
-    .chat-message { display: flex; flex-direction: column; gap: 6px; max-width: min(86%, 760px); }
-    .chat-user { align-self: flex-end; align-items: flex-end; }
-    .chat-final { align-self: flex-start; align-items: flex-start; }
-    .chat-meta { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: var(--font-xs); }
-    .chat-tag { font-weight: 700; }
+    #chat-container {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 0 8px 24px;
+    }
+
+    .chat-message {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: min(86%, 760px);
+    }
+
+    .chat-user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .chat-final {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .chat-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: var(--font-xs);
+    }
+
+    .chat-tag {
+      font-weight: 700;
+    }
+
     .chat-bubble {
       min-width: 0;
       padding: 16px 18px;
@@ -246,10 +341,22 @@
       border: 1px solid var(--border-color);
     }
 
-    .chat-user .chat-bubble { background: var(--chat-user-bg); border-bottom-right-radius: 8px; }
-    .chat-final .chat-bubble { border-bottom-left-radius: 8px; }
-    .chat-user .chat-tag { color: var(--chat-user-text); }
-    .chat-final .chat-tag { color: var(--accent); }
+    .chat-user .chat-bubble {
+      background: var(--chat-user-bg);
+      border-bottom-right-radius: 8px;
+    }
+
+    .chat-final .chat-bubble {
+      border-bottom-left-radius: 8px;
+    }
+
+    .chat-user .chat-tag {
+      color: var(--chat-user-text);
+    }
+
+    .chat-final .chat-tag {
+      color: var(--accent);
+    }
 
     .trace-btn {
       padding: 6px 10px;
@@ -312,7 +419,10 @@
       font-size: var(--font-md);
     }
 
-    #chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14); }
+    #chat-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+    }
 
     #action-btn {
       height: 58px;
@@ -327,10 +437,22 @@
       box-shadow: var(--shadow-sm);
     }
 
-    #action-btn:hover { background: var(--accent-hover); }
-    #action-btn:disabled { background: var(--text-soft); color: rgba(255, 255, 255, 0.76); cursor: not-allowed; }
-    #action-btn.is-stop { background: #c2410c; }
-    #speech-btn, #tts-toggle {
+    #action-btn:hover {
+      background: var(--accent-hover);
+    }
+
+    #action-btn:disabled {
+      background: var(--text-soft);
+      color: rgba(255, 255, 255, 0.76);
+      cursor: not-allowed;
+    }
+
+    #action-btn.is-stop {
+      background: #c2410c;
+    }
+
+    #speech-btn,
+    #tts-toggle {
       width: 58px;
       height: 58px;
       padding: 8px;
@@ -340,9 +462,27 @@
       border: 1px solid var(--border-color);
     }
 
-    #tts-toggle.active { background: var(--bg-muted); }
-    #speech-btn.recording { background: #ef4444; color: #fff; animation: pulse 1s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    #tts-toggle.active {
+      background: var(--bg-muted);
+    }
+
+    #speech-btn.recording {
+      background: #ef4444;
+      color: #fff;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+    }
 
     .drawer-backdrop {
       position: fixed;
@@ -364,9 +504,21 @@
       transition: transform 0.22s ease;
     }
 
-    .drawer-left { left: 0; transform: translateX(-100%); border-right: 1px solid var(--border-color); }
-    .drawer-right { right: 0; transform: translateX(100%); border-left: 1px solid var(--border-color); }
-    .drawer.is-open { transform: translateX(0); }
+    .drawer-left {
+      left: 0;
+      transform: translateX(-100%);
+      border-right: 1px solid var(--border-color);
+    }
+
+    .drawer-right {
+      right: 0;
+      transform: translateX(100%);
+      border-left: 1px solid var(--border-color);
+    }
+
+    .drawer.is-open {
+      transform: translateX(0);
+    }
 
     .drawer-header {
       padding: 18px var(--space-lg) 12px;
@@ -377,8 +529,17 @@
       border-bottom: 1px solid var(--border-color);
     }
 
-    .drawer-title { font-size: var(--font-lg); font-weight: 700; }
-    .drawer-subtitle { margin-top: 4px; color: var(--text-muted); font-size: var(--font-sm); line-height: 1.6; }
+    .drawer-title {
+      font-size: var(--font-lg);
+      font-weight: 700;
+    }
+
+    .drawer-subtitle {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.6;
+    }
 
     .drawer-body {
       flex: 1;
@@ -390,9 +551,27 @@
       padding: var(--space-lg);
     }
 
-    .drawer-section { display: flex; flex-direction: column; gap: 12px; }
-    .section-label { font-size: var(--font-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
-    .mode-select { width: 100%; padding: 12px 14px; cursor: pointer; font-size: var(--font-sm); font-weight: 600; }
+    .drawer-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .section-label {
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .mode-select {
+      width: 100%;
+      padding: 12px 14px;
+      cursor: pointer;
+      font-size: var(--font-sm);
+      font-weight: 600;
+    }
 
     .mode-status {
       display: flex;
@@ -405,15 +584,70 @@
       border: 1px solid var(--border-color);
     }
 
-    .mode-badge { color: var(--accent); font-size: var(--font-sm); font-weight: 700; }
-    .mode-behavior, .sidebar-note, .conversation-preview, .conversation-meta, .conversation-empty { color: var(--text-muted); font-size: var(--font-sm); line-height: 1.6; }
-    .sidebar-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    .btn-primary { border-color: transparent; background: var(--accent); color: #fff; padding: 12px 16px; cursor: pointer; font-weight: 700; }
-    #conversation-list { display: flex; flex-direction: column; gap: 10px; }
-    .conversation-item { width: 100%; padding: 14px; cursor: pointer; text-align: left; box-shadow: var(--shadow-sm); }
-    .conversation-item.active { background: var(--bg-muted); border-color: rgba(59, 130, 246, 0.4); }
-    .conversation-name { font-size: var(--font-sm); font-weight: 700; margin-bottom: 6px; word-break: break-word; }
-    .conversation-meta { margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; font-size: var(--font-xs); }
+    .mode-badge {
+      color: var(--accent);
+      font-size: var(--font-sm);
+      font-weight: 700;
+    }
+
+    .mode-behavior,
+    .sidebar-note,
+    .conversation-preview,
+    .conversation-meta,
+    .conversation-empty {
+      color: var(--text-muted);
+      font-size: var(--font-sm);
+      line-height: 1.6;
+    }
+
+    .sidebar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn-primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #fff;
+      padding: 12px 16px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    #conversation-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conversation-item {
+      width: 100%;
+      padding: 14px;
+      cursor: pointer;
+      text-align: left;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .conversation-item.active {
+      background: var(--bg-muted);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .conversation-name {
+      font-size: var(--font-sm);
+      font-weight: 700;
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .conversation-meta {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: var(--font-xs);
+    }
 
     #log-container {
       flex: 1;
@@ -426,23 +660,75 @@
       color: var(--text-muted);
     }
 
-    .status-line { padding: 10px 0; border-bottom: 1px dashed var(--border-color); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .status-line {
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--border-color);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     @media (max-width: 980px) {
-      #status-bar { flex-wrap: wrap; justify-content: center; }
-      .header-side, .view-switch { width: 100%; justify-content: center; }
-      .header-stack { align-items: center; }
-      #workspace { padding: 18px 14px; }
-      #chat-panel, .chat-message, .input-area { width: 100%; max-width: 100%; }
+      #status-bar {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .header-side,
+      .view-switch {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .header-stack {
+        align-items: center;
+      }
+
+      #workspace {
+        padding: 18px 14px;
+      }
+
+      #chat-panel,
+      .chat-message,
+      .input-area {
+        width: 100%;
+        max-width: 100%;
+      }
     }
 
     @media (max-width: 640px) {
-      #status-bar { padding: 12px 14px; }
-      .empty-title { font-size: 2rem; }
-      .input-area { padding-bottom: 16px; }
-      #chat-input, #action-btn { min-height: 52px; height: 52px; }
-      #action-btn { padding: 0 18px; }
+      #status-bar {
+        padding: 12px 14px;
+      }
+
+      .empty-title {
+        font-size: 2rem;
+      }
+
+      .input-area {
+        padding-bottom: 16px;
+      }
+
+      #chat-input,
+      #action-btn {
+        min-height: 52px;
+        height: 52px;
+      }
+
+      #action-btn {
+        padding: 0 18px;
+      }
     }
   </style>
 </head>
@@ -450,24 +736,36 @@
 <body>
   <header id="status-bar">
     <div class="header-side">
-      <button id="menu-toggle-btn" class="icon-btn text-btn" type="button" aria-label="Open menu" data-i18n="dashboard.nav.menu">Menu</button>
+      <button id="menu-toggle-btn" class="icon-btn text-btn" type="button" aria-label="Open menu">
+        <span>☰</span> <span data-i18n="dashboard.nav.menu">Menu</span>
+      </button>
       <div class="header-stack">
         <div class="brand" data-i18n="dashboard.brand">IalClaw</div>
         <div class="brand-caption" data-i18n="dashboard.caption.simple">Modo simples focado totalmente na conversa</div>
       </div>
     </div>
     <nav class="view-switch" aria-label="Modo da interface">
-      <a href="/" class="current" data-i18n="dashboard.nav.simple">Simples</a>
-      <a href="/advanced" data-i18n="dashboard.nav.advanced">Avancado</a>
+      <a href="/" class="current">
+        <span>💬</span> <span data-i18n="dashboard.nav.simple">Simples</span>
+      </a>
+      <a href="/advanced">
+        <span>⚡</span> <span data-i18n="dashboard.nav.advanced">Avancado</span>
+      </a>
     </nav>
     <div class="header-side" style="justify-content:flex-end;">
       <select id="language-select" class="mode-select" style="width: 120px;">
         <option value="pt-BR">PT-BR</option>
         <option value="en-US">EN-US</option>
       </select>
-      <button id="theme-toggle-btn" class="icon-btn text-btn" type="button" data-i18n="dashboard.theme.toggle">Tema</button>
-      <button id="logs-toggle-btn" class="icon-btn text-btn" type="button" data-i18n="dashboard.nav.logs">Logs</button>
-      <a href="/help" class="icon-btn text-btn" data-i18n="dashboard.button.help">Ajuda</a>
+      <button id="theme-toggle-btn" class="icon-btn text-btn" type="button">
+        <span>🌓</span> <span data-i18n="dashboard.theme.toggle">Tema</span>
+      </button>
+      <button id="logs-toggle-btn" class="icon-btn text-btn" type="button">
+        <span>📋</span> <span data-i18n="dashboard.nav.logs">Logs</span>
+      </button>
+      <a href="/help" class="icon-btn text-btn">
+        <span>❓</span> <span data-i18n="dashboard.button.help">Ajuda</span>
+      </a>
       <span id="status-label" class="sr-only" data-i18n="dashboard.status.ready">Pronto</span>
     </div>
   </header>
@@ -478,7 +776,8 @@
     <div class="drawer-header">
       <div>
         <div class="drawer-title" data-i18n="dashboard.nav.menu">Menu</div>
-        <div class="drawer-subtitle" data-i18n="dashboard.menu.subtitle">Conversas e ajustes ficam aqui para manter o chat limpo.</div>
+        <div class="drawer-subtitle" data-i18n="dashboard.menu.subtitle">Conversas e ajustes ficam aqui para manter o
+          chat limpo.</div>
       </div>
       <button class="icon-btn" type="button" data-close-drawer aria-label="Close menu">X</button>
     </div>
@@ -494,17 +793,20 @@
           <span data-i18n="dashboard.mode.current">Modo atual</span>
           <span id="mode-badge" class="mode-badge">Equilibrado</span>
         </div>
-        <div id="mode-behavior" class="mode-behavior" data-i18n="dashboard.mode.behavior">Fallback ativo, validacao leve.</div>
+        <div id="mode-behavior" class="mode-behavior" data-i18n="dashboard.mode.behavior">Fallback ativo, validacao
+          leve.</div>
       </section>
 
       <section class="drawer-section">
         <div class="section-label" data-i18n="dashboard.menu.actions">Acoes</div>
         <div class="sidebar-actions">
-          <button class="btn-primary" id="new-chat-btn" type="button" data-i18n="dashboard.button.new_chat">+ Nova conversa</button>
+          <button class="btn-primary" id="new-chat-btn" type="button" data-i18n="dashboard.button.new_chat">+ Nova
+            conversa</button>
           <button id="theme-toggle-btn" class="ghost-btn" type="button" data-i18n="dashboard.theme.toggle">Tema</button>
           <a href="/help" class="ghost-link" data-i18n="dashboard.button.help">Ajuda</a>
         </div>
-        <div class="sidebar-note" data-i18n="dashboard.menu.caption">O modo simples mostra so o essencial na tela. O restante fica guardado neste menu.</div>
+        <div class="sidebar-note" data-i18n="dashboard.menu.caption">O modo simples mostra so o essencial na tela. O
+          restante fica guardado neste menu.</div>
       </section>
 
       <section class="drawer-section">
@@ -524,7 +826,8 @@
     <div class="drawer-header">
       <div>
         <div class="drawer-title" data-i18n="dashboard.nav.logs">Logs</div>
-        <div class="drawer-subtitle" data-i18n="dashboard.logs.subtitle">Debug e progresso interno aparecem so quando voce abrir este painel.</div>
+        <div class="drawer-subtitle" data-i18n="dashboard.logs.subtitle">Debug e progresso interno aparecem so quando
+          voce abrir este painel.</div>
       </div>
       <button class="icon-btn" type="button" data-close-drawer aria-label="Close logs">X</button>
     </div>
@@ -539,7 +842,8 @@
         <div id="empty-state">
           <div class="empty-kicker" data-i18n="dashboard.empty.kicker">Modo simples ativo</div>
           <h1 class="empty-title" data-i18n="dashboard.empty.title">Converse sem distracoes.</h1>
-          <p class="empty-copy" data-i18n="dashboard.empty.copy">O chat fica no centro. Conversas, configuracoes e logs aparecem apenas quando voce abrir manualmente.</p>
+          <p class="empty-copy" data-i18n="dashboard.empty.copy">O chat fica no centro. Conversas, configuracoes e logs
+            aparecem apenas quando voce abrir manualmente.</p>
         </div>
         <div id="chat-container"></div>
       </div>
@@ -547,9 +851,12 @@
       <div id="typing-indicator" data-i18n="dashboard.typing.thinking">IalClaw esta pensando...</div>
 
       <div class="input-area">
-        <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off" data-i18n-placeholder="dashboard.input.placeholder">
-        <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz" data-i18n-title="dashboard.voice.title">🎤</button>
-        <button id="tts-toggle" class="icon-btn" type="button" title="Ler respostas finais" data-i18n-title="dashboard.voice.tts_title">🔈</button>
+        <input type="text" id="chat-input" placeholder="Pergunte, descreva ou cole sua tarefa..." autocomplete="off"
+          data-i18n-placeholder="dashboard.input.placeholder">
+        <button id="speech-btn" class="icon-btn" type="button" title="Entrada por voz"
+          data-i18n-title="dashboard.voice.title">🎤</button>
+        <button id="tts-toggle" class="icon-btn" type="button" title="Ler respostas finais"
+          data-i18n-title="dashboard.voice.tts_title">🔈</button>
         <button id="action-btn" type="button" data-i18n="dashboard.action.send">Enviar</button>
       </div>
     </section>
@@ -574,10 +881,9 @@
 
     function toggleTheme() {
       const current = document.documentElement.getAttribute("data-theme");
-      document.documentElement.setAttribute(
-        "data-theme",
-        current === "dark" ? "light" : "dark"
-      );
+      const next = current === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem('ialclaw_theme', next);
     }
 
     function changeZoom(delta) {
@@ -995,7 +1301,7 @@
       themeToggleBtn.innerText = theme === 'light' ? tf('dashboard.theme.dark', undefined, 'Dark') : tf('dashboard.theme.light', undefined, 'Light');
     }
 
-    
+
     function applyStaticTranslations() {
       chatInput.placeholder = tf('dashboard.input.placeholder', undefined, chatInput.placeholder);
       newChatBtn.textContent = tf('dashboard.button.new_chat', undefined, newChatBtn.textContent);
@@ -1381,5 +1687,3 @@
 </body>
 
 </html>
-
-
