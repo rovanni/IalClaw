@@ -1,0 +1,17 @@
+[Unit]
+Description=IalClaw Cognitive Agent
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%PATH%
+ExecStart=/usr/bin/node bin/ialclaw.js start
+Restart=always
+Environment=NODE_ENV=production
+# Ajuste os caminhos de log se desejar usar os internos do IalClaw
+StandardOutput=inherit
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

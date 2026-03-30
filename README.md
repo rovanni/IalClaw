@@ -127,6 +127,18 @@ node bin/ialclaw.js logs --follow    # tail logs in real time (cross-platform)
 
 ---
 
+## 🐧 Auto-Startup (Linux / systemd)
+
+To make IalClaw start automatically on boot:
+
+1.  **Run Setup Script**:
+    ```bash
+    sudo bash scripts/setup-service.sh
+    ```
+2.  **Check Status**: `systemctl status ialclaw`
+
+---
+
 ## 🐙 CLI Reference
 
 | Command | Description |
@@ -449,6 +461,18 @@ node bin/ialclaw.js logs --follow    # acompanha log em tempo real (cross-platfo
 ```
 
 > Você também pode instalar a CLI globalmente com `npm link` na raiz do projeto e usar `ialclaw start`, `ialclaw status`, etc. de qualquer lugar.
+
+---
+
+## 🐧 Inicialização Automática (Linux / systemd)
+
+Para fazer o IalClaw iniciar automaticamente no boot:
+
+1.  **Rodar Script de Configuração**:
+    ```bash
+    sudo bash scripts/setup-service.sh
+    ```
+2.  **Verificar**: `systemctl status ialclaw`
 
 ---
 
