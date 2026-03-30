@@ -8,6 +8,12 @@ export enum AutonomyDecision {
     CONFIRM = "confirm"    // Confirmar antes de executar
 }
 
+export enum AutonomyLevel {
+    SAFE = "safe",           // Sempre pergunta/confirma
+    BALANCED = "balanced",   // Pergunta se houver risco ou dúvida
+    AGGRESSIVE = "aggressive" // Executa direto se possível
+}
+
 export interface AutonomyContext {
     intent: string;           // Intenção: "git_push", "content_generation", etc.
     isContinuation: boolean;  // É continuação de tarefa anterior?
@@ -15,6 +21,9 @@ export interface AutonomyContext {
     riskLevel: 'low' | 'medium' | 'high';  // Nível de risco
     isDestructive: boolean;   // Ação destrutiva (delete, drop, etc.)?
     isReversible: boolean;     // Ação pode ser revertida?
+    confidence?: number;       // Confiança na classificação/roteamento
+    autonomyLevel?: AutonomyLevel; // Nível de autonomia global
+    intentSubtype?: string;    // command, suggestion, doubt
 }
 
 /**
@@ -22,11 +31,37 @@ export interface AutonomyContext {
  * Decide: EXECUTAR | PERGUNTAR | CONFIRMAR
  */
 export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
+    const level = ctx.autonomyLevel || AutonomyLevel.BALANCED;
+    const confidence = ctx.confidence ?? 1.0;
+    const isCommand = ctx.intentSubtype === 'command' || !ctx.intentSubtype;
+
     // ═══════════════════════════════════════════════════════════════════
-    // 🔴 VERMELHO: Alto risco ou destrutivo → confirmar SEMPRE
+    // 🔴 SAFE MODE: Sempre confirmação/pergunta
+    // ═══════════════════════════════════════════════════════════════════
+    if (level === AutonomyLevel.SAFE) {
+        return ctx.hasAllParams ? AutonomyDecision.CONFIRM : AutonomyDecision.ASK;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🔴 ALTO RISCO: Destrutivo ou risco alto → confirmar SEMPRE
     // ═══════════════════════════════════════════════════════════════════
     if (ctx.isDestructive || ctx.riskLevel === 'high') {
         return AutonomyDecision.CONFIRM;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🟡 DUVIDA OU SUGESTÃO: Se não for comando claro, perguntar
+    // "acho que deveria mover" -> ASK
+    // ═══════════════════════════════════════════════════════════════════
+    if (ctx.intentSubtype === 'suggestion' || ctx.intentSubtype === 'doubt') {
+        return AutonomyDecision.ASK;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🟡 BAIXA CONFIANÇA: Se < 0.98 em modo balanceado, perguntar por segurança
+    // ═══════════════════════════════════════════════════════════════════
+    if (level === AutonomyLevel.BALANCED && confidence < 0.98 && ctx.riskLevel !== 'low') {
+        return AutonomyDecision.ASK;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -37,24 +72,18 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🟢 VERDE: Continuação + seguro → executar automaticamente
+    // 🟢 VERDE: Risco baixo ou Autonomia Agressiva → executar
     // ═══════════════════════════════════════════════════════════════════
-    if (ctx.isContinuation && ctx.riskLevel === 'low') {
+    if (level === AutonomyLevel.AGGRESSIVE || ctx.riskLevel === 'low') {
         return AutonomyDecision.EXECUTE;
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🟢 VERDE: Risco baixo → executar automaticamente
-    // ═══════════════════════════════════════════════════════════════════
-    if (ctx.riskLevel === 'low') {
-        return AutonomyDecision.EXECUTE;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🟡 AMARELO: Risco médio → perguntar por segurança
+    // 🟡 AMARELO: Risco médio → decidir baseado na confiança (BALANCED)
     // ═══════════════════════════════════════════════════════════════════
     if (ctx.riskLevel === 'medium') {
-        return AutonomyDecision.ASK;
+        // Se a confiança for ultra-alta, podemos arriscar a execução automática
+        return (confidence >= 0.95) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
     }
 
     // ═══════════════════════════════════════════════════════════════════

@@ -13,6 +13,7 @@ import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
 import { DecisionMemory, ToolDecision } from '../memory/DecisionMemory';
+import { getActionRouter, ExecutionRoute } from '../core/autonomy/ActionRouter';
 
 export type AgentProgressEvent = {
     stage:
@@ -539,26 +540,35 @@ export class AgentLoop {
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
         // "Classificar não é decidir — decidir vem depois."
         // ═══════════════════════════════════════════════════════════════════
-        const hasAllParams = taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType);
-        const riskLevel = this.detectRiskLevel(this.currentTaskType, userInput);
+        const actionRouter = getActionRouter();
+        const decision = actionRouter.decideRoute(userInput, this.currentTaskType);
 
-        const autonomyContext = createAutonomyContext(this.currentTaskType || 'unknown', {
-            isContinuation: this.isContinuation,
-            hasAllParams: hasAllParams,
-            riskLevel: riskLevel,
-            isDestructive: false,
-            isReversible: true
-        });
+        const autonomyCtx = createAutonomyContext(
+            this.currentTaskType || 'unknown',
+            {
+                isContinuation: this.isContinuation,
+                hasAllParams: taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType),
+                riskLevel: this.detectRiskLevel(this.currentTaskType, userInput),
+                isDestructive: false,
+                isReversible: true
+            }
+        );
 
-        const autonomyDecision = decideAutonomy(autonomyContext);
+        // Injetar dados do router
+        autonomyCtx.confidence = decision.confidence;
+        autonomyCtx.intentSubtype = decision.subtype;
+
+        const autonomyDecision = decideAutonomy(autonomyCtx);
 
         // Log da decisão (essencial para debug)
         this.logger.info('autonomy_decision', `[AUTONOMY] Decisão: ${autonomyDecision}`, {
-            intent: autonomyContext.intent,
+            intent: autonomyCtx.intent,
             decision: autonomyDecision,
-            hasAllParams: autonomyContext.hasAllParams,
-            riskLevel: autonomyContext.riskLevel,
-            isContinuation: autonomyContext.isContinuation,
+            hasAllParams: autonomyCtx.hasAllParams,
+            riskLevel: autonomyCtx.riskLevel,
+            isContinuation: autonomyCtx.isContinuation,
+            confidence: autonomyCtx.confidence,
+            subtype: autonomyCtx.intentSubtype,
             taskType: this.currentTaskType
         });
 
@@ -568,7 +578,7 @@ export class AgentLoop {
         if (autonomyDecision === AutonomyDecision.CONFIRM) {
             this.logger.warn('autonomy_confirm_required', '[AUTONOMY] Ação requer confirmação', {
                 taskType: this.currentTaskType,
-                riskLevel: riskLevel
+                riskLevel: autonomyCtx.riskLevel
             });
             return {
                 answer: t('autonomy.confirm_action', { action: this.currentTaskType }),
@@ -582,7 +592,7 @@ export class AgentLoop {
         if (autonomyDecision === AutonomyDecision.ASK) {
             this.logger.info('autonomy_ask', '[AUTONOMY] Informação necessária', {
                 taskType: this.currentTaskType,
-                missing: !hasAllParams ? 'params' : 'context'
+                missing: !autonomyCtx.hasAllParams ? 'params' : 'context'
             });
 
             // Mensagem específica por tipo de tarefa
@@ -634,22 +644,9 @@ export class AgentLoop {
         // A decisão de EXECUTE permite continuar...
 
         // ═══════════════════════════════════════════════════════════════════
-        // SHORT-CIRCUIT: content_generation NÃO precisa de loop
-        // "Se não precisa agir no mundo, não entra no loop."
+        // SHORT-CIRCUIT: content_generation (apenas se for puramente cognitivo)
         // ═══════════════════════════════════════════════════════════════════
-        if (this.currentTaskType === 'content_generation') {
-            // Verificar se tem contexto suficiente
-            if (this.needsUserContext) {
-                this.logger.info('short_circuit_needs_context', '[SHORT-CIRCUIT] content_generation precisa de contexto', {
-                    has_context: false
-                });
-                return {
-                    answer: t('content.ask_for_source'),
-                    newMessages: []
-                };
-            }
-
-            // Executar diretamente, sem loop (mesmo com failSafe)
+        if (this.currentTaskType === 'content_generation' && decision.route === ExecutionRoute.DIRECT_LLM) {
             this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)', {
                 mode: 'cognitive_direct',
                 bypass_loop: true,
@@ -657,6 +654,20 @@ export class AgentLoop {
             });
             return this.executeContentGenerationDirect(userInput, initialMessages);
         }
+
+        // Se a rota for TOOL_LOOP, mas o tipo for content_generation, loggar o motivo
+        if (this.currentTaskType === 'content_generation' && decision.route === ExecutionRoute.TOOL_LOOP) {
+            this.logger.info('bypass_short_circuit', '[ROUTER] Pulando short-circuit de content_generation: ação detectada no input', {
+                subtype: decision.subtype,
+                confidence: decision.confidence
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // EXPLICABILIDADE: Simular plano antes de agir
+        // ═══════════════════════════════════════════════════════════════════
+        const planExplanation = await this.simulatePlan(userInput, decision.subtype);
+        this.logger.info('action_plan_simulated', '[COGNITIVE] Plano simulado para o usuário', { explanation: planExplanation });
 
         // ═══════════════════════════════════════════════════════════════════
         // FLUXO NORMAL: Outros tipos de tarefa usam loop
@@ -2644,5 +2655,30 @@ FORMATO DE SAÍDA:
         }
 
         return `${answer.trimEnd()}${report}`;
+    }
+
+    /**
+     * Simula o plano de ação para dar transparência ao usuário.
+     */
+    private async simulatePlan(userInput: string, subtype: string): Promise<string> {
+        this.logger.info('simulate_plan', '[COGNITIVE] Simulando plano de ação', { subtype });
+
+        const systemPrompt: MessagePayload = {
+            role: 'system',
+            content: `Você é o módulo de explicabilidade do IalClaw.
+Resuma o que o agente pretende fazer baseado no input do usuário.
+REGRAS:
+1. Seja ultra-conciso (máximo 3 bullets)
+2. Use tom de "assistente prestativo"
+3. Se for uma sugestão do usuário, valide por que é uma boa ideia.
+4. Se houver risco de bagunça, mencione brevemente.`
+        };
+
+        try {
+            const response = await this.llm.generate([systemPrompt, { role: 'user', content: userInput }]);
+            return response.final_answer || '';
+        } catch (e) {
+            return 'Vou processar sua solicitação agora.';
+        }
     }
 }

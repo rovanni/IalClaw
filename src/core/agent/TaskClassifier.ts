@@ -443,6 +443,11 @@ export class TaskClassifier {
             return false;
         }
 
+        // EXCEÇÃO 3: Operações de arquivo reais (mover, deletar, copiar) NÃO são content_generation
+        if (/\b(mover|move|deletar|delete|remover|remove|copiar|copy)\b.*\b(arquivo|pasta|file|folder|diret[óo]rio)\b/i.test(normalized)) {
+            return false;
+        }
+
         // EXCEÇÃO 3: Pergunta genérica sem imperativo de criação
         const lacksImperative = !/\b(crie|gere|faça|faca|monte|redija|elabora|escreva|write|create|generate)\b/i.test(normalized);
         const isQuestion = normalized.includes('?') || /^(o que|como|qual|quais|quem|onde|quando|por que|porque|você|voce|podia|poderia|seria)\b/i.test(normalized);
