@@ -171,6 +171,21 @@ This model allows the agent to:
 - Avoid incorrect actions with partial confidence.
 - Explain its decisions transparently.
 
+### 4. Capability-Aware Execution
+
+IalClaw is fully aware of its execution environment and adapts dynamically.
+
+- Detects system-level dependencies (ffmpeg, Python, Whisper)
+- Differentiates between:
+  - Blocking gaps (cannot proceed)
+  - Enhancement gaps (optional improvements)
+- Supports multiple detection strategies:
+  - System binaries (PATH)
+  - Python modules
+  - Alternative implementations (e.g., faster-whisper)
+
+This allows the system to operate consistently across Linux (VPS), Windows, and macOS.
+
 ## 🔍 From Confidence to Cognitive Diagnostics
 Traditionally, agents use a single confidence score. IalClaw evolves this concept into a diagnostic model:
 **Confidence → Decomposition → Uncertainty → Decision**
@@ -694,6 +709,21 @@ Esse modelo permite que o agente:
 - escolha a melhor forma de interagir com o usuário
 - evite ações incorretas com confiança parcial
 - explique suas decisões de forma transparente
+
+### 4. Execução Consciente de Capacidades
+
+O IalClaw tem total consciência de seu ambiente de execução e se adapta dinamicamente.
+
+- Detecta dependências em nível de sistema (ffmpeg, Python, Whisper)
+- Diferencia entre:
+  - Lacunas bloqueantes (não é possível prosseguir)
+  - Lacunas de melhoria (melhorias opcionais)
+- Suporta múltiplas estratégias de detecção:
+  - Binários do sistema (PATH)
+  - Módulos Python
+  - Implementações alternativas (ex: faster-whisper)
+
+Isso permite que o sistema opere de forma consistente em Linux (VPS), Windows e macOS.
 
 ## 🔍 De Confiança para Diagnóstico Cognitivo
 Tradicionalmente, agentes utilizam um único score de confiança. O IalClaw evolui esse conceito para um modelo diagnóstico:
