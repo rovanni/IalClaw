@@ -33,19 +33,47 @@ call:print_val "app.folder" "pasta:"
 echo %DIM%========================================================%RESET%
 echo.
 
+:: --- DETECÇÃO E PARADA ---
+set WAS_RUNNING=0
+set "MSG=step.stop"
+set "MSG_FALLBACK=Detectando e parando o agente para atualizacao..."
+call:echo_simple_step "*" "%MSG%"
+
+if exist ".ialclaw\pid" (
+    set /p PID=<.ialclaw\pid
+    tasklist /FI "PID eq !PID!" 2>NUL | find /I "!PID!" >NUL
+    if !ERRORLEVEL!==0 (
+        set WAS_RUNNING=1
+        echo       Parando daemon manual (PID !PID!)...
+        call node bin\ialclaw.js stop
+    )
+)
+echo.
+
+:: --- PASSO 1: BACKUP ---
 set "MSG=step.backup.title"
 set "MSG_FALLBACK=Realizando backup de seguranca (db.sqlite e .env)..."
 call:echo_step "1/5" "%MSG%"
 
 if not exist "backups" mkdir backups
-if exist "ialclaw.sqlite" copy /y "ialclaw.sqlite" "backups\ialclaw_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.sqlite" >nul
-if exist ".env" copy /y ".env" "backups\.env_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%" >nul
+set "B_DATE=%date:~-4,4%%date:~-7,2%%date:~-10,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
+set "B_DATE=!B_DATE: =0!"
+
+if exist "ialclaw.sqlite" copy /y "ialclaw.sqlite" "backups\ialclaw_backup_!B_DATE!.sqlite" >nul
+if exist "db.sqlite" copy /y "db.sqlite" "backups\db_backup_!B_DATE!.sqlite" >nul
+if exist ".env" copy /y ".env" "backups\.env_backup_!B_DATE!" >nul
+
+:: Limpeza automática: manter apenas os 30 backups mais recentes
+pushd backups
+for /f "skip=30 delims=" %%F in ('dir /b /a-d /o-d') do del /f "%%F"
+popd
 
 set "MSG=step.backup.ok"
 set "MSG_FALLBACK=Backup concluido com sucesso."
 call:echo_ok
 echo.
 
+:: --- PASSO 2: ATUALIZAÇÃO GIT ---
 set GIT_DIRTY=0
 for /f "delims=" %%i in ('git status --porcelain') do (
     echo %%i | findstr /r /c:"^[ MARCUD?!][ MARCUD?!] .*workspace/" >nul
@@ -75,7 +103,6 @@ if %GIT_DIRTY%==1 (
     set "MSG_FALLBACK=Stash criado com sucesso."
     call:echo_ok
 )
-echo.
 
 set "MSG=step.download.title"
 set "MSG_FALLBACK=Baixando a versao mais recente do repositorio..."
@@ -114,12 +141,6 @@ if %STASHED%==1 (
         set "MSG_HEADER=warning.local_changes"
         set "HEADER_FALLBACK=AVISO"
         call:echo_warn
-        set "MSG=warning.stash_list"
-        set "MSG_FALLBACK=Suas alteracoes estao salvas em: git stash list"
-        echo         !RESULT!
-        set "MSG=warning.resolve_later"
-        set "MSG_FALLBACK=Resolva depois com: git stash pop"
-        echo         !RESULT!
     ) else (
         set "MSG=warning.restored"
         set "MSG_FALLBACK=Alteracoes restauradas com sucesso."
@@ -128,6 +149,7 @@ if %STASHED%==1 (
 )
 echo.
 
+:: --- PASSO 3: DEPENDÊNCIAS ---
 set "MSG=step.deps.title"
 set "MSG_FALLBACK=Instalando dependencias travadas do projeto (npm ci)..."
 call:echo_step "3/5"
@@ -145,6 +167,7 @@ set "MSG_FALLBACK=Dependencias atualizadas."
 call:echo_ok
 echo.
 
+:: --- PASSO 4: COMPILAÇÃO ---
 set "MSG=step.build.title"
 set "MSG_FALLBACK=Compilando o IalClaw v3.0 (TypeScript)..."
 call:echo_step "4/5"
@@ -162,9 +185,18 @@ set "MSG_FALLBACK=Compilacao concluida."
 call:echo_ok
 echo.
 
+:: --- PASSO 5: FINALIZAÇÃO E REINÍCIO ---
 set "MSG=step.finish.title"
 set "MSG_FALLBACK=Atualizacao finalizada."
 call:echo_step "5/5"
+
+if !WAS_RUNNING!==1 (
+    echo.
+    set "MSG=step.restart"
+    set "MSG_FALLBACK=Reiniciando o agente..."
+    call:echo_simple_step "*" "%MSG%"
+    start /b node bin\ialclaw.js start --daemon
+)
 
 echo.
 set "MSG=step.finish.success"
@@ -212,6 +244,13 @@ set "STEP_NUM=%~1"
 set "RESULT=!IALCLAW_T[%MSG%]!"
 if not defined RESULT set "RESULT=%MSG_FALLBACK%"
 echo %STEP%[%STEP_NUM%]%RESET% %BOLD%%RESULT%%RESET%
+exit /b 0
+
+:echo_simple_step
+set "STEP_CHAR=%~1"
+set "RESULT=!IALCLAW_T[%~2]!"
+if not defined RESULT set "RESULT=%MSG_FALLBACK%"
+echo %STEP%[%STEP_CHAR%]%RESET% %BOLD%%RESULT%%RESET%
 exit /b 0
 
 :echo_ok

@@ -54,29 +54,57 @@ print_error() {
 
 print_banner
 
+# --- DETECÇÃO E PARADA ---
+WAS_RUNNING=false
+RUN_MODE="none"
+
+printf "%b\n" "${STEP}[*]${RESET} ${BOLD}$(t 'step.stop')${RESET}"
+
+if systemctl is-active --quiet ialclaw 2>/dev/null; then
+    WAS_RUNNING=true
+    RUN_MODE="systemd"
+    echo "      $(t 'info.stop_systemd' 2>/dev/null || echo "Parando serviço systemd...")"
+    sudo systemctl stop ialclaw
+elif [ -f ".ialclaw/pid" ]; then
+    PID=$(cat .ialclaw/pid)
+    if ps -p $PID > /dev/null 2>&1; then
+        WAS_RUNNING=true
+        RUN_MODE="daemon"
+        echo "      $(t 'info.stop_daemon' 2>/dev/null || echo "Parando daemon manual...")"
+        node bin/ialclaw.js stop
+    fi
+fi
+echo ""
+
+# --- PASSO 1: BACKUP ---
 print_step "1" "$(t 'step.backup')"
 mkdir -p backups
 BACKUP_DATE=$(date +"%Y%m%d_%H%M%S")
 [ -f "ialclaw.sqlite" ] && cp "ialclaw.sqlite" "backups/ialclaw_backup_$BACKUP_DATE.sqlite"
+[ -f "db.sqlite" ] && cp "db.sqlite" "backups/db_backup_$BACKUP_DATE.sqlite"
 [ -f ".env" ] && cp ".env" "backups/.env_backup_$BACKUP_DATE"
 print_success "$(t 'step.backup_done')"
+
+# Limpeza automática: manter apenas os 30 backups mais recentes
+if [ -d "backups" ]; then
+    (cd backups && ls -1t | tail -n +31 | xargs rm -f 2>/dev/null || true)
+fi
 echo ""
 
+# --- PASSO 2: ATUALIZAÇÃO GIT ---
+print_step "2" "$(t 'step.fetch')"
 GIT_STATUS=$(git status --porcelain | grep -vE '^[ MARCUD?!]{2} (.+ -> )?workspace/' || true)
 STASHED=false
 if [ -n "$GIT_STATUS" ]; then
     print_warn "$(t 'warn.local_changes')"
     git stash push -u -m "ialclaw-update-$(date +%Y%m%d_%H%M%S)" || {
         print_error "$(t 'warn.stash_error')"
-        echo "        Resolva manualmente: git status"
         exit 1
     }
     STASHED=true
     print_success "$(t 'warn.stash_done')"
 fi
-echo ""
 
-print_step "2" "$(t 'step.fetch')"
 git fetch origin || { print_error "$(t 'step.fetch_error')"; exit 1; }
 git pull --ff-only || { print_error "$(t 'step.pull_error')"; exit 1; }
 print_success "$(t 'step.sync_done')"
@@ -88,23 +116,37 @@ if [ "$STASHED" = true ]; then
     else
         echo ""
         print_warn "$(t 'warn.conflict')"
-        echo "        $(t 'warn.stash_list')"
-        echo "        $(t 'warn.resolve_restore')"
     fi
 fi
 echo ""
 
+# --- PASSO 3: DEPENDÊNCIAS ---
 print_step "3" "$(t 'step.deps')"
 npm ci || { print_error "$(t 'step.deps_error')"; exit 1; }
 print_success "$(t 'step.deps_done')"
 echo ""
 
+# --- PASSO 4: COMPILAÇÃO ---
 print_step "4" "$(t 'step.build')"
 npx tsc --noEmit || { print_error "$(t 'step.build_error')"; exit 1; }
 print_success "$(t 'step.build_done')"
 echo ""
 
+# --- PASSO 5: FINALIZAÇÃO E REINÍCIO ---
 print_step "5" "$(t 'step.done')"
+
+if [ "$WAS_RUNNING" = true ]; then
+    echo ""
+    printf "%b\n" "${STEP}[*]${RESET} ${BOLD}$(t 'step.restart')${RESET}"
+    if [ "$RUN_MODE" = "systemd" ]; then
+        echo "      $(t 'info.restart_systemd' 2>/dev/null || echo "Reiniciando via systemctl...")"
+        sudo systemctl start ialclaw
+    else
+        echo "      $(t 'info.restart_daemon' 2>/dev/null || echo "Reiniciando via daemon...")"
+        node bin/ialclaw.js start --daemon
+    fi
+fi
+
 echo ""
 printf "%b\n" "${GREEN}$(t 'step.final_success')${RESET}"
 printf "%b\n" "${DIM}$(t 'step.final_preserve')${RESET}"

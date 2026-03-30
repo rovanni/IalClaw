@@ -4,19 +4,15 @@
     "app.subtitle": "Updater",
     "app.style": "upgrade assistido",
     "app.header_line": "==========================================",
-
     "check.deps": "Verificando dependencias...",
-
     "error.git_missing": "[ERRO] Git nao encontrado.",
     "error.node_missing": "[ERRO] Node.js nao encontrado.",
     "error.node_version": "[ERRO] Node.js v18 ou superior e necessario. Versao atual: ",
-
     "ollama.check": "[INFO] Ollama nao encontrado localmente.",
     "ollama.prompt_install": "Deseja instalar o Ollama agora para rodar modelos locais? [S/n]",
     "ollama.downloading": "Baixando e instalando Ollama (Windows)...",
     "ollama.ignored": "Instalacao do Ollama ignorada. Voce pode configurar outro provedor (.env) ou instalar depois.",
     "ollama.found": "Ollama encontrado",
-
     "clone.start": "Clonando repositorio...",
     "sync.found_folder": "Diretorio 'ialclaw' encontrado. Tentando sincronizar com o repositorio remoto...",
     "sync.local_changes": "[ERRO] O repositorio local possui alteracoes nao commitadas e nao pode ser atualizado automaticamente.",
@@ -26,48 +22,41 @@
     "sync.manual_resolve": "[ERRO] Resolva o estado do Git manualmente ou use update.bat apos limpar a arvore local.",
     "sync.not_git": "[ERRO] .\\ialclaw existe, mas nao parece ser um repositorio Git.",
     "sync.rename_folder": "[ERRO] Renomeie ou remova a pasta atual para permitir um clone limpo.",
-
     "install.deps": "Instalando dependencias via npm...",
     "env.creating": "Criando o arquivo .env...",
     "build.validating": "Validando TypeScript codebase...",
     "bootstrap.seeding": "Semeando identidades iniciais do gateway...",
     "bootstrap.not_found": "[AVISO] Bootstrap de identidades nao encontrado nesta copia local. Etapa ignorada.",
     "bootstrap.update_hint": "[AVISO] Atualize o repositorio local para obter o script src/scripts/bootstrap-identities.ts.",
-
     "done.success": "Instalacao concluida com sucesso!",
     "done.next_step": " >> PROXIMO PASSO:",
     "done.step1": "1. Acesse a pasta do agente:",
     "done.step2": "2. Configure o arquivo .env (Ollama, OpenAI, Anthropic, etc)",
     "done.step3": "3. Valide o Router Cerebro de teste rodando:",
     "done.step4": "4. Se tudo passar, execute:",
-
     "step.backup": "Realizando backup de seguranca (ialclaw.sqlite e .env)...",
     "step.backup_done": "Backup concluido com sucesso.",
-
     "step.fetch": "Baixando a versao mais recente do repositorio...",
     "step.fetch_error": "Falha ao conectar com o GitHub.",
     "step.pull_error": "Falha ao sincronizar arquivos via fast-forward.",
     "step.sync_done": "Sincronizacao concluida.",
-
     "step.deps": "Instalando dependencias travadas do projeto (npm ci)...",
     "step.deps_error": "Falha ao instalar pacotes NPM com npm ci.",
     "step.deps_done": "Dependencias atualizadas.",
-
     "step.build": "Compilando o IalClaw v3.0 (TypeScript)...",
     "step.build_error": "Falha ao validar o codigo TypeScript.",
     "step.build_done": "Compilacao concluida.",
-
     "step.done": "Atualizacao finalizada.",
     "step.final_success": "Seu IalClaw foi atualizado para a ultima versao oficial com sucesso.",
     "step.final_preserve": "Seu banco de dados e suas configuracoes permanecem intactos.",
-
+    "step.stop": "Detectando e parando o agente para atualizacao...",
+    "step.restart": "Reiniciando o agente...",
     "msg.start": "Para iniciar o IalClaw",
     "msg.foreground": "Foreground",
     "msg.background": "Background",
     "msg.debug": "Debug",
     "msg.manage": "Gerenciar",
     "msg.update_cmd": "Para proximas atualizacoes: bash update.sh",
-
     "warn.local_changes": "Alteracoes locais detectadas; guardando automaticamente...",
     "warn.stash_error": "Falha ao guardar alteracoes locais (git stash).",
     "warn.stash_done": "Stash criado com sucesso.",
@@ -78,7 +67,6 @@
     "warn.resolve_restore": "Resolva depois com: git stash pop",
     "warn.bootstrap_missing": "Bootstrap de identidades nao encontrado nesta copia local. Etapa ignorada.",
     "warn.update_repo": "Atualize o repositorio local para obter o script src/scripts/bootstrap-identities.ts.",
-
     "err.git_not_found": "Git nao encontrado.",
     "err.node_not_found": "Node.js nao encontrado.",
     "err.node_version": "Node.js >= 18 e necessario.",
@@ -90,7 +78,6 @@
     "err.cant_access": "Nao foi possível acessar a pasta ialclaw.",
     "err.update_auto": "Nao foi possivel atualizar o repositorio local automaticamente.",
     "err.git_manual": "Resolva o estado do Git manualmente ou use ./update.sh apos limpar a arvore local.",
-
     "info.ollama_found": "Ollama encontrado",
     "info.clone": "Clonando repositorio...",
     "info.sync_attempt": "Diretorio local encontrado. Tentando sincronizar com o repositorio remoto...",
@@ -108,7 +95,6 @@
     "info.run_dev": "Execute:",
     "info.future_update": "Para futuras atualizacoes no Linux/macOS, prefira:",
     "info.done": "Instalacao concluida com sucesso!",
-
     "prompt.ollama": "Deseja instalar o Ollama agora para rodar modelos locais? (s/n) [s]: "
   },
   "en-US": {
@@ -116,19 +102,15 @@
     "app.subtitle": "Updater",
     "app.style": "assisted upgrade",
     "app.header_line": "==========================================",
-
     "check.deps": "Checking dependencies...",
-
     "error.git_missing": "[ERROR] Git not found.",
     "error.node_missing": "[ERROR] Node.js not found.",
     "error.node_version": "[ERROR] Node.js v18 or higher is required. Current version: ",
-
     "ollama.check": "[INFO] Ollama not found locally.",
     "ollama.prompt_install": "Do you want to install Ollama now to run local models? [Y/n]",
     "ollama.downloading": "Downloading and installing Ollama (Windows)...",
     "ollama.ignored": "Ollama installation skipped. You can configure another provider (.env) or install later.",
     "ollama.found": "Ollama found",
-
     "clone.start": "Cloning repository...",
     "sync.found_folder": "'ialclaw' directory found. Trying to sync with remote repository...",
     "sync.local_changes": "[ERROR] The local repository has uncommitted changes and cannot be updated automatically.",
@@ -138,48 +120,41 @@
     "sync.manual_resolve": "[ERROR] Resolve Git state manually or use update.bat after cleaning local tree.",
     "sync.not_git": "[ERROR] .\\ialclaw exists but does not appear to be a Git repository.",
     "sync.rename_folder": "[ERROR] Rename or remove the current folder to allow a clean clone.",
-
     "install.deps": "Installing dependencies via npm...",
     "env.creating": "Creating .env file...",
     "build.validating": "Validating TypeScript codebase...",
     "bootstrap.seeding": "Seeding initial gateway identities...",
     "bootstrap.not_found": "[WARNING] Bootstrap identities not found in this local copy. Step skipped.",
     "bootstrap.update_hint": "[WARNING] Update local repository to get src/scripts/bootstrap-identities.ts.",
-
     "done.success": "Installation completed successfully!",
     "done.next_step": " >> NEXT STEP:",
     "done.step1": "1. Go to agent folder:",
     "done.step2": "2. Configure .env file (Ollama, OpenAI, Anthropic, etc)",
     "done.step3": "3. Validate test Cerebro Router by running:",
     "done.step4": "4. If everything passes, run:",
-
     "step.backup": "Performing security backup (ialclaw.sqlite and .env)...",
     "step.backup_done": "Backup completed successfully.",
-
     "step.fetch": "Fetching latest version from repository...",
     "step.fetch_error": "Failed to connect to GitHub.",
     "step.pull_error": "Failed to sync files via fast-forward.",
     "step.sync_done": "Synchronization completed.",
-
     "step.deps": "Installing locked project dependencies (npm ci)...",
     "step.deps_error": "Failed to install NPM packages with npm ci.",
     "step.deps_done": "Dependencies updated.",
-
     "step.build": "Compiling IalClaw v3.0 (TypeScript)...",
     "step.build_error": "Failed to validate TypeScript code.",
     "step.build_done": "Compilation completed.",
-
     "step.done": "Update finished.",
     "step.final_success": "Your IalClaw has been updated to the latest official version successfully.",
     "step.final_preserve": "Your database and settings remain intact.",
-
+    "step.stop": "Detecting and stopping the agent for update...",
+    "step.restart": "Restarting the agent...",
     "msg.start": "To start IalClaw",
     "msg.foreground": "Foreground",
     "msg.background": "Background",
     "msg.debug": "Debug",
     "msg.manage": "Manage",
     "msg.update_cmd": "For future updates: bash update.sh",
-
     "warn.local_changes": "Local changes detected; stashing automatically...",
     "warn.stash_error": "Failed to stash local changes (git stash).",
     "warn.stash_done": "Stash created successfully.",
@@ -190,7 +165,6 @@
     "warn.resolve_restore": "Resolve later with: git stash pop",
     "warn.bootstrap_missing": "Identity bootstrap not found in this local copy. Step skipped.",
     "warn.update_repo": "Update the local repository to get the script src/scripts/bootstrap-identities.ts.",
-
     "err.git_not_found": "Git not found.",
     "err.node_not_found": "Node.js not found.",
     "err.node_version": "Node.js >= 18 is required.",
@@ -202,7 +176,6 @@
     "err.cant_access": "Could not access ialclaw folder.",
     "err.update_auto": "Could not update local repository automatically.",
     "err.git_manual": "Resolve the Git state manually or use ./update.sh after clearing the local tree.",
-
     "info.ollama_found": "Ollama found",
     "info.clone": "Cloning repository...",
     "info.sync_attempt": "Local directory found. Trying to sync with remote repository...",
@@ -220,7 +193,6 @@
     "info.run_dev": "Run:",
     "info.future_update": "For future updates on Linux/macOS, prefer:",
     "info.done": "Installation completed successfully!",
-
     "prompt.ollama": "Do you want to install Ollama now to run local models? (y/n) [y]: "
   }
 }
