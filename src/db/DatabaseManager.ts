@@ -13,7 +13,8 @@ export class DatabaseManager {
 
     constructor(dbPath: string = 'ialclaw.sqlite') {
         const resolvedDbPath = path.resolve(dbPath);
-        dbLogger.info('db_path', `Banco de dados será criado/em: ${resolvedDbPath}`);
+        const exists = fs.existsSync(resolvedDbPath);
+        dbLogger.info('db_path', exists ? `Banco de dados localizado em: ${resolvedDbPath}` : `Banco de dados será criado em: ${resolvedDbPath}`);
 
 
         // Garante que o diretório existe
@@ -48,22 +49,22 @@ export class DatabaseManager {
         }
 
         // Remove APENAS arquivos auxiliares corrompidos (journal, wal, shm)
-                // NÃO remove o arquivo principal do banco (ialclaw.sqlite)
-                const auxiliaryFiles = [
-                    `${resolvedDbPath}-journal`,
-                    `${resolvedDbPath}-wal`,
-                    `${resolvedDbPath}-shm`,
-                ];
-                for (const filePath of auxiliaryFiles) {
-                    try {
-                        if (fs.existsSync(filePath)) {
-                            fs.unlinkSync(filePath);
-                            dbLogger.info('db_auxiliary_file_removed', `Arquivo auxiliar removido: ${filePath}`);
-                        }
-                    } catch (removeErr) {
-                        dbLogger.warn('db_file_remove_failed', `Não foi possível remover ${filePath}: ${removeErr}`);
-                    }
+        // NÃO remove o arquivo principal do banco (ialclaw.sqlite)
+        const auxiliaryFiles = [
+            `${resolvedDbPath}-journal`,
+            `${resolvedDbPath}-wal`,
+            `${resolvedDbPath}-shm`,
+        ];
+        for (const filePath of auxiliaryFiles) {
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    dbLogger.info('db_auxiliary_file_removed', `Arquivo auxiliar removido: ${filePath}`);
                 }
+            } catch (removeErr) {
+                dbLogger.warn('db_file_remove_failed', `Não foi possível remover ${filePath}: ${removeErr}`);
+            }
+        }
 
         // Checagem atômica para múltiplos processos: lock de arquivo (opcional, exemplo)
         // Para robustez extra, pode-se usar um lockfile (ex: pacote 'proper-lockfile')
