@@ -29,6 +29,30 @@ When a user sends an audio file (typically `.ogg`), follow these steps:
 
 3.  **Context Integration**: Use the transcribed text as the user's input for the conversation.
 
+## Instalação e Requisitos
+
+Esta skill requer ferramentas externas instaladas na VPS Linux:
+
+### 1. Whisper (STT)
+O motor de transcrição deve estar em `/home/rover/whisper.cpp/build/bin/whisper-cli`.
+Para instalar:
+```bash
+git clone https://github.com/ggerganov/whisper.cpp.git ~/whisper.cpp
+cd ~/whisper.cpp
+make
+# Baixe um modelo (ex: base)
+bash ./models/download-ggml-model.sh base
+```
+
+### 2. Thorial TTS (TTS)
+O script de voz deve estar em `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`.
+
+### 3. FFmpeg
+Necessário para conversão de formatos:
+```bash
+sudo apt update && sudo apt install ffmpeg -y
+```
+
 ## Workflow: Generating Outgoing Audio
 
 When a voice response is requested or appropriate (e.g., responding to a voice message), follow these steps:

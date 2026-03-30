@@ -1,5 +1,5 @@
 import { CapabilityRegistry } from './CapabilityRegistry';
-import { SkillManager, createBrowserSkill, createBuiltinFsSkill, createNodeExecutionSkill } from './SkillManager';
+import { SkillManager, createBrowserSkill, createBuiltinFsSkill, createNodeExecutionSkill, createWhisperSkill, createTtsSkill } from './SkillManager';
 
 export const capabilityRegistry = new CapabilityRegistry();
 export const skillManager = new SkillManager(
@@ -10,3 +10,5 @@ export const skillManager = new SkillManager(
 skillManager.register(createBuiltinFsSkill());
 skillManager.register(createNodeExecutionSkill());
 skillManager.register(createBrowserSkill());
+skillManager.register(createWhisperSkill());
+skillManager.register(createTtsSkill());

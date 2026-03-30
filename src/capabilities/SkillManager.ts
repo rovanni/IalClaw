@@ -1,4 +1,5 @@
 import { exec } from 'child_process';
+import * as fs from 'fs';
 import { promisify } from 'util';
 import { Capability, CapabilityRegistry } from './CapabilityRegistry';
 import { emitDebug } from '../shared/DebugBus';
@@ -159,6 +160,46 @@ export function createNodeExecutionSkill(): Skill {
         check: async () => {
             try {
                 await execAsync('node -v', { cwd: process.cwd() });
+                return true;
+            } catch {
+                return false;
+            }
+        }
+    };
+}
+
+export function createWhisperSkill(): Skill {
+    return {
+        id: 'whisper',
+        provides: ['whisper_transcription'],
+        check: async () => {
+            try {
+                // Check for whisper-cli binary
+                const whisperPath = '/home/rover/whisper.cpp/build/bin/whisper-cli';
+                if (!fs.existsSync(whisperPath)) return false;
+
+                // Check for ffmpeg as it's a dependency
+                await execAsync('ffmpeg -version');
+                return true;
+            } catch {
+                return false;
+            }
+        }
+    };
+}
+
+export function createTtsSkill(): Skill {
+    return {
+        id: 'tts',
+        provides: ['tts_generation'],
+        check: async () => {
+            try {
+                // Check for thorial-tts.sh script
+                const ttsScript = process.env.TTS_SCRIPT_PATH || '/home/rover/.openclaw/workspace/scripts/thorial-tts.sh';
+                if (!fs.existsSync(ttsScript)) return false;
+
+                // Check for ffmpeg
+                await execAsync('ffmpeg -version');
                 return true;
             } catch {
                 return false;

@@ -8,7 +8,9 @@ export async function bootstrapCapabilities(
     const allCapabilities: Capability[] = [
         'browser_execution',
         'fs_access',
-        'node_execution'
+        'node_execution',
+        'whisper_transcription',
+        'tts_generation'
     ];
 
     const results = await Promise.allSettled(

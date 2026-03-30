@@ -5,6 +5,7 @@ import * as https from 'https';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 import { OnboardingService } from '../services/OnboardingService';
+import { capabilityRegistry } from '../capabilities';
 
 export type CognitiveInputPayload = {
     text: string;
@@ -99,7 +100,7 @@ export class TelegramInputHandler {
             return null;
         }
 
-        // Handing text messages
+        // Handling text messages
         if (ctx.message?.text) {
             this.logger.info('text_message_received', t('log.telegram.input.text_received'), {
                 telegram_user_id: userId,
@@ -115,8 +116,6 @@ export class TelegramInputHandler {
         }
 
         // Handling documents (e.g. .md uploads)
-        // Note: The download logic requires grammy's files plugin or raw bot.getFile logic.
-        // Simplifying for this foundational spec:
         if (ctx.message?.document) {
             const doc = ctx.message.document;
             this.logger.info('document_received', t('log.telegram.input.document_received'), {
@@ -147,6 +146,15 @@ export class TelegramInputHandler {
                 });
 
                 await ctx.replyWithChatAction('record_voice');
+
+                if (!capabilityRegistry.isAvailable('whisper_transcription')) {
+                    this.logger.warn('whisper_missing', 'Whisper transcription capability is not available');
+                    return {
+                        text: "⚠️ O sistema de transcrição Whisper não está disponível nesta VPS. Áudio recebido, mas não pôde ser transcrito.",
+                        source_type: 'audio',
+                        requires_audio_reply: false
+                    };
+                }
 
                 try {
                     const destPath = path.join(process.cwd(), 'workspace', 'audios', 'inputs', 'input.ogg');
@@ -198,6 +206,7 @@ export class TelegramInputHandler {
             https.get(url, response => {
                 if (response.statusCode !== 200) {
                     reject(new Error(`Failed to download file: ${response.statusCode}`));
+                    fileStream.close();
                     return;
                 }
                 response.pipe(fileStream);
@@ -206,6 +215,7 @@ export class TelegramInputHandler {
                     resolve();
                 });
             }).on('error', err => {
+                fileStream.close();
                 fs.unlink(destPath, () => { });
                 reject(err);
             });

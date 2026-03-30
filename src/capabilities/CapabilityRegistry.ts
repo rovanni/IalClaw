@@ -4,7 +4,9 @@ export type Capability =
     | 'node_execution'
     | 'git'
     | 'docker'
-    | 'test_runner';
+    | 'test_runner'
+    | 'whisper_transcription'
+    | 'tts_generation';
 
 export interface CapabilityState {
     available: boolean;

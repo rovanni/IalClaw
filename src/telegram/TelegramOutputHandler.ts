@@ -6,6 +6,7 @@ import { SessionManager } from '../shared/SessionManager';
 import { workspaceService } from '../services/WorkspaceService';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
+import { capabilityRegistry } from '../capabilities';
 
 export class TelegramOutputHandler {
     private logger = createLogger('TelegramOutputHandler');
@@ -14,6 +15,12 @@ export class TelegramOutputHandler {
 
     public async sendResponse(ctx: Context, response: string, requiresAudio: boolean = false) {
         if (requiresAudio) {
+            if (!capabilityRegistry.isAvailable('tts_generation')) {
+                this.logger.warn('tts_missing', 'TTS generation capability is not available');
+                await this.sendTextChunks(ctx, `${t('telegram.output.audio_fallback_prefix')}\n${response}`);
+                return;
+            }
+
             try {
                 const audiosDir = path.join(process.cwd(), 'workspace', 'audios', 'outputs');
                 if (!fs.existsSync(audiosDir)) {
