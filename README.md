@@ -35,6 +35,7 @@ Despite being functional, it is still in the stabilization phase and undergoing 
 - **Workspace Service**: Structured project management (`/workspace`) allowing the agent to safely create, save, and manage code artifacts, documents, and automations.
 - **Visual Web Panel & Telemetry**: Access `http://localhost:3000` to watch neural graphs floating, see live Gateway logs, and track the Agent's thought process (Trace) via Server-Sent Events (SSE) in real-time.
 - **Extensible Skills**: Integrated natively with Web Search, File System, and Workspace Tools!
+- **Interactive Onboarding**: A 9-step personalized setup that configures the agent's autonomy, response style, and goals from the first interaction.
 
 ---
 
@@ -362,6 +363,7 @@ Apesar de funcional, ainda está em fase de estabilização e validação de com
 - **Workspace Service**: Gerenciamento de projetos estruturado (`/workspace`), permitindo ao agente criar, salvar e gerenciar artefatos de código, documentos e automações de forma segura.
 - **Painel Visual Web & Telemetria**: Acesse `http://localhost:3000` para ver os grafos neurais flutuando, logs do Gateway, e os pensamentos (Trace) do Agente via SSE em tempo real.
 - **Habilidades Extensíveis**: Integrado com Web Search, File System, e Workspace Tools nativas!
+- **Onboarding Interativo**: Um processo de personalização em 9 passos que configura a autonomia, estilo de resposta e objetivos do agente desde o primeiro contato.
 
 ---
 
