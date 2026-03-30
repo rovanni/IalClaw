@@ -7,7 +7,7 @@
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="IalClaw Logo Banner" width="760" />
 </p>
 
-![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Inspired by OpenClaw](https://img.shields.io/badge/inspired%20by-OpenClaw-orange)
+![Node Version](https://img.shields.io/badge/node-%3E%3D18-green) ![License](https://img.shields.io/badge/license-MIT-blue)
 
 IalClaw is an **Adaptive Cognitive Agent** (100% local and private) developed in Node.js (TypeScript). 
 
@@ -431,7 +431,7 @@ Contributions are welcome! Feel free to open an **issue** to discuss new ideas o
   <img src="./docs/assets/logo_ialclaw_banner.png" alt="Banner do Logo do IalClaw" width="760" />
 </p>
 
-![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue) ![Inspirado no OpenClaw](https://img.shields.io/badge/inspired%20by-OpenClaw-orange)
+![Versão Node](https://img.shields.io/badge/node-%3E%3D18-green) ![Licença](https://img.shields.io/badge/license-MIT-blue)
 
 O IalClaw é um **Agente Cognitivo Adaptativo** (100% local e privado), desenvolvido em Node.js (TypeScript). 
 
