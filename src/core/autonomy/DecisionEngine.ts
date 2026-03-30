@@ -1,6 +1,7 @@
 // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { ExecutionRoute, TaskNature } from './ActionRouter';
+import { ResolutionProposal } from './CapabilityResolver';
 
 export enum AutonomyDecision {
     EXECUTE = "execute",   // Executar automaticamente
@@ -26,6 +27,7 @@ export interface AutonomyContext {
     intentSubtype?: string;    // command, suggestion, doubt
     route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
     nature?: TaskNature;       // Natureza da tarefa (informativa vs executável)
+    capabilityGap?: ResolutionProposal; // Lacuna detectada pelo Resolver
 }
 
 /**
@@ -48,6 +50,24 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     // 🔴 ALTO RISCO: Destrutivo ou risco alto → confirmar SEMPRE
     // ═══════════════════════════════════════════════════════════════════
     if (ctx.isDestructive || ctx.riskLevel === 'high') {
+        return AutonomyDecision.CONFIRM;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🟠 CAPABILITY RESOLUTION (Self-Healing)
+    // ═══════════════════════════════════════════════════════════════════
+    if (ctx.capabilityGap?.hasGap) {
+        // Se a tarefa é informativa, ignoramos o gap (regra anti-regressão)
+        if (ctx.nature === TaskNature.INFORMATIVE) {
+            return AutonomyDecision.EXECUTE; // Respond direto via LLM
+        }
+
+        // Se é uma lacuna bloqueante, sempre confirmar instalação
+        if (ctx.capabilityGap.gap?.severity === 'blocking') {
+            return AutonomyDecision.CONFIRM;
+        }
+
+        // Se é uma melhoria (enhancement), podemos sugerir ou confirmar
         return AutonomyDecision.CONFIRM;
     }
 

@@ -1,11 +1,13 @@
 import { ActionRouter, ExecutionRoute, TaskNature } from '../autonomy/ActionRouter';
-import { decideAutonomy, AutonomyDecision, AutonomyLevel } from '../autonomy/DecisionEngine';
+import { decideAutonomy, AutonomyDecision, AutonomyLevel, AutonomyContext } from '../autonomy/DecisionEngine';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
 import { TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { DecisionMemory } from '../../memory/DecisionMemory';
+import { CapabilityResolver, ResolutionProposal } from '../autonomy/CapabilityResolver';
+import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceScorer';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -35,6 +37,8 @@ export interface CognitiveDecision {
     autonomy?: any;    // DecisionEngine result
     memoryHits?: any[]; // memória relevante
     suggestedTool?: string; // Sugestão para estratégia HYBRID
+    capabilityGap?: ResolutionProposal; // Lacuna detectada
+    aggregatedConfidence?: AggregatedConfidence; // Score unificado
 }
 
 /**
@@ -43,6 +47,8 @@ export interface CognitiveDecision {
  */
 export class CognitiveOrchestrator {
     private logger = createLogger('CognitiveOrchestrator');
+    private capabilityResolver = new CapabilityResolver();
+    private confidenceScorer = new ConfidenceScorer();
 
     constructor(
         private actionRouter: ActionRouter,
@@ -59,68 +65,81 @@ export class CognitiveOrchestrator {
 
         // 1. Estado atual do Flow (Prioridade máxima de continuidade)
         const flowActive = this.flowManager?.isInFlow();
-
-        // 2. Memória (Pesquisa rápida para contexto na decisão)
-        const memoryHits = await this.safeMemoryQuery(text);
-
-        // 3. Roteamento de Intenção (Determina se exige ação no mundo real)
-        const routeDecision = this.actionRouter.decideRoute(text, taskType || null);
-
-        // 4. Contexto de Autonomia (Baseado no risco e confiança)
-        const policy = getSecurityPolicy().getPolicy(text);
-
-        // REFINAMENTO: Usar memória para detectar continuidade
-        let isContinuation = false;
-        let confidenceBonus = 0;
-
-        if (this.decisionMemory && taskType) {
-            const stats: any = await this.decisionMemory.getToolStats(taskType);
-            const totalSuccesses = stats.reduce((acc: number, s: any) => acc + s.successes, 0);
-            const totalDecisions = stats.reduce((acc: number, s: any) => acc + s.total, 0);
-
-            if (totalDecisions > 5 && (totalSuccesses / totalDecisions) > 0.8) {
-                confidenceBonus = 0.05; // Pequeno bônus por sucesso histórico
-            }
-        }
-
-        const autonomyCtx = {
-            intent: taskType || "unknown",
-            isContinuation,
-            hasAllParams: true,    // Assumimos true para a decisão de orquestração básica
-            riskLevel: policy.riskLevel,
-            isDestructive: policy.isDestructive,
-            isReversible: true,    // Placeholder
-            confidence: Math.min(1.0, routeDecision.confidence + confidenceBonus),
-            intentSubtype: routeDecision.subtype,
-            route: routeDecision.route,
-            nature: routeDecision.nature,
-            autonomyLevel: context?.autonomyLevel
-        };
-
-        const autonomyDecision = decideAutonomy(autonomyCtx);
-
-        this.logger.info('orchestration_decision_process', '[ORCHESTRATOR] Avaliando estratégia...', {
-            flowActive,
-            route: routeDecision.route,
-            autonomy: autonomyDecision,
-            taskType
-        });
-
-        // ─────────────────────────────────────────────
-        // 🧠 DECISÃO GLOBAL
-        // ─────────────────────────────────────────────
-
-        // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
-
-        // PRIORIDADE 1: Se flow ativo → mantemos o flow
         if (flowActive) {
             return {
                 strategy: CognitiveStrategy.FLOW,
                 confidence: 1,
-                reason: "flow_active",
+                reason: "flow_active"
+            };
+        }
+
+        // 2. Roteamento de Intenção (Determina se exige ação no mundo real)
+        const routeDecision = this.actionRouter.decideRoute(text, taskType || null);
+
+        // 3. Memória (Pesquisa rápida para contexto na decisão)
+        const memoryHits = await this.safeMemoryQuery(text);
+
+        // 4. Contexto de Autonomia (Baseado no risco e confiança)
+        const policy = getSecurityPolicy().getPolicy(text);
+
+        // 5. Capability Resolver (THINK: Detectar lacunas cognitivas/ferramentas)
+        const capabilityGap = this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
+
+        // 6. Confidence Scorer (Agregação de incerteza)
+        const aggregatedConfidence = this.confidenceScorer.calculate({
+            classifierConfidence: 0.9, // TODO: Pegar do TaskClassifier real se disponível
+            routerConfidence: routeDecision.confidence,
+            memoryHits: memoryHits
+        });
+
+        // 7. Decision Engine (DECIDE: O que fazer baseado no risco, confiança e gaps)
+        const autonomyContext: AutonomyContext = {
+            intent: taskType || 'unknown',
+            isContinuation: false, // Refinar com memória se necessário
+            hasAllParams: true,
+            riskLevel: policy.riskLevel as 'low' | 'medium' | 'high',
+            isDestructive: policy.isDestructive,
+            isReversible: true,
+            confidence: aggregatedConfidence.score,
+            autonomyLevel: context?.autonomyLevel || AutonomyLevel.BALANCED,
+            intentSubtype: routeDecision.subtype,
+            route: routeDecision.route,
+            nature: routeDecision.nature,
+            capabilityGap
+        };
+
+        const autonomyDecision = decideAutonomy(autonomyContext);
+
+        this.logger.info('orchestration_decision', '[ORCHESTRATOR] Decisão de autonomia executada', {
+            autonomyDecision,
+            capabilityGap: capabilityGap.hasGap
+        });
+
+        // 7. Mapear Decisão para Estratégia de Execução (ACT)
+
+        // PRIORIDADE 1: Perguntar ou Confirmar (DecisionEngine comanda)
+        if (autonomyDecision === AutonomyDecision.ASK) {
+            return {
+                strategy: CognitiveStrategy.ASK,
+                confidence: 1.0,
+                reason: "autonomy_engine_ask",
                 route: routeDecision,
                 autonomy: autonomyDecision,
-                memoryHits
+                memoryHits,
+                aggregatedConfidence
+            };
+        }
+
+        if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            return {
+                strategy: CognitiveStrategy.CONFIRM,
+                confidence: aggregatedConfidence.score,
+                reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
+                route: routeDecision,
+                autonomy: autonomyDecision,
+                memoryHits,
+                capabilityGap,
+                aggregatedConfidence
             };
         }
 
@@ -138,30 +157,8 @@ export class CognitiveOrchestrator {
             };
         }
 
-        // PRIORIDADE 3: Se precisa de Tool (Ação no mundo real)
+        // PRIORIDADE 3: Execução direta de Tool ou LLM
         if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
-            if (autonomyDecision === AutonomyDecision.CONFIRM) {
-                return {
-                    strategy: CognitiveStrategy.CONFIRM,
-                    confidence: 0.9,
-                    reason: "tool_requires_confirmation",
-                    route: routeDecision,
-                    autonomy: autonomyDecision,
-                    memoryHits
-                };
-            }
-
-            if (autonomyDecision === AutonomyDecision.ASK) {
-                return {
-                    strategy: CognitiveStrategy.ASK,
-                    confidence: 0.8,
-                    reason: "missing_or_uncertain",
-                    route: routeDecision,
-                    autonomy: autonomyDecision,
-                    memoryHits
-                };
-            }
-
             return {
                 strategy: CognitiveStrategy.TOOL,
                 confidence: routeDecision.confidence,
@@ -172,7 +169,6 @@ export class CognitiveOrchestrator {
             };
         }
 
-        // PRIORIDADE 4: Fallback LLM (Conversação direta)
         return {
             strategy: CognitiveStrategy.LLM,
             confidence: routeDecision.confidence,
@@ -198,11 +194,10 @@ export class CognitiveOrchestrator {
     private suggestHybridTool(input: string, taskType: TaskType | null): string | undefined {
         const text = input.toLowerCase();
 
-        // Mapeamento heurístico de ferramentas para o orquestrador
         const heuristics: Record<string, string> = {
             'cripto': 'crypto-tracker',
             'crypto': 'crypto-tracker',
-            'mercado': 'crypto-tracker', // Simplificação para o exemplo
+            'mercado': 'crypto-tracker',
             'bitcoin': 'crypto-tracker',
             'ethereum': 'crypto-tracker',
             'paxg': 'paxg-monitor',
@@ -214,7 +209,6 @@ export class CognitiveOrchestrator {
             if (text.includes(key)) return tool;
         }
 
-        // Fallback baseado no taskType se for data_analysis
         if (taskType === 'data_analysis') return 'crypto-tracker';
 
         return undefined;

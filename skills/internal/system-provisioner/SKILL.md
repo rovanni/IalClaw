@@ -14,6 +14,7 @@ metadata:
   risk: HIGH
   requiresConfirmation: true
   category: system-dependency-resolver
+  integrated_layer: CapabilityResolver
 ---
 
 # System Provisioner (Dependency Resolver)
