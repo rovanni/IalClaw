@@ -1,8 +1,10 @@
 import { exec } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
 import { promisify } from 'util';
 import { Capability, CapabilityRegistry } from './CapabilityRegistry';
 import { emitDebug } from '../shared/DebugBus';
+import { findBinary, resolveBinary, detectWhisper } from '../shared/BinaryUtils';
 
 const execAsync = promisify(exec);
 
@@ -174,16 +176,30 @@ export function createWhisperSkill(): Skill {
         provides: ['whisper_transcription'],
         check: async () => {
             try {
-                // Check for whisper-cli binary
-                const whisperPath = '/home/rover/whisper.cpp/build/bin/whisper-cli';
-                if (!fs.existsSync(whisperPath)) return false;
+                // Generalized whisper detection
+                if (!detectWhisper().available) return false;
 
-                // Check for ffmpeg as it's a dependency
-                await execAsync('ffmpeg -version');
-                return true;
+                // Check for ffmpeg
+                return findBinary('ffmpeg') !== null;
             } catch {
                 return false;
             }
+        },
+        install: async () => {
+            const python = resolveBinary('python3') || resolveBinary('python');
+
+            // Se FFmpeg não estiver presente, tentar instalar primeiro
+            if (findBinary('ffmpeg') === null) {
+                const isWindows = process.platform === 'win32';
+                const ffmpegCmd = isWindows ? 'winget install ffmpeg' : 'sudo apt update && sudo apt install ffmpeg -y';
+                try {
+                    await execAsync(ffmpegCmd);
+                } catch (e) {
+                    console.error('Failed to install ffmpeg automatically:', e);
+                }
+            }
+
+            await execAsync(`${python} -m pip install openai-whisper`);
         }
     };
 }
@@ -194,13 +210,15 @@ export function createTtsSkill(): Skill {
         provides: ['tts_generation'],
         check: async () => {
             try {
-                // Check for thorial-tts.sh script
-                const ttsScript = process.env.TTS_SCRIPT_PATH || '/home/rover/.openclaw/workspace/scripts/thorial-tts.sh';
+                // Generalized script path resolution
+                const ttsScript = process.env.TTS_SCRIPT_PATH ||
+                    path.join(process.cwd(), "workspace", "scripts", "tts.sh") ||
+                    path.join(process.cwd(), "scripts", "tts.sh");
+
                 if (!fs.existsSync(ttsScript)) return false;
 
                 // Check for ffmpeg
-                await execAsync('ffmpeg -version');
-                return true;
+                return findBinary('ffmpeg') !== null;
             } catch {
                 return false;
             }
@@ -253,6 +271,19 @@ export function createBrowserSkill(): Skill {
                     setTimeout(() => reject(new Error('install_timeout')), 30000)
                 )
             ]);
+        }
+    };
+}
+
+export function createFfmpegSkill(): Skill {
+    return {
+        id: 'ffmpeg',
+        provides: ['ffmpeg'],
+        check: async () => findBinary('ffmpeg') !== null,
+        install: async () => {
+            const isWindows = process.platform === 'win32';
+            const cmd = isWindows ? 'winget install ffmpeg' : 'sudo apt update && sudo apt install ffmpeg -y';
+            await execAsync(cmd);
         }
     };
 }

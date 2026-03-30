@@ -7,6 +7,7 @@ import { workspaceService } from '../services/WorkspaceService';
 import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 import { capabilityRegistry } from '../capabilities';
+import { findBinary } from '../shared/BinaryUtils';
 
 export class TelegramOutputHandler {
     private logger = createLogger('TelegramOutputHandler');
@@ -34,9 +35,14 @@ export class TelegramOutputHandler {
                 if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
                 if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath);
 
-                // Use the TTS script path from the telegram-voice skill
-                // Note: Path adapted for the user's Linux VPS environment
-                const ttsScript = process.env.TTS_SCRIPT_PATH || '/home/rover/.openclaw/workspace/scripts/thorial-tts.sh';
+                // 0. Resolve Tools & Paths
+                const ffmpeg = findBinary('ffmpeg') || 'ffmpeg';
+                let ttsScript = process.env.TTS_SCRIPT_PATH || '';
+                if (!ttsScript || !fs.existsSync(ttsScript)) {
+                    const workspaceScript = path.join(process.cwd(), "workspace", "scripts", "tts.sh");
+                    const scriptsFolderScript = path.join(process.cwd(), "scripts", "tts.sh");
+                    ttsScript = fs.existsSync(workspaceScript) ? workspaceScript : scriptsFolderScript;
+                }
 
                 this.logger.debug('generating_tts', 'Generating TTS...', { script: ttsScript });
 
@@ -49,7 +55,7 @@ export class TelegramOutputHandler {
                 }
 
                 // 2. Convert to OGG Opus (Telegram Voice format)
-                execSync(`ffmpeg -y -i "${mp3Path}" -c:a libopus "${oggPath}"`, { stdio: 'ignore' });
+                execSync(`"${ffmpeg}" -y -i "${mp3Path}" -c:a libopus "${oggPath}"`, { stdio: 'ignore' });
 
                 if (!fs.existsSync(oggPath)) {
                     throw new Error('FFmpeg failed to convert MP3 to OGG');

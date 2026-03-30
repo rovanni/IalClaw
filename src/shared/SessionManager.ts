@@ -8,8 +8,12 @@ export interface ConversationMessage {
 
 export interface PendingAction {
     id: string;
-    type: 'install_skill';
-    payload: { skillName: string };
+    type: 'install_skill' | 'install_capability';
+    payload: {
+        skillName?: string;
+        capability?: string;
+        originalQuery?: string;
+    };
     timestamp: number;
     expires_at: number;
 }
@@ -92,7 +96,7 @@ export class SessionManager {
             existing.lastAccessedAt = Date.now();
             return existing;
         }
-        
+
         const newSession: SessionContext = {
             conversation_id: conversationId,
             language: 'pt-BR',
@@ -116,7 +120,7 @@ export class SessionManager {
                 existing.lastAccessedAt = Date.now();
                 return existing;
             }
-            
+
             const newSession: SessionContext = {
                 conversation_id: conversationId,
                 language: 'pt-BR',
@@ -145,10 +149,10 @@ export class SessionManager {
      */
     static addToHistory(conversationId: string, role: 'user' | 'assistant', content: string): void {
         const session = this.getSession(conversationId);
-        
+
         // Operação atômica: push + trim em sequência
         session.conversation_history.push({ role, content });
-        
+
         // Trim síncrono imediato para limitar tamanho
         if (session.conversation_history.length > STM_MAX_MESSAGES) {
             session.conversation_history = session.conversation_history.slice(-STM_MAX_MESSAGES);
@@ -159,14 +163,14 @@ export class SessionManager {
      * Versão assíncrona para operações de alta concorrência.
      */
     static async addToHistoryAsync(
-        conversationId: string, 
-        role: 'user' | 'assistant', 
+        conversationId: string,
+        role: 'user' | 'assistant',
         content: string
     ): Promise<void> {
         await sessionMutex.withLock(() => {
             const session = sessionStore.get(conversationId);
             if (!session) return;
-            
+
             session.conversation_history.push({ role, content });
             if (session.conversation_history.length > STM_MAX_MESSAGES) {
                 session.conversation_history = session.conversation_history.slice(-STM_MAX_MESSAGES);
@@ -179,7 +183,7 @@ export class SessionManager {
      */
     static resetVolatileState(conversationId: string): SessionContext {
         const session = this.getSession(conversationId);
-        
+
         // Reset atômico
         session.last_error = undefined;
         session.last_error_type = undefined;
@@ -187,13 +191,13 @@ export class SessionManager {
         session.last_error_fingerprint = undefined;
         session._tool_input_attempts = 0;
         session._input_history = [];
-        
+
         // Filtrar ações expiradas
         const now = Date.now();
         session.pending_actions = session.pending_actions.filter(
             action => action.expires_at > now
         );
-        
+
         return session;
     }
 
@@ -299,7 +303,7 @@ let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
 function startCleanupInterval(): void {
     if (cleanupIntervalId) return;
-    
+
     cleanupIntervalId = setInterval(() => {
         try {
             SessionManager.cleanupOldSessions();

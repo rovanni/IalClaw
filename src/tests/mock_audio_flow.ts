@@ -36,7 +36,7 @@ function testTtsScriptMock() {
     console.log('\nTesting TTS script command generation (Mock)...');
     const response = 'Olá, como posso ajudar?';
     const escapedResponse = response.replace(/"/g, '\\"').replace(/\n/g, ' ');
-    const ttsScript = '/home/rover/.openclaw/workspace/scripts/thorial-tts.sh';
+    const ttsScript = path.join(process.cwd(), 'workspace', 'scripts', 'tts.sh');
     const mp3Path = path.join(audiosDir, 'output.mp3');
 
     const cmd = `bash "${ttsScript}" "${escapedResponse}" "${mp3Path}"`;

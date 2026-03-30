@@ -6,7 +6,8 @@ export type Capability =
     | 'docker'
     | 'test_runner'
     | 'whisper_transcription'
-    | 'tts_generation';
+    | 'tts_generation'
+    | 'ffmpeg';
 
 export interface CapabilityState {
     available: boolean;

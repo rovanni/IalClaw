@@ -148,6 +148,8 @@
   "log.agent.message_flow_completed": "[LOG] log.agent.message_flow_completed",
   "log.agent.message_flow_started": "[LOG] log.agent.message_flow_started",
   "log.agent.message_ignored": "[LOG] log.agent.message_ignored",
+  "log.agent.executing_pending_installation": "[ORCHESTRATOR] Executando instala??o pendente de capacidade: {capability}",
+  "log.agent.pending_install_capability_set": "[ORCHESTRATOR] A??o pendente de instala??o definida para: {capability}",
   "log.agent.pending_action_confirmed": "[LOG] log.agent.pending_action_confirmed",
   "log.agent.pending_action_dropped": "[LOG] log.agent.pending_action_dropped",
   "log.agent.pending_action_set": "[LOG] log.agent.pending_action_set",

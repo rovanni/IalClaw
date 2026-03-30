@@ -149,21 +149,40 @@ export class TelegramInputHandler {
 
                 if (!capabilityRegistry.isAvailable('whisper_transcription')) {
                     this.logger.warn('whisper_missing', 'Whisper transcription capability is not available');
+
+                    const missingMessage = `
+🧠 **Capability Gap Detected**: Audio Transcription
+
+I understand you sent an audio message, but I currently cannot process it because required dependencies are missing.
+
+**Missing:**
+- **Whisper** (speech-to-text)
+- **FFmpeg** (audio processing)
+
+You can fix this by running:
+\`\`\`bash
+pip install openai-whisper
+sudo apt install ffmpeg
+\`\`\`
+
+Or just say: "**install audio support**" and I will try to handle it for you.
+`;
                     return {
-                        text: "⚠️ O sistema de transcrição Whisper não está disponível nesta VPS. Áudio recebido, mas não pôde ser transcrito.",
+                        text: missingMessage,
                         source_type: 'audio',
                         requires_audio_reply: false
                     };
                 }
 
                 try {
-                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'inputs', 'input.ogg');
+                    const fileName = ctx.message.voice ? 'voice_input.ogg' : 'audio_input.ogg';
+                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'inputs', fileName);
                     await this.downloadTelegramFile(ctx, audioData.file_id, destPath);
 
                     this.logger.info('audio_downloaded', 'Audio downloaded successfully', { path: destPath });
 
                     return {
-                        text: `Process please user voice message at workspace/audios/inputs/input.ogg`,
+                        text: `Process please user voice message at workspace/audios/inputs/${fileName}`,
                         source_type: 'audio',
                         requires_audio_reply: true
                     };

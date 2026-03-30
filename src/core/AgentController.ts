@@ -4,7 +4,7 @@ import { CognitiveMemory, ContextBuilder, MemoryLifecycleManager, AgentMemoryCon
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
-import { SessionManager } from '../shared/SessionManager';
+import { SessionManager, PendingAction } from '../shared/SessionManager';
 import { skillManager } from '../capabilities';
 import { workspaceService } from '../services/WorkspaceService';
 import { SkillResolver } from '../skills/SkillResolver';
@@ -381,7 +381,20 @@ export class AgentController {
                 }
 
                 if (isConfirmation(userQuery)) {
-                    effectiveUserQuery = this.buildPendingActionQuery(pending);
+                    // Se for instalação de capacidade, executar ANTES de processar
+                    if (pending.type === 'install_capability' && pending.payload.capability) {
+                        logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
+                            capabilityNumber: pending.payload.capability
+                        });
+
+                        await skillManager.ensure(pending.payload.capability as any, 'auto-install');
+
+                        // Após instalar, tentamos usar o query original se disponível
+                        effectiveUserQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
+                    } else {
+                        effectiveUserQuery = this.buildPendingActionQuery(pending as any);
+                    }
+
                     clearPendingAction(session, pending.id);
                     logger.info('pending_action_confirmed', t('log.agent.pending_action_confirmed'), {
                         action_type: pending.type,
@@ -521,10 +534,21 @@ export class AgentController {
 
             case CognitiveStrategy.ASK:
             case CognitiveStrategy.CONFIRM:
-                // Nestes casos, o loop (AgentLoop) ou o orquestrador já identificaram a necessidade de interação.
-                // Atualmente, o AgentLoop ainda contém a lógica de "ASK" e "CONFIRM" rica (tradução, etc).
-                // Para manter a "explicabilidade", vamos deixar o AgentLoop rodar se houver alta confiança em tool
-                // ou se precisar de confirmação via loop.
+                if (decision.strategy === CognitiveStrategy.CONFIRM && decision.capabilityGap?.hasGap) {
+                    const gap = decision.capabilityGap.gap;
+                    if (gap && session) {
+                        setPendingAction(session, {
+                            type: 'install_capability',
+                            payload: {
+                                capability: gap.resource,
+                                originalQuery: userQuery
+                            }
+                        });
+                        this.logger.info('pending_install_capability_set', t('log.agent.pending_install_capability_set'), {
+                            capability: gap.resource
+                        });
+                    }
+                }
                 break;
 
             case CognitiveStrategy.LLM:
@@ -904,9 +928,12 @@ Nao peca confirmacao redundante.
         return null;
     }
 
-    private buildPendingActionQuery(action: { type: 'install_skill'; payload: { skillName: string } }): string {
+    private buildPendingActionQuery(action: PendingAction): string {
         if (action.type === 'install_skill') {
             return `instalar skill ${action.payload.skillName}`;
+        }
+        if (action.type === 'install_capability') {
+            return action.payload.originalQuery || t('agent.directive.continue');
         }
         return t('agent.directive.continue');
     }

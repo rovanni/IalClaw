@@ -143,10 +143,25 @@ export class CognitiveOrchestrator {
         }
 
         if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            let reasoning = capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation";
+
+            if (capabilityGap.hasGap) {
+                reasoning = `
+I understand your request, but I currently lack the capability to execute it.
+
+Instead of failing silently, I can:
+1. Help you install the required tools
+2. Suggest an alternative approach
+3. Guide you step-by-step
+
+Would you like me to install the required dependencies (${capabilityGap.gap?.resource}) automatically?
+`;
+            }
+
             return {
                 strategy: CognitiveStrategy.CONFIRM,
                 confidence: aggregatedConfidence.score,
-                reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
+                reason: reasoning,
                 route: routeDecision,
                 autonomy: autonomyDecision,
                 memoryHits,
@@ -220,6 +235,12 @@ export class CognitiveOrchestrator {
         for (const [key, tool] of Object.entries(heuristics)) {
             if (text.includes(key)) return tool;
         }
+
+        // System utility level heuristics
+        if (text.includes('ffmpeg') || text.includes('converter')) return 'system-ffmpeg';
+        if (text.includes('python') || text.includes('pip')) return 'system-python';
+        if (text.includes('node') || text.includes('npm')) return 'system-node';
+        if (text.includes('whisper') || text.includes('stt')) return 'system-whisper';
 
         if (taskType === 'data_analysis') return 'crypto-tracker';
 
