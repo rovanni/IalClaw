@@ -645,7 +645,7 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // SHORT-CIRCUIT: content_generation (apenas se for puramente cognitivo)
         // ═══════════════════════════════════════════════════════════════════
-        if (this.currentTaskType === 'content_generation' && decision.route === ExecutionRoute.DIRECT_LLM) {
+        if ((this.currentTaskType === 'content_generation' || this.currentTaskType === 'conversation') && decision.route === ExecutionRoute.DIRECT_LLM) {
             this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)', {
                 mode: 'cognitive_direct',
                 bypass_loop: true,

@@ -50,25 +50,25 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-        // 🟡 DUVIDA OU SUGESTÃO: Tratamento diferenciado
-        // "acho que deveria mover" -> CONFIRM (mais natural)
-        // "por que os arquivos estão aí?" -> ASK (precisa de info)
-        // ═══════════════════════════════════════════════════════════════════
-        if (ctx.intentSubtype === 'doubt') {
-            return AutonomyDecision.ASK;
-        }
+    // 🟡 DUVIDA OU SUGESTÃO: Tratamento diferenciado
+    // "acho que deveria mover" -> CONFIRM (mais natural)
+    // "por que os arquivos estão aí?" -> ASK (precisa de info)
+    // ═══════════════════════════════════════════════════════════════════
+    if (ctx.intentSubtype === 'doubt') {
+        return AutonomyDecision.ASK;
+    }
 
-        if (ctx.intentSubtype === 'suggestion') {
-            // Sugestões de baixo risco podem ser confirmadas, não apenas perguntadas
-            return ctx.riskLevel === 'low'
-                ? AutonomyDecision.CONFIRM
-                : AutonomyDecision.ASK;
-        }
+    if (ctx.intentSubtype === 'suggestion') {
+        // Sugestões de baixo risco podem ser confirmadas, não apenas perguntadas
+        return ctx.riskLevel === 'low'
+            ? AutonomyDecision.CONFIRM
+            : AutonomyDecision.ASK;
+    }
 
-        // NOVO: Incerteza total → perguntar
-        if (ctx.intentSubtype === 'uncertain') {
-            return AutonomyDecision.ASK;
-        }
+    // NOVO: Incerteza total → perguntar
+    if (ctx.intentSubtype === 'uncertain' && ctx.intent !== 'conversation') {
+        return AutonomyDecision.ASK;
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // 🟡 BAIXA CONFIANÇA: Se < 0.98 em modo balanceado, perguntar por segurança
@@ -162,39 +162,39 @@ export const AutonomyHelpers = {
     /**
          * Detecta continuação de tarefa anterior.
          */
-        isContinuation(input: string, lastIntent?: string): boolean {
-            const continuationIndicators = [
-                /^e\s+/i, /^e\s+para/i, /^usar/i, /^utilizar/i,
-                /^com\s+esse/i, /^agora\s+com/i, /^usando/i
-            ];
+    isContinuation(input: string, lastIntent?: string): boolean {
+        const continuationIndicators = [
+            /^e\s+/i, /^e\s+para/i, /^usar/i, /^utilizar/i,
+            /^com\s+esse/i, /^agora\s+com/i, /^usando/i
+        ];
 
-            if (continuationIndicators.some(p => p.test(input))) {
-                return true;
-            }
-
-            // Se tem última intenção e input é curto, provavelmente continuação
-            if (lastIntent && input.split(/\s+/).length < 10) {
-                return true;
-            }
-
-            return false;
-        },
-
-        /**
-         * NOVO: Detecta tarefas híbridas que precisam de LLM + Tools.
-         * Ex: "crie um arquivo com esse conteúdo", "gere um script e salve"
-         */
-        isHybridTask(input: string): boolean {
-            const hybridPatterns = [
-                /crie?\s+(um|uma|o|a)?\s*(arquivo|script|módulo|arquivos)/i,
-                /gere?\s+(um|uma|o|a)?\s*(arquivo|script|módulo|arquivos)/i,
-                /salv[ae]?\s+(esse|este|o)?\s*(arquivo|conteúdo|script)/i,
-                /escrev[ae]?\s+(um|uma|o|a)?\s*(arquivo|script|módulo)/i
-            ];
-
-            return hybridPatterns.some(p => p.test(input));
+        if (continuationIndicators.some(p => p.test(input))) {
+            return true;
         }
-    };
+
+        // Se tem última intenção e input é curto, provavelmente continuação
+        if (lastIntent && input.split(/\s+/).length < 10) {
+            return true;
+        }
+
+        return false;
+    },
+
+    /**
+     * NOVO: Detecta tarefas híbridas que precisam de LLM + Tools.
+     * Ex: "crie um arquivo com esse conteúdo", "gere um script e salve"
+     */
+    isHybridTask(input: string): boolean {
+        const hybridPatterns = [
+            /crie?\s+(um|uma|o|a)?\s*(arquivo|script|módulo|arquivos)/i,
+            /gere?\s+(um|uma|o|a)?\s*(arquivo|script|módulo|arquivos)/i,
+            /salv[ae]?\s+(esse|este|o)?\s*(arquivo|conteúdo|script)/i,
+            /escrev[ae]?\s+(um|uma|o|a)?\s*(arquivo|script|módulo)/i
+        ];
+
+        return hybridPatterns.some(p => p.test(input));
+    }
+};
 
 /**
  * Cria contexto de autonomia para uma ação.

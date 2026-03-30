@@ -19,6 +19,7 @@ export type TaskType =
     | 'information_request'
     | 'code_generation'
     | 'data_analysis'
+    | 'conversation'     // Greetings and social talk
     | 'unknown'        // Compatibilidade com código existente
     | 'generic_task';  // Compatibilidade - será convertido no fallback
 
@@ -192,6 +193,17 @@ const HEURISTIC_RULES: HeuristicRule[] = [
         ],
         keywords: ['o que é', 'como', 'explicar', 'definição'],
         confidence: 0.75
+    },
+    {
+        type: 'conversation',
+        patterns: [
+            /^(oi|olá|ola|bom dia|boa tarde|boa noite|hello|hi|hey|tudo bem|tudo bom|opa|e ai|e aí)\b/i,
+            /\b(obrigado|vlw|valeu|thanks|gratidão)\b/i,
+            /\b(tchau|adeus|bye|até logo)\b/i,
+            /\b(quem é você|quem e voce|o que você faz|o que voce faz)\b/i
+        ],
+        keywords: ['oi', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'obrigado', 'valeu', 'tchau'],
+        confidence: 0.95
     }
 ];
 
@@ -659,6 +671,11 @@ Responda APENAS JSON válido:
         // Se menciona criar/gerar
         if (/\b(criar|gerar|fazer|escrever|montar)\b/.test(normalized)) {
             return { type: 'content_generation', confidence: 0.65, source: 'fallback' };
+        }
+
+        // Default seguro - Se for muito curto, assume conversação
+        if (normalized.length < 5) {
+            return { type: 'conversation', confidence: 0.70, source: 'fallback' };
         }
 
         // Default seguro - information_request é sempre útil
