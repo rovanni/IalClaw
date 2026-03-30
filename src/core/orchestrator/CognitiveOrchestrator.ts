@@ -4,6 +4,8 @@ import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
 import { TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
+import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
+import { DecisionMemory } from '../../memory/DecisionMemory';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -43,7 +45,8 @@ export class CognitiveOrchestrator {
     constructor(
         private actionRouter: ActionRouter,
         private memoryService: CognitiveMemory,
-        private flowManager: FlowManager
+        private flowManager: FlowManager,
+        private decisionMemory?: DecisionMemory | null
     ) { }
 
     /**
@@ -62,14 +65,30 @@ export class CognitiveOrchestrator {
         const routeDecision = this.actionRouter.decideRoute(text, taskType || null);
 
         // 4. Contexto de Autonomia (Baseado no risco e confiança)
+        const policy = getSecurityPolicy().getPolicy(text);
+
+        // REFINAMENTO: Usar memória para detectar continuidade
+        let isContinuation = false;
+        let confidenceBonus = 0;
+
+        if (this.decisionMemory && taskType) {
+            const stats: any = await this.decisionMemory.getToolStats(taskType);
+            const totalSuccesses = stats.reduce((acc: number, s: any) => acc + s.successes, 0);
+            const totalDecisions = stats.reduce((acc: number, s: any) => acc + s.total, 0);
+
+            if (totalDecisions > 5 && (totalSuccesses / totalDecisions) > 0.8) {
+                confidenceBonus = 0.05; // Pequeno bônus por sucesso histórico
+            }
+        }
+
         const autonomyCtx = {
             intent: taskType || "unknown",
-            isContinuation: false, // Pode ser refinado futuramente
+            isContinuation,
             hasAllParams: true,    // Assumimos true para a decisão de orquestração básica
-            riskLevel: this.detectRisk(text),
-            isDestructive: this.isDestructive(text),
+            riskLevel: policy.riskLevel,
+            isDestructive: policy.isDestructive,
             isReversible: true,    // Placeholder
-            confidence: routeDecision.confidence,
+            confidence: Math.min(1.0, routeDecision.confidence + confidenceBonus),
             intentSubtype: routeDecision.subtype,
             autonomyLevel: context?.autonomyLevel
         };
@@ -86,6 +105,8 @@ export class CognitiveOrchestrator {
         // ─────────────────────────────────────────────
         // 🧠 DECISÃO GLOBAL
         // ─────────────────────────────────────────────
+
+        // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
 
         // PRIORIDADE 1: Se flow ativo → mantemos o flow
         if (flowActive) {
@@ -151,15 +172,5 @@ export class CognitiveOrchestrator {
         } catch {
             return [];
         }
-    }
-
-    private detectRisk(input: string): 'low' | 'medium' | 'high' {
-        if (/delete|rm\s+|drop|format|remover|excluir|limpar/i.test(input)) return 'high';
-        if (/install|write|create|update|instalar|criar|salvar|escrever/i.test(input)) return 'medium';
-        return 'low';
-    }
-
-    private isDestructive(input: string): boolean {
-        return /rm\s+|delete|remover|excluir|drop|wipe|erase|format/i.test(input);
     }
 }

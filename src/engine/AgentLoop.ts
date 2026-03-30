@@ -12,8 +12,9 @@ import { getDecisionHandler, clearDecisionHandler, DecisionHandler, DecisionRequ
 import { StepValidator, ValidationContext } from './StepValidator';
 import { ToolReliability } from './ToolReliability';
 import { ResultEvaluator } from './ResultEvaluator';
-import { DecisionMemory, ToolDecision } from '../memory/DecisionMemory';
+import { DecisionMemory, ToolDecision } from '../memory';
 import { getActionRouter, ExecutionRoute } from '../core/autonomy/ActionRouter';
+import { getSecurityPolicy } from '../core/policy/SecurityPolicyProvider';
 
 export type AgentProgressEvent = {
     stage:
@@ -264,23 +265,7 @@ export class AgentLoop {
      * Detecta nível de risco baseado no tipo de tarefa e input.
      */
     private detectRiskLevel(type: TaskType | null, input: string): 'low' | 'medium' | 'high' {
-        // Alto risco: comandos destrutivos
-        const highRiskPatterns = [
-            /delete/i, /remove/i, /drop/i, /truncate/i,
-            /rm\s+/i, /del\s+/i, /uninstall/i, /purge/i
-        ];
-
-        if (highRiskPatterns.some(p => p.test(input))) {
-            return 'high';
-        }
-
-        // Médio risco: operações de sistema
-        if (type === 'system_operation') {
-            return 'medium';
-        }
-
-        // Baixo risco: geração de conteúdo, informações
-        return 'low';
+        return getSecurityPolicy().detectRisk(input);
     }
 
     constructor(llm: LLMProvider, registry: SkillRegistry, decisionMemory?: DecisionMemory) {
@@ -319,6 +304,10 @@ export class AgentLoop {
 
     public getProvider(): LLMProvider {
         return this.llm;
+    }
+
+    public getDecisionMemory(): DecisionMemory | null {
+        return this.decisionMemory;
     }
 
     private evaluateModeTransition(): void {
@@ -645,8 +634,9 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // SHORT-CIRCUIT: content_generation (apenas se for puramente cognitivo)
         // ═══════════════════════════════════════════════════════════════════
-        if ((this.currentTaskType === 'content_generation' || this.currentTaskType === 'conversation') && decision.route === ExecutionRoute.DIRECT_LLM) {
-            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] content_generation → execução direta (sem loop)', {
+        const isLowRisk = this.detectRiskLevel(this.currentTaskType, userInput) === 'low';
+        if (decision.route === ExecutionRoute.DIRECT_LLM && isLowRisk) {
+            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
                 mode: 'cognitive_direct',
                 bypass_loop: true,
                 task_type: this.currentTaskType

@@ -1,6 +1,5 @@
-// ── DecisionEngine: Motor de Autonomia ───────────────────────────────────────
-// Decide quando o agente deve EXECUTAR, PERGUNTAR ou CONFIRMAR.
 // "Não basta saber o que fazer — precisa saber quando fazer sem pedir permissão."
+import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 
 export enum AutonomyDecision {
     EXECUTE = "execute",   // Executar automaticamente
@@ -113,38 +112,14 @@ export const AutonomyHelpers = {
      * Detecta nível de risco baseado na intenção.
      */
     detectRisk(intent: string): 'low' | 'medium' | 'high' {
-        const highRiskPatterns = [
-            /delete/i, /remove/i, /drop/i, /truncate/i, /format/i,
-            /uninstall/i, /purge/i, /destroy/i, /reset/i
-        ];
-
-        const mediumRiskPatterns = [
-            /install/i, /write/i, /create/i, /update/i,
-            /push/i, /deploy/i, /publish/i
-        ];
-
-        if (highRiskPatterns.some(p => p.test(intent))) {
-            return 'high';
-        }
-
-        if (mediumRiskPatterns.some(p => p.test(intent))) {
-            return 'medium';
-        }
-
-        return 'low';
+        return getSecurityPolicy().detectRisk(intent);
     },
 
     /**
      * Detecta se o comando é destrutivo.
      */
     isDestructiveCommand(cmd: string): boolean {
-        const destructivePatterns = [
-            /rm\s+/i, /del\s+/i, /drop\s+/i, /truncate/i,
-            /format/i, /erase/i, /wipe/i, /delete/i,
-            /uninstall/i, /purge/i, /destroy/i
-        ];
-
-        return destructivePatterns.some(p => p.test(cmd));
+        return getSecurityPolicy().isDestructive(cmd);
     },
 
     /**

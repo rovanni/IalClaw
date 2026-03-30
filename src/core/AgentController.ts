@@ -1,7 +1,6 @@
 import { Context } from 'grammy';
 import { AgentLoop, AgentProgressEvent } from '../engine/AgentLoop';
-import { CognitiveMemory } from '../memory/CognitiveMemory';
-import { ContextBuilder } from '../memory/ContextBuilder';
+import { CognitiveMemory, ContextBuilder, MemoryLifecycleManager, AgentMemoryContext } from '../memory';
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { MessagePayload } from '../engine/ProviderFactory';
@@ -15,8 +14,7 @@ import { runWithTrace } from '../shared/TraceContext';
 import { createLogger } from '../shared/AppLogger';
 import { decisionGate } from './agent/decisionGate';
 import { emitDebug } from '../shared/DebugBus';
-import { MemoryLifecycleManager } from '../memory/MemoryLifecycleManager';
-import { AgentMemoryContext } from '../memory/MemoryTypes';
+// Removidos duplicados, unificados no import da linha 3
 import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
 import { Lang } from '../i18n/types';
 import { TaskType } from './agent/TaskClassifier';
@@ -80,7 +78,8 @@ export class AgentController {
         this.orchestrator = new CognitiveOrchestrator(
             getActionRouter(),
             this.memory,
-            this.flowManager
+            this.flowManager,
+            this.loop.getDecisionMemory()
         );
     }
 
