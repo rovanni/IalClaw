@@ -3,6 +3,7 @@ import { validatePlan } from '../planner/PlanValidator';
 import { ExecutionPlan } from '../planner/types';
 import { debugBus, emitDebug } from '../../shared/DebugBus';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
+import { getPendingAction } from '../agent/PendingActionTracker';
 import { Session } from '../../shared/SessionManager';
 import { createLogger } from '../../shared/AppLogger';
 import { LLMProvider, MessagePayload, ProviderFactory } from '../../engine/ProviderFactory';
@@ -57,7 +58,7 @@ type SaveExecutionDecision = {
     blocked?: string;
 };
 
-type ExecutionTrace = {
+export interface ExecutionTrace {
     decision: RuntimeDecision;
     confidence: number;
     success: boolean;
@@ -67,7 +68,10 @@ type ExecutionTrace = {
     repairUsed?: boolean;
     repairSuccess?: boolean;
     planSize?: number;
-};
+    reactive?: boolean;
+    pending?: boolean;
+    recoveryAttempt?: number;
+}
 
 export class AgentExecutor {
     private llm: LLMProvider;
@@ -212,7 +216,7 @@ export class AgentExecutor {
             };
 
             this.emitExecutionResult({
-                decision: 'REPAIR_AND_EXECUTE',
+                decision: 'REPAIR_AND_EXECUTE' as any,
                 confidence,
                 success: false,
                 retries: 0,
@@ -220,9 +224,11 @@ export class AgentExecutor {
                 errorType: 'repair',
                 repairUsed: true,
                 repairSuccess: false,
-                planSize: plan.steps.length
+                planSize: plan.steps.length,
+                reactive: session.reactive_state?.hasFailure === true,
+                pending: Boolean(getPendingAction(session))
             });
-            this.recordLearning(input, 'REPAIR_AND_EXECUTE', confidence, false, 'repair', repairResult.repairActions);
+            this.recordLearning(input, 'REPAIR_AND_EXECUTE' as any, confidence, false, session, 'repair', repairResult.repairActions);
             return failure;
         }
 
@@ -718,16 +724,20 @@ export class AgentExecutor {
 
         if (!response.final_answer || !response.final_answer.trim()) {
             this.emitExecutionResult({
-                decision: 'DIRECT_EXECUTION',
+                decision: 'DIRECT_EXECUTION' as any,
                 confidence: confidenceScore || 0,
                 success: false,
                 retries: 0,
                 durationMs: Date.now() - startedAt,
                 errorType: 'direct_execution',
                 repairUsed: false,
-                planSize: 0
+                planSize: 0,
+                reactive: session?.reactive_state?.hasFailure === true,
+                pending: session ? Boolean(getPendingAction(session)) : false
             });
-            this.recordLearning(userInput, 'DIRECT_EXECUTION', confidenceScore || 0, false, 'direct_execution');
+            if (session) {
+                this.recordLearning(userInput, 'DIRECT_EXECUTION' as any, confidenceScore || 0, false, session, 'direct_execution');
+            }
             return {
                 success: false,
                 error: 'LLM nao retornou resposta na execucao direta.'
@@ -735,15 +745,19 @@ export class AgentExecutor {
         }
 
         this.emitExecutionResult({
-            decision: 'DIRECT_EXECUTION',
+            decision: 'DIRECT_EXECUTION' as any,
             confidence: confidenceScore || 0,
             success: true,
             retries: 0,
             durationMs: Date.now() - startedAt,
             repairUsed: false,
-            planSize: 0
+            planSize: 0,
+            reactive: session?.reactive_state?.hasFailure === true,
+            pending: session ? Boolean(getPendingAction(session)) : false
         });
-        this.recordLearning(userInput, 'DIRECT_EXECUTION', confidenceScore || 0, true);
+        if (session) {
+            this.recordLearning(userInput, 'DIRECT_EXECUTION' as any, confidenceScore || 0, true, session);
+        }
 
         return {
             success: true,
@@ -1239,6 +1253,29 @@ Se quiser autorizar, responda:
         const result = await input.runner(input.plan, input.session);
         const errorType = result.success ? undefined : result.error_type || classifyError(result.error || 'execution_failed');
 
+        // ── SINCRONIZAÇÃO COGNITIVA: Refletir resultado técnico no estado de sessão ──
+        if (result.success) {
+            input.session.last_error = undefined;
+            input.session.reactive_state = {
+                hasFailure: false,
+                resolved: true,
+                attempt: 0,
+                timestamp: Date.now()
+            };
+        } else {
+            input.session.last_error = result.error;
+            input.session.last_error_type = errorType;
+            input.session.reactive_state = {
+                type: 'failure_recovery',
+                source: 'executor',
+                hasFailure: true,
+                error: result.error,
+                errorType,
+                attempt: (input.session.reactive_state?.attempt || 0) + 1,
+                timestamp: Date.now()
+            };
+        }
+
         this.emitExecutionResult({
             decision: input.decision,
             confidence: input.confidence,
@@ -1248,9 +1285,12 @@ Se quiser autorizar, responda:
             errorType,
             repairUsed: input.repairUsed,
             repairSuccess: input.repairUsed ? result.success : undefined,
-            planSize: input.plan.steps.length
+            planSize: input.plan.steps.length,
+            reactive: input.session.reactive_state?.hasFailure === true,
+            pending: Boolean(getPendingAction(input.session)),
+            recoveryAttempt: input.session.reactive_state?.attempt
         });
-        this.recordLearning(input.input, input.decision, input.confidence, result.success, errorType, input.repairActions);
+        this.recordLearning(input.input, input.decision, input.confidence, result.success, input.session, errorType, input.repairActions);
 
         return result;
     }
@@ -1264,16 +1304,26 @@ Se quiser autorizar, responda:
         decision: RuntimeDecision,
         confidence: number,
         success: boolean,
+        session: Session,
         errorType?: string,
         repairActions?: string[]
     ) {
+        const reactive = session.reactive_state;
+        const reducedReactive = reactive ? {
+            hasFailure: reactive.hasFailure,
+            errorType: reactive.errorType || errorType,
+            attempt: reactive.attempt,
+            resolved: reactive.resolved
+        } : undefined;
+
         pushLearningRecord({
             inputHash: hashLearningInput(input),
             decision,
             confidence,
             success,
             errorType,
-            repairActions
+            repairActions,
+            reactiveState: reducedReactive
         });
     }
 

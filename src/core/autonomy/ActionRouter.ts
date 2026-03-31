@@ -85,7 +85,7 @@ export class ActionRouter {
         const normalizedInput = input.toLowerCase();
 
         // 1. Detectar Subtipo
-        const subtype = this.detectSubtype(normalizedInput);
+        let subtype = this.detectSubtype(normalizedInput);
 
         // 2. Detectar Natureza (Informação vs Execução)
         const nature = this.detectTaskNature(normalizedInput);
@@ -99,18 +99,26 @@ export class ActionRouter {
 
         const infoTypes: TaskType[] = ['content_generation', 'information_request', 'conversation', 'data_analysis'];
 
-        if (!requiresTool && (infoTypes.includes(taskType as TaskType) || nature === TaskNature.INFORMATIVE)) {
+        const isSelfQuery = /sabe\s+fazer|consegue|pode\s+ajudar|skills|tools|suporte|expert/i.test(normalizedInput);
+
+        if (isSelfQuery) {
+            route = ExecutionRoute.TOOL_LOOP;
+            confidence = 1.0;
+            subtype = IntentSubtype.COMMAND; // Evita bloqueio pelo DecisionEngine (legacy guard 'doubt' → ASK)
+        } else if (!requiresTool && (infoTypes.includes(taskType as TaskType) || nature === TaskNature.INFORMATIVE)) {
             route = ExecutionRoute.DIRECT_LLM;
             confidence = (taskType === 'conversation' || taskType === 'information_request') ? 1.0 : 0.95;
         }
 
-        // 5. Ajustar confiança baseada no subtipo
-        if (subtype === IntentSubtype.SUGGESTION) {
-            confidence *= 0.8; // Reduz confiança para sugestões
-        } else if (subtype === IntentSubtype.DOUBT) {
-            confidence *= 0.6; // Reduz confiança para dúvidas
-        } else if (subtype === IntentSubtype.UNCERTAIN && taskType !== 'conversation') {
-            confidence *= 0.5; // Reduz ainda mais para incertos (exceto conversação)
+        // 5. Ajustar confiança baseada no subtipo (Garantindo que self-queries não sejam penalizadas)
+        if (!isSelfQuery) {
+            if (subtype === IntentSubtype.SUGGESTION) {
+                confidence *= 0.8;
+            } else if (subtype === IntentSubtype.DOUBT) {
+                confidence *= 0.6;
+            } else if (subtype === IntentSubtype.UNCERTAIN && taskType !== 'conversation') {
+                confidence *= 0.5;
+            }
         }
 
         const decision: RouteDecision = { route, subtype, nature, confidence };

@@ -14,12 +14,16 @@ export interface ExecutionPlan {
     steps: PlanStep[];
 }
 
-export interface PlannerDiagnostics {
+export interface PlannerSignals {
     parseRecovered: boolean;
     validationPassed: boolean;
     hallucinatedToolDetected: boolean;
     sessionConsistency: number;
     fileTargetConfidence: number;
+}
+
+export interface PlannerDiagnostics extends PlannerSignals {
+    /** @deprecated Use ConfidenceScorer instead for final decision score */
     confidenceScore: number;
 }
 

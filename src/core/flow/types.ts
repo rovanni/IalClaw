@@ -36,11 +36,13 @@ export interface FlowState {
     confidence: number;
     context: Record<string, any>;
     lastInput?: string;
+    topic?: string;
 }
 
 export interface FlowResponse {
     answer: string;
     completed: boolean;
     exited: boolean;
+    delegate?: boolean;
     result?: any;
 }

@@ -32,6 +32,7 @@ import {
 import { FlowManager } from './flow/FlowManager';
 import { CognitiveOrchestrator, CognitiveStrategy } from './orchestrator/CognitiveOrchestrator';
 import { getActionRouter } from './autonomy/ActionRouter';
+import { FlowRegistry } from './flow/FlowRegistry';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -78,7 +79,6 @@ export class AgentController {
         this.onboardingService = onboardingService;
         this.flowManager = new FlowManager();
         this.orchestrator = new CognitiveOrchestrator(
-            getActionRouter(),
             this.memory,
             this.flowManager,
             this.loop.getDecisionMemory()
@@ -401,9 +401,26 @@ export class AgentController {
         }
 
         // ── Pending action: (Movido para o Orquestrador) ─────────────────────
-        const pending = getPendingAction(session);
+        let pending = getPendingAction(session);
 
-        this.memory.saveMessage(sessionId, 'user', userQuery);
+        // [CONTINUITY] Detecção de topic shift para limpar ações pendentes
+        if (pending && shouldDropPendingActionOnTopicShift(userQuery)) {
+            logger.info('pending_action_dropped_topic_shift', '[CONTINUITY] Mudança de assunto detectada, limpando ação pendente');
+            clearPendingAction(session, pending.id);
+            pending = null;
+        }
+
+        // ── NOVO: Resiliência de Flow (Registry + Persistence) ───────────────
+        if (session.flow_state && !this.flowManager.isInFlow()) {
+            const flow = FlowRegistry.get(session.flow_state.flowId);
+            if (flow) {
+                logger.info('flow_resumed_from_session', '[FLOW] Resumindo flow da sessão', { flowId: flow.id });
+                this.flowManager.resume(session.flow_state, flow);
+            } else {
+                logger.warn('flow_registry_miss', '[FLOW] FlowId não encontrado no registry, limpando estado órfão', { flowId: session.flow_state.flowId });
+                session.flow_state = undefined;
+            }
+        }
         await this.captureLifecycleMemory(userQuery, {
             sessionId,
             language: session?.language,
@@ -483,168 +500,32 @@ export class AgentController {
             }
         }
 
-        const sessionDirectiveReply = await this.handleSessionDirective(effectiveUserQuery, session);
-        if (sessionDirectiveReply) {
-            this.memory.saveMessage(sessionId, 'assistant', sessionDirectiveReply);
-            logger.info('session_directive_handled', t('log.agent.session_directive_handled'), {
-                duration_ms: Date.now() - startedAt
-            });
-            await this.memory.learn({
-                query: effectiveUserQuery,
-                nodes_used: [],
-                success: true,
-                response: sessionDirectiveReply
-            }).catch(() => { });
-            return sessionDirectiveReply;
-        }
-
         // ── DECISÃO COGNITIVA (ORQUESTRADOR) ──────────────────────────────
+        // O Orquestrador centraliza a precedência: Recovery > Flow > Pending > Normal
         const decision = await this.orchestrator.decide({
             input: effectiveUserQuery,
-            taskType: session?.task_type as TaskType,
-            context: {
-                sessionId,
-                projectId: session?.current_project_id,
-            },
-            isRetry,
-            inputGap, // Passar evidência do input
-            pendingAction: pending
+            sessionId
         });
-
-        if (decision.clearPendingAction && pending) {
-            clearPendingAction(session, pending.id);
-            logger.info('pending_action_cleared', '[COGNITIVE] Ação pendente limpa por mudança de tópico');
-        }
 
         this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {
             strategy: decision.strategy,
             reason: decision.reason
         });
 
-        // ── Execução baseada na estratégia ────────────────────────────────
-        switch (decision.strategy) {
-            case CognitiveStrategy.FLOW: {
-                const flowResponse = await this.flowManager.handleInput(effectiveUserQuery);
-                if (flowResponse.answer) {
-                    this.memory.saveMessage(sessionId, 'assistant', flowResponse.answer);
-                    SessionManager.addToHistory(sessionId, 'assistant', flowResponse.answer);
-                    return flowResponse.answer;
-                }
-                // Se o flow não retornou resposta (ex: foi encerrado), caímos para o loop normal
-                break;
-            }
+        // ── Execução baseada na estratégia (Delegado ao Orquestrador) ──────
+        const execResult = await this.orchestrator.executeDecision(decision, session as any, effectiveUserQuery);
 
-            case CognitiveStrategy.CANCEL_PENDING:
-                if (pending) {
-                    clearPendingAction(session, pending.id);
-                    const declined = t('agent.pending.cancelled');
-                    this.memory.saveMessage(sessionId, 'user', userQuery);
-                    this.memory.saveMessage(sessionId, 'assistant', declined);
-                    await this.memory.learn({
-                        query: userQuery,
-                        nodes_used: [],
-                        success: true,
-                        response: declined
-                    }).catch(() => { });
-                    return declined;
-                }
-                break;
+        if (execResult.answer) {
+            return execResult.answer;
+        }
 
-            case CognitiveStrategy.EXECUTE_PENDING:
-                if (pending && pending.type === 'install_capability' && pending.payload.capability) {
-                    // Se for instalação de capacidade, executar ANTES de processar
-                    session.retry_count = (session.retry_count || 0) + 1;
-                    if (session.retry_count > 2) {
-                        clearPendingAction(session, pending.id);
-                        session.retry_count = 0;
-                        const failMsg = '⚠️ Não foi possível completar após múltiplas tentativas. Tente instalar manualmente.';
-                        this.memory.saveMessage(sessionId, 'assistant', failMsg);
-                        return failMsg;
-                    }
+        if (execResult.retryQuery) {
+            // Se houve uma recuperação reativa (Retry), reinicia o loop com a query corrigida
+            return await this.runConversation(sessionId, execResult.retryQuery, onProgress, shouldStop, true);
+        }
 
-                    logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
-                        capability: pending.payload.capability
-                    });
-
-                    pending.status = 'executing';
-                    const success = await skillManager.ensure(pending.payload.capability as any, 'auto-install');
-
-                    if (!success) {
-                        pending.status = 'awaiting_confirmation';
-                        const failedMsg = t('agent.install.browser.failed');
-                        this.memory.saveMessage(sessionId, 'assistant', failedMsg);
-                        return failedMsg;
-                    }
-
-                    pending.status = 'completed';
-                    pending.completedAt = Date.now();
-
-                    // Persist completion state for execution continuity (REUSANDO LÓGICA DE RETRY)
-                    const originalQuery = pending.payload.originalQuery || (this as any).buildPendingActionQuery(pending);
-                    session.lastCompletedAction = {
-                        type: pending.type,
-                        originalRequest: originalQuery,
-                        completedAt: Date.now()
-                    };
-
-                    clearPendingAction(session, pending.id);
-                    session.retry_count = 0;
-
-                    const retryHint = t('node.continuity.retry_hint', {
-                        capability: pending.payload.capability,
-                        defaultValue: `[SYSTEM: Capability ${pending.payload.capability} was just installed and is now available. Proceed with the original request.] `
-                    });
-                    const retryQuery = `${retryHint}${originalQuery}`;
-
-                    return await this.runConversation(sessionId, retryQuery, onProgress, shouldStop, true);
-                } else if (pending) {
-                    // Outras ações pendentes
-                    pending.status = 'executing';
-                    effectiveUserQuery = (this as any).buildPendingActionQuery(pending);
-                    pending.status = 'completed';
-                    pending.completedAt = Date.now();
-                    clearPendingAction(session, pending.id);
-                }
-                break;
-
-            case CognitiveStrategy.ASK:
-            case CognitiveStrategy.CONFIRM:
-                if (decision.strategy === CognitiveStrategy.CONFIRM && decision.capabilityGap?.hasGap) {
-                    const gap = decision.capabilityGap.gap;
-                    if (gap && session) {
-                        setPendingAction(session, {
-                            type: 'install_capability',
-                            payload: {
-                                capability: gap.resource,
-                                originalQuery: userQuery
-                            }
-                        });
-                        this.logger.info('pending_install_capability_set', t('log.agent.pending_install_capability_set', { capability: gap.resource }), {
-                            capability: gap.resource
-                        });
-
-                        // Retornar prompt de confirmação DIRETAMENTE — NÃO cair no loop LLM
-                        const confirmMsg = decision.reason;
-                        this.memory.saveMessage(sessionId, 'user', userQuery);
-                        this.memory.saveMessage(sessionId, 'assistant', confirmMsg);
-                        SessionManager.addToHistory(sessionId, 'user', userQuery);
-                        SessionManager.addToHistory(sessionId, 'assistant', confirmMsg);
-                        return confirmMsg;
-                    }
-                }
-
-                // [FIX] Garantir que ASK ou CONFIRM (sem gap) retornem imediatamente para evitar queda no loop LLM (simulação)
-                this.memory.saveMessage(sessionId, 'user', userQuery);
-                this.memory.saveMessage(sessionId, 'assistant', decision.reason);
-                SessionManager.addToHistory(sessionId, 'user', userQuery);
-                SessionManager.addToHistory(sessionId, 'assistant', decision.reason);
-                return decision.reason;
-
-            case CognitiveStrategy.LLM:
-            case CognitiveStrategy.TOOL:
-            default:
-                // Segue para o loop unificado
-                break;
+        if (execResult.interrupted) {
+            return t('error.agent.execution_interrupted');
         }
 
         // ── Fluxo unificado (AgentLoop) ───────────────────────────────────

@@ -22,6 +22,14 @@ export interface DecisionRequest {
     context?: string;
 }
 
+export interface ReactiveState {
+    type: 'failure_recovery';
+    classification: 'context' | 'execution' | 'logic' | 'system';
+    failedSteps: StepResult[];
+    options: DecisionOption[];
+    message?: string;
+}
+
 export interface DecisionResult {
     action: 'retry' | 'ignore' | 'adjust' | 'cancel';
     retrySteps?: string[];
@@ -36,14 +44,35 @@ export interface FailureClassification {
 
 export class DecisionHandler {
     private logger = createLogger('DecisionHandler');
-    
+
     // Limite de decisões por tarefa (anti-loop)
     private readonly MAX_DECISIONS = 3;
     private decisionCount: number = 0;
     private lastDecisionType?: 'retry' | 'ignore' | 'adjust' | 'cancel';
 
     /**
+     * Analisa resultado do plano e retorna o estado reativo (ReactiveState).
+     */
+    getReactiveState(planResult: PlanValidationResult): ReactiveState | null {
+        if (planResult.success || this.decisionCount >= this.MAX_DECISIONS) {
+            return null;
+        }
+
+        const classification = this.classifyFailure(planResult);
+        const options = this.getOptionsForFailureType(classification);
+
+        return {
+            type: 'failure_recovery',
+            classification: classification.type,
+            failedSteps: planResult.failedSteps,
+            options: options,
+            message: classification.description
+        };
+    }
+
+    /**
      * Analisa resultado do plano e decide se precisa de intervenção do usuário.
+     * @deprecated Use getReactiveState para unificação cognitiva
      */
     analyzePlanResult(planResult: PlanValidationResult): DecisionRequest | null {
         // ═══════════════════════════════════════════════════════════════════
@@ -65,7 +94,7 @@ export class DecisionHandler {
                 context: 'max_decisions_reached'
             };
         }
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // Sucesso total → sem necessidade de decisão
         // ═══════════════════════════════════════════════════════════════════
@@ -108,16 +137,16 @@ export class DecisionHandler {
      */
     private classifyFailure(planResult: PlanValidationResult): FailureClassification {
         const failedSteps = planResult.failedSteps;
-        
+
         // Verificar se falhas são de contexto (falta de input)
-        const contextFailures = failedSteps.filter(f => 
-            f.error?.includes('context') || 
+        const contextFailures = failedSteps.filter(f =>
+            f.error?.includes('context') ||
             f.error?.includes('input') ||
             f.error?.includes('source') ||
             f.error?.includes('arquivo') ||
             f.error?.includes('file')
         );
-        
+
         if (contextFailures.length > 0) {
             return {
                 type: 'context',
@@ -125,7 +154,7 @@ export class DecisionHandler {
                 suggestedAction: 'adjust'
             };
         }
-        
+
         // Verificar se falhas são de execução (comando, tool)
         const executionFailures = failedSteps.filter(f =>
             f.error?.includes('command') ||
@@ -133,7 +162,7 @@ export class DecisionHandler {
             f.error?.includes('exec') ||
             f.error?.includes('timeout')
         );
-        
+
         if (executionFailures.length > 0) {
             return {
                 type: 'execution',
@@ -141,7 +170,7 @@ export class DecisionHandler {
                 suggestedAction: 'retry'
             };
         }
-        
+
         // Verificar se falhas são de sistema
         const systemFailures = failedSteps.filter(f =>
             f.error?.includes('network') ||
@@ -149,7 +178,7 @@ export class DecisionHandler {
             f.error?.includes('permission') ||
             f.error?.includes('memory')
         );
-        
+
         if (systemFailures.length > 0) {
             return {
                 type: 'system',
@@ -157,7 +186,7 @@ export class DecisionHandler {
                 suggestedAction: 'cancel'
             };
         }
-        
+
         // Default: falha de lógica
         return {
             type: 'logic',

@@ -3,6 +3,7 @@ import { createLogger } from '../../../shared/AppLogger';
 
 export class HtmlSlidesFlow implements Flow {
     public id = 'html-slides';
+    public topic = 'slide';
     private logger = createLogger('HtmlSlidesFlow');
 
     public steps: FlowStep[] = [

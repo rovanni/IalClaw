@@ -7,6 +7,12 @@ export type LearningRecord = {
     success: boolean;
     errorType?: string;
     repairActions?: string[];
+    reactiveState?: {
+        hasFailure: boolean;
+        errorType?: string;
+        attempt: number;
+        resolved?: boolean;
+    };
 };
 
 const learningBuffer: LearningRecord[] = [];

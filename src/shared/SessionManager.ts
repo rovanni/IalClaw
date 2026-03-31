@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { Lang } from '../i18n/types';
+import { getPendingAction } from '../core/agent/PendingActionTracker';
+import { FlowState } from '../core/flow/types';
 
 export interface ConversationMessage {
     role: 'user' | 'assistant';
@@ -54,6 +56,8 @@ export interface SessionContext {
         capability: string;
         reason: string;
     };
+    reactive_state?: any; // Estado de recuperação de falhas (ReactiveState)
+    flow_state?: FlowState;
 }
 
 export type Session = SessionContext;
@@ -219,6 +223,11 @@ export class SessionManager {
             }
         }
 
+        // REGRAS DE FLOW: Só limpa se houver falha reativa crítica
+        if (session.reactive_state?.hasFailure) {
+            session.flow_state = undefined;
+        }
+
         return session;
     }
 
@@ -316,6 +325,27 @@ export class SessionManager {
         return sessionMutex.withLock(() => {
             sessionStore.delete(sessionId);
         });
+    }
+
+    /**
+     * Retorna um snapshot semântico do estado cognitivo da sessão.
+     * Centraliza a interpretação de flags soltas para o motor de decisão.
+     */
+    static getCognitiveState(session: SessionContext) {
+        const hasReactiveFailure = session.reactive_state?.hasFailure === true;
+        const pending = getPendingAction(session);
+
+        return {
+            hasPendingAction: Boolean(pending),
+            hasReactiveFailure,
+            lastErrorType: session.last_error_type,
+            projectId: session.current_project_id,
+            attempt: session.reactive_state?.attempt ?? 0,
+            isInRecovery: hasReactiveFailure,
+            isStable: !pending && !hasReactiveFailure,
+            pendingAction: pending,
+            reactiveState: session.reactive_state
+        };
     }
 }
 

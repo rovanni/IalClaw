@@ -14,6 +14,7 @@ import { formatTargetFileBlock, rankFiles, selectWithConfidence } from './fileTa
 import { createLogger } from '../../shared/AppLogger';
 import { buildPlannerFallbackPlan } from './planningRecovery';
 import { computeConfidence, evaluateSessionConsistency } from './plannerDiagnostics';
+import { CognitiveStrategy } from '../orchestrator/CognitiveOrchestrator';
 import { t } from '../../i18n';
 
 export class AgentPlanner {
@@ -48,11 +49,13 @@ export class AgentPlanner {
         const memoryNodes = await this.memory.retrieveWithTraversal(userInput, queryEmbedding, 3);
         const memoryContext = this.buildMemoryContext(memoryNodes);
         const session = SessionManager.getCurrentSession();
-        const workspaceContext = buildWorkspaceContext(session?.current_project_id);
+        const cogState = session ? SessionManager.getCognitiveState(session) : null;
+
+        const workspaceContext = buildWorkspaceContext(cogState?.projectId);
         const workspacePrompt = formatWorkspaceContext(workspaceContext);
         const rankedFiles = rankFiles({
             goal: userInput,
-            error: session?.last_error_type === 'tool_input' && session.last_error ? this.safeParseErrorPayload(session.last_error) : null,
+            error: cogState?.hasReactiveFailure && session?.last_error ? this.safeParseErrorPayload(session.last_error) : null,
             files: workspaceContext
         });
         const fileSelection = selectWithConfidence(rankedFiles);
@@ -60,7 +63,7 @@ export class AgentPlanner {
         const fileTargetConfidence = fileSelection?.confidence ?? 1;
         const sessionConsistency = evaluateSessionConsistency(
             userInput,
-            session?.current_goal,
+            cogState?.pendingAction?.payload?.originalQuery || session?.current_goal,
             Boolean(session?.continue_project_only)
         );
         let parseRecovered = false;
@@ -84,8 +87,8 @@ export class AgentPlanner {
             const templatePlan = await selectedTemplate.build({
                 goal: userInput,
                 provider,
-                hasActiveProject: Boolean(session?.current_project_id),
-                currentProjectId: session?.current_project_id,
+                hasActiveProject: Boolean(cogState?.projectId),
+                currentProjectId: cogState?.projectId,
                 workspaceContext
             });
 
@@ -243,16 +246,17 @@ export class AgentPlanner {
         const strictToolList = toolNames.map(name => `- ${name}`).join('\n');
         const strictToolEnum = toolNames.map(name => `"${name}"`).join(', ');
         const session = SessionManager.getCurrentSession();
+        const cogState = session ? SessionManager.getCognitiveState(session) : null;
 
         let sessionPrompt = '';
-        if (session && (session.current_goal || session.current_project_id)) {
+        if (cogState && (session?.current_goal || cogState.projectId)) {
             sessionPrompt = `
 CONTEXTO DE SESSAO ATUAL (CONTINUIDADE DE TAREFA):
-- Objetivo da Sessao: ${session.current_goal || 'nenhum'}
-- ID do Projeto Ativo: ${session.current_project_id || 'nenhum'}
-- Continuidade estrita: ${session.continue_project_only ? 'sim' : 'nao'}
-- Arquivos ja gerados nesta sessao: ${session.last_artifacts.length > 0 ? session.last_artifacts.join(', ') : 'nenhum'}
-- Ultimo erro observado: ${session.last_error || 'nenhum'}
+- Objetivo da Sessao: ${session?.current_goal || 'nenhum'}
+- ID do Projeto Ativo: ${cogState.projectId || 'nenhum'}
+- Continuidade estrita: ${session?.continue_project_only ? 'sim' : 'nao'}
+- Arquivos ja gerados nesta sessao: ${session?.last_artifacts.length ? session.last_artifacts.join(', ') : 'nenhum'}
+- Ultimo erro observado: ${session?.last_error || 'nenhum'}
 
 ATENCAO A CONTINUIDADE:
 - Se o usuario estiver pedindo algo relacionado a arquivos gerados ou ao objetivo atual, nao reinicie nem mude de dominio.
@@ -262,7 +266,7 @@ ATENCAO A CONTINUIDADE:
 - Se "Continuidade estrita" for "sim", nunca tente criar um novo projeto.
 `;
 
-            if (session.last_error_type === 'tool_input' && session.last_error) {
+            if (cogState.hasReactiveFailure && session?.last_error) {
                 try {
                     const payload = JSON.parse(session.last_error);
                     const issues = Array.isArray(payload.issues)
@@ -437,7 +441,8 @@ INSTRUCAO:
 
     private buildFallbackPlan(userInput: string, reason: string): ExecutionPlan {
         const session = SessionManager.getCurrentSession();
-        const fallbackPlan = buildPlannerFallbackPlan(userInput, Boolean(session?.current_project_id), reason);
+        const cogState = session ? SessionManager.getCognitiveState(session) : null;
+        const fallbackPlan = buildPlannerFallbackPlan(userInput, Boolean(cogState?.projectId), reason);
 
         emitDebug('thought', {
             type: 'thought',

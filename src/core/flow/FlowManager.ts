@@ -1,5 +1,5 @@
-import { Flow, FlowState, FlowResponse, IntentType } from './types';
-import { IntentDetector } from './IntentDetector';
+import { Flow, FlowState, FlowResponse } from './types';
+import { IntentionResolver } from '../agent/IntentionResolver';
 import { createLogger } from '../../shared/AppLogger';
 
 export class FlowManager {
@@ -15,13 +15,14 @@ export class FlowManager {
     /**
      * Starts a new flow.
      */
-    public startFlow(flow: Flow, initialContext: Record<string, any> = {}): string {
+    public startFlow(flow: Flow, initialContext: Record<string, any> = {}, topic?: string): string {
         this.currentFlow = flow;
         this.state = {
             flowId: flow.id,
             stepIndex: 0,
             retryCount: 0,
             confidence: 1.0,
+            topic: topic || flow.id,
             context: { ...initialContext }
         };
 
@@ -39,13 +40,19 @@ export class FlowManager {
             return { answer: '', completed: false, exited: true };
         }
 
-        const intent = IntentDetector.detect(input);
-        const isEscape = IntentDetector.isEscape(input);
+        const match = IntentionResolver.resolve(input);
+        const intent = match.type;
 
         // ═══════════════════════════════════════════════════════════════════
-        // ESCAPE HATCH (Requirements 3)
+        // ESCAPE HATCH (Requirements 3) - Refined: Check topic relation
         // ═══════════════════════════════════════════════════════════════════
-        if (isEscape || intent === 'QUESTION' || intent === 'META') {
+        const topic = this.state.topic || (this.state.context.topic as string) || '';
+        const isRelated = topic && input.toLowerCase().includes(topic.toLowerCase());
+
+        this.logger.info('intent_debug', `Intent: ${intent}, topic: ${topic}, isRelated: ${isRelated}`);
+
+        // STOP ou QUESTION/META não relacionadas causam saída do flow
+        if ((intent === 'STOP' || intent === 'QUESTION' || intent === 'META') && !isRelated) {
             this.logger.info('flow_escaped', `User interrupted flow ${this.currentFlow.id} with intent: ${intent}`);
             this.cancelFlow();
             return { answer: '', completed: false, exited: true };

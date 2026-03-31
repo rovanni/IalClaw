@@ -1,22 +1,26 @@
-import { PlannerDiagnostics } from './types';
+import { PlannerSignals } from './types';
 
-export function computeConfidence(diagnostics: Omit<PlannerDiagnostics, 'confidenceScore'>): number {
+/**
+ * Calcula um score de confiança local baseado nos sinais do planner.
+ * @deprecated Use o ConfidenceScorer centralizado para decisões.
+ */
+export function computeConfidence(signals: PlannerSignals): number {
     let score = 1;
 
-    if (diagnostics.parseRecovered) {
+    if (signals.parseRecovered) {
         score -= 0.2;
     }
 
-    if (!diagnostics.validationPassed) {
+    if (!signals.validationPassed) {
         score -= 0.4;
     }
 
-    if (diagnostics.hallucinatedToolDetected) {
+    if (signals.hallucinatedToolDetected) {
         score -= 0.3;
     }
 
-    score *= clamp01(diagnostics.sessionConsistency);
-    score *= clamp01(diagnostics.fileTargetConfidence);
+    score *= clamp01(signals.sessionConsistency);
+    score *= clamp01(signals.fileTargetConfidence);
 
     return clamp01(score);
 }

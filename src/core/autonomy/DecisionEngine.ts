@@ -12,7 +12,9 @@ export enum AutonomyDecision {
     ASK_TOOL_SELECTION = "ask_tool_selection",   // Intenção clara, mas ferramenta incerta
     ASK_EXECUTION_STRATEGY = "ask_strategy",      // Conflito interno (intenção vs ação)
     EXECUTE_PENDING = "execute_pending",         // Executar ação pendente confirmada
-    CANCEL = "cancel"                            // Cancelar ação pendente
+    CANCEL = "cancel",                           // Cancelar ação pendente
+    RETRY = "retry",                             // Tentar novamente após falha
+    ADJUST = "adjust"                            // Ajustar plano após falha
 }
 
 export enum AutonomyLevel {
@@ -29,14 +31,16 @@ export interface AutonomyContext {
     isDestructive: boolean;   // Ação destrutiva (delete, drop, etc.)?
     isReversible: boolean;     // Ação pode ser revertida?
     confidence?: number;       // Score depreciado (usar full confidence se disponível)
-    aggregatedConfidence?: AggregatedConfidence; // NOVO: Diagnóstico completo
+    aggregatedConfidence?: AggregatedConfidence; // Diagnóstico completo
     autonomyLevel?: AutonomyLevel; // Nível de autonomia global
     intentSubtype?: string;    // command, suggestion, doubt
     route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
     nature?: TaskNature;       // Natureza da tarefa (informativa vs executável)
     capabilityGap?: ResolutionProposal; // Lacuna detectada pelo Resolver
-    pendingAction?: any;       // Ação pendente atual
     suggestedIntent?: any;      // Intenção sugerida pelo IntentDetector
+    cognitiveState?: any;       // NOVO: Snapshot semântico centralizado
+    pendingAction?: any;       // Depreciado: Usar cognitiveState.pendingAction
+    reactiveState?: any;        // Depreciado: Usar cognitiveState.reactiveState
 }
 
 /**
@@ -45,44 +49,12 @@ export interface AutonomyContext {
  */
 export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     const level = ctx.autonomyLevel || AutonomyLevel.BALANCED;
-    const confidence = ctx.aggregatedConfidence?.score ?? ctx.confidence ?? 1.0;
     const diagnostics = ctx.aggregatedConfidence;
+    const confidence = diagnostics?.score ?? ctx.confidence ?? 1.0;
+    const cogState = ctx.cognitiveState;
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🧠 PENDING ACTION CONTINUITY: Decidir baseado no intent detectado
-    // ═══════════════════════════════════════════════════════════════════
-    if (ctx.pendingAction && ctx.suggestedIntent) {
-        const intent = ctx.suggestedIntent.type;
-
-        if (intent === 'execute' || intent === 'continue') {
-            return AutonomyDecision.EXECUTE_PENDING;
-        }
-
-        if (intent === 'stop' || intent === 'cancel') {
-            return AutonomyDecision.CANCEL;
-        }
-
-        if (intent === 'question') {
-            return AutonomyDecision.ASK; // Delegar para o LLM explicar
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🔴 SAFE MODE: Sempre confirmação/pergunta
-    // ═══════════════════════════════════════════════════════════════════
-    if (level === AutonomyLevel.SAFE) {
-        return ctx.hasAllParams ? AutonomyDecision.CONFIRM : AutonomyDecision.ASK;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🔴 ALTO RISCO: Destrutivo ou risco alto → confirmar SEMPRE
-    // ═══════════════════════════════════════════════════════════════════
-    if (ctx.isDestructive || ctx.riskLevel === 'high') {
-        return AutonomyDecision.CONFIRM;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🧠 DIAGNÓSTICO DE INCERTEZA (Confidence Decomposition in Action)
+    // 🧠 1. DIAGNÓSTICO DE INCERTEZA (Confidence Decomposition - MÁXIMA PRIORIDADE)
     // ═══════════════════════════════════════════════════════════════════
     if (diagnostics) {
         // 1. Conflito Interno: Sei o que quer, mas não como fazer (ou vice-versa)
@@ -102,6 +74,49 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
             if (level !== AutonomyLevel.AGGRESSIVE) {
                 return AutonomyDecision.ASK_TOOL_SELECTION;
             }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🧠 2. PENDING ACTION CONTINUITY: Decidir baseado no intent detectado
+    // ═══════════════════════════════════════════════════════════════════
+    const pendingAction = cogState?.pendingAction || ctx.pendingAction;
+    if (pendingAction && ctx.suggestedIntent) {
+        const intent = ctx.suggestedIntent.type;
+
+        if (intent === 'execute' || intent === 'continue') {
+            return AutonomyDecision.EXECUTE_PENDING;
+        }
+
+        if (intent === 'stop' || intent === 'cancel') {
+            return AutonomyDecision.CANCEL;
+        }
+
+        if (intent === 'question') {
+            return AutonomyDecision.ASK; // Delegar para o LLM explicar
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🧠 3. REACTIVE RECOVERY: Decidir baseado no estado de falha anterior
+    // ═══════════════════════════════════════════════════════════════════
+    const hasFailure = cogState?.hasReactiveFailure || ctx.reactiveState?.hasFailure;
+    if (hasFailure && ctx.suggestedIntent) {
+        const intent = ctx.suggestedIntent.type;
+
+        // Se o usuário quer tentar de novo ou continuar após erro
+        if (intent === 'execute' || intent === 'continue' || intent === 'retry' || intent === 'manda ver') {
+            return AutonomyDecision.RETRY;
+        }
+
+        // Se o usuário quer mudar algo ou agir de forma diferente
+        if (intent === 'adjust' || intent === 'modify') {
+            return AutonomyDecision.ADJUST;
+        }
+
+        // Se o usuário quer desistir
+        if (intent === 'stop' || intent === 'cancel') {
+            return AutonomyDecision.CANCEL;
         }
     }
 
@@ -148,9 +163,9 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
         return AutonomyDecision.EXECUTE;
     }
 
-    // 🟡 AMARELO: Risco médio → decidir baseado na confiança (BALANCED)
+    // 🟡 AMARELO: Risco médio → decidir baseado na confiança (BALANCED/SAFE)
     if (ctx.riskLevel === 'medium') {
-        return (confidence >= 0.95) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
+        return (confidence >= 0.90) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
     }
 
     return AutonomyDecision.ASK;
