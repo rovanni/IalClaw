@@ -115,9 +115,24 @@ export class TelegramOutputHandler {
                         chunk_size: chunk.length,
                         attempt: attempt + 1
                     });
-                    break; // Sucesso, sair do retry loop
+                    break; // Sucesso, sair do retry loop do attempt
                 } catch (err: any) {
                     lastError = err;
+
+                    // Se for erro de parse do Telegram (Markdown), tentar novamente IMEDIATAMENTE sem Markdown
+                    if (err.message?.includes('can\'t parse entities') || err.message?.includes('bad request')) {
+                        this.logger.warn('markdown_parse_failed_instant_fallback', 'Markdown parse failed, falling back to plain text', { error: err.message });
+                        try {
+                            await Promise.race([
+                                ctx.reply(chunk),
+                                this.createTimeoutPromise(this.REPLY_TIMEOUT_MS)
+                            ]);
+                            break; // Sucesso no fallback, sai do retry loop do chunk
+                        } catch (fallbackErr: any) {
+                            this.logger.error('instant_fallback_failed', fallbackErr);
+                        }
+                    }
+
                     this.logger.warn('chunk_send_retry', t('log.telegram.output.chunk_retry'), {
                         chunk_index: chunkIndex,
                         attempt: attempt + 1,
@@ -126,14 +141,13 @@ export class TelegramOutputHandler {
                     });
 
                     if (attempt === this.MAX_RETRIES - 1) {
-                        // Última tentativa falhou
                         this.logger.error('chunk_send_failed', err, t('log.telegram.output.chunk_failed'), {
                             chunk_index: chunkIndex,
                             chunk_preview: chunk.substring(0, 100),
                             total_attempts: this.MAX_RETRIES
                         });
 
-                        // Fallback: tentar enviar sem Markdown
+                        // Fallback final: tentar enviar sem Markdown (se ainda não tentou)
                         try {
                             await Promise.race([
                                 ctx.reply(chunk),
@@ -143,7 +157,6 @@ export class TelegramOutputHandler {
                             break;
                         } catch (fallbackErr: any) {
                             this.logger.error('chunk_fallback_failed', fallbackErr, t('log.telegram.output.chunk_fallback_failed'));
-                            // Salvar em arquivo como último recurso
                             await this.saveResponseToFallbackFile(chunk, ctx.chat?.id.toString());
                             throw new Error(t('telegram.output.error.critical_send_failed', { message: lastError?.message }));
                         }

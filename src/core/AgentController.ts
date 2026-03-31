@@ -441,14 +441,14 @@ export class AgentController {
                         clearPendingAction(session, pending.id);
                         session.retry_count = 0;
 
-                        logger.info('execution_continuity_triggered', '[CONTINUITY] Auto-retry após instalação bem-sucedida', {
-                            originalRequest: originalQuery,
+                        // Auto-retry: reprocess original query through full pipeline with context hint
+                        const retryHint = t('node.continuity.retry_hint', {
                             capability: pending.payload.capability,
-                            retry: true
+                            defaultValue: `[SYSTEM: Capability ${pending.payload.capability} was just installed and is now available. Proceed with the original request.] `
                         });
+                        const retryQuery = `${retryHint}${originalQuery}`;
 
-                        // Auto-retry: reprocess original query through full pipeline
-                        return await this.runConversation(sessionId, originalQuery, onProgress, shouldStop, true);
+                        return await this.runConversation(sessionId, retryQuery, onProgress, shouldStop, true);
                     } else {
                         session.retry_count = 0; // Reset para ações não-capability
                         pending.status = 'executing';
@@ -619,7 +619,13 @@ export class AgentController {
                         return confirmMsg;
                     }
                 }
-                break;
+
+                // [FIX] Garantir que ASK ou CONFIRM (sem gap) retornem imediatamente para evitar queda no loop LLM (simulação)
+                this.memory.saveMessage(sessionId, 'user', userQuery);
+                this.memory.saveMessage(sessionId, 'assistant', decision.reason);
+                SessionManager.addToHistory(sessionId, 'user', userQuery);
+                SessionManager.addToHistory(sessionId, 'assistant', decision.reason);
+                return decision.reason;
 
             case CognitiveStrategy.LLM:
             case CognitiveStrategy.TOOL:
