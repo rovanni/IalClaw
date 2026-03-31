@@ -16,6 +16,27 @@ import { createLogger } from '../../shared/AppLogger';
 
 const logger = createLogger('LanguageControlLayer');
 
+export const DEFAULT_LANGUAGE: Lang = (process.env.DEFAULT_LANGUAGE as Lang) || 
+                                       (process.env.APP_LANG as Lang) || 
+                                       'pt-BR';
+
+export type InputSource = 'user' | 'system' | 'internal' | 'unknown';
+
+const INTERNAL_PATTERNS = [
+    '🧠',
+    'Capability Gap',
+    '[LOG]',
+    'instalar skill',
+    'agent.directive.continue',
+    'continuar',
+    'processar'
+];
+
+function isInternalInput(input: string): boolean {
+    const lower = input.toLowerCase();
+    return INTERNAL_PATTERNS.some(pattern => lower.includes(pattern.toLowerCase()));
+}
+
 /** Inputs curtos/ambíguos que NÃO devem alterar o idioma da sessão */
 const SHORT_INPUT_WHITELIST = new Set([
     'ok', 'yes', 'no', 'sim', 'não', 'nao',
@@ -59,15 +80,37 @@ export interface SessionLike {
  * 
  * Prioridade: input > session > default
  * Com proteção anti-flip-flop para inputs curtos/ambíguos.
+ * 
+ * @param input - Texto do input (deve ser o input original do usuário)
+ * @param session - Sessão atual
+ * @param source - Origem do input ('user' | 'system' | 'internal' | 'unknown')
  */
-export function resolveLanguage(input: string, session?: SessionLike | null): LanguageResolution {
+export function resolveLanguage(input: string, session?: SessionLike | null, source: InputSource = 'unknown'): LanguageResolution {
     const trimmed = input.trim();
     const normalized = trimmed.toLowerCase();
     const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
 
+    // ── Guard: bloquear inputs não-originais do usuário ─────────────────
+    if (source !== 'user' || isInternalInput(input)) {
+        const lang = session?.language ?? DEFAULT_LANGUAGE;
+        if (source !== 'user') {
+            logger.info('language_skipped_non_user_input', '[LCL] Input não-originado do usuário — idioma preservado', {
+                source,
+                input_preview: trimmed.slice(0, 30),
+                preserved_lang: lang
+            });
+        } else {
+            logger.info('language_skipped_internal_pattern', '[LCL] Input interno detectado — idioma preservado', {
+                input_preview: trimmed.slice(0, 30),
+                preserved_lang: lang
+            });
+        }
+        return { lang, detectedFromInput: false, confidence: 0 };
+    }
+
     // ── Guard: inputs curtos/confirmações NÃO alteram idioma ────────────
     if (SHORT_INPUT_WHITELIST.has(normalized) || wordCount < MIN_WORDS_FOR_DETECTION) {
-        const lang = session?.language ?? 'pt-BR';
+        const lang = session?.language ?? DEFAULT_LANGUAGE;
         logger.info('language_short_input_preserved', '[LCL] Input curto/ambíguo — idioma preservado', {
             input: trimmed.slice(0, 30),
             preserved_lang: lang
@@ -106,7 +149,7 @@ export function resolveLanguage(input: string, session?: SessionLike | null): La
     }
 
     // ── Fallback: sessão ou default ────────────────────────────────────
-    const lang = session?.language ?? 'pt-BR';
+    const lang = session?.language ?? DEFAULT_LANGUAGE;
     return { lang, detectedFromInput: false, confidence: 0 };
 }
 

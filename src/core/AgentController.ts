@@ -17,7 +17,7 @@ import { emitDebug } from '../shared/DebugBus';
 // Removidos duplicados, unificados no import da linha 3
 import { detectLanguage, setLanguage, t, withLanguage } from '../i18n';
 import { Lang } from '../i18n/types';
-import { resolveLanguage, buildLanguageDirective } from './language/LanguageControlLayer';
+import { resolveLanguage, buildLanguageDirective, InputSource } from './language/LanguageControlLayer';
 import { TaskType } from './agent/TaskClassifier';
 import { OnboardingService } from '../services/OnboardingService';
 import {
@@ -344,7 +344,7 @@ export class AgentController {
         }
 
         let effectiveUserQuery = userQuery;
-        this.resolveSessionLanguage(userQuery, session);
+        this.resolveSessionLanguage(userQuery, session, 'user');
 
         // Guard: evitar retry sem contexto válido (edge-case de dupla execução)
         if (isRetry && !session.lastCompletedAction) {
@@ -698,7 +698,7 @@ export class AgentController {
         const assistantName = this.getAssistantName(sessionId);
 
         // ── LANGUAGE CONTROL LAYER ──────────────────────────────────────
-        const langResolution = resolveLanguage(effectiveUserQuery, session);
+        const langResolution = resolveLanguage(userQuery, session, 'user');
         const languageDirective = buildLanguageDirective(langResolution.lang);
         this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt', {
             lang: langResolution.lang,
@@ -864,7 +864,7 @@ Nao peca confirmacao redundante.
         const assistantName = this.getAssistantName(sessionId);
 
         // ── LANGUAGE CONTROL LAYER (Skill Flow) ────────────────────────
-        const skillLangResolution = resolveLanguage(originalQuery, SessionManager.getCurrentSession());
+        const skillLangResolution = resolveLanguage(originalQuery, SessionManager.getCurrentSession(), 'user');
         const skillLanguageDirective = buildLanguageDirective(skillLangResolution.lang);
         this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt (skill)', {
             lang: skillLangResolution.lang,
@@ -1111,8 +1111,8 @@ Nao peca confirmacao redundante.
             && normalizedQuery.includes('puppeteer');
     }
 
-    private resolveSessionLanguage(input: string, session?: ReturnType<typeof SessionManager.getCurrentSession>): Lang {
-        const resolution = resolveLanguage(input, session);
+    private resolveSessionLanguage(input: string, session?: ReturnType<typeof SessionManager.getCurrentSession>, source: InputSource = 'unknown'): Lang {
+        const resolution = resolveLanguage(input, session, source);
         setLanguage(resolution.lang);
         return resolution.lang;
     }
