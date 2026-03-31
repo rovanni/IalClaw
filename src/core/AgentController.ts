@@ -125,6 +125,15 @@ export class AgentController {
             return SessionManager.runWithSession(conversationId, async () => {
                 const progress = this.createTelegramProgressTracker(ctx);
                 let answer: string | null = null;
+                const session = SessionManager.getCurrentSession();
+
+                // Propagate capability gap signal to session (transient evidence)
+                if (session && !session.last_input_gap && payload.capability_gap) {
+                    session.last_input_gap = payload.capability_gap;
+                    logger.info('capability_gap_signaled', '[COGNITIVE] Sinal de capability gap recebido no input', {
+                        capability: payload.capability_gap.capability
+                    });
+                }
 
                 try {
                     answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
@@ -345,6 +354,15 @@ export class AgentController {
 
         let effectiveUserQuery = userQuery;
         this.resolveSessionLanguage(userQuery, session, 'user');
+
+        // Extrair e limpar signal de gap (transiente)
+        const inputGap = session.last_input_gap;
+        if (inputGap) {
+            session.last_input_gap = undefined; // Clear immediately to ensure it's transient
+            logger.info('consuming_input_gap_signal', '[COGNITIVE] Consumindo sinal de gap para orquestração', {
+                capability: inputGap.capability
+            });
+        }
 
         // Guard: evitar retry sem contexto válido (edge-case de dupla execução)
         if (isRetry && !session.lastCompletedAction) {
@@ -573,7 +591,8 @@ export class AgentController {
                 sessionId,
                 projectId: session?.current_project_id,
             },
-            isRetry
+            isRetry,
+            inputGap // Passar evidência do input
         });
 
         this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {

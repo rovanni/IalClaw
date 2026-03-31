@@ -30,6 +30,7 @@ export interface CognitiveInput {
         autonomyLevel?: AutonomyLevel;
     };
     isRetry?: boolean;
+    inputGap?: { capability: string; reason: string };
 }
 
 export interface CognitiveDecision {
@@ -94,10 +95,11 @@ export class CognitiveOrchestrator {
         const isInstalling = pending?.status === 'executing';
         const isRetrying = pending?.status === 'completed' && (currentSession?.retry_count ?? 0) > 0;
         const isExplicitRetry = input.isRetry === true;
+        const inputGap = input.inputGap;
 
         const capabilityGap = (isInstalling || isRetrying || isExplicitRetry)
             ? { hasGap: false, status: 'available' } as any
-            : this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature);
+            : this.capabilityResolver.resolve(text, taskType || null, routeDecision.nature, inputGap);
 
         // 6. Confidence Scorer (Agregação de incerteza com pesos dinâmicos)
         const aggregatedConfidence = this.confidenceScorer.calculate({

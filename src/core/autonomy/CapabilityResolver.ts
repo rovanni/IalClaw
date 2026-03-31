@@ -89,33 +89,70 @@ export class CapabilityResolver {
         'automation': ['python', 'node']
     };
 
-    public resolve(input: string, taskType: TaskType | null, nature: TaskNature): ResolutionProposal {
+    public resolve(
+        input: string,
+        taskType: TaskType | null,
+        nature: TaskNature,
+        signal?: { capability: string; reason: string }
+    ): ResolutionProposal {
         const text = input.toLowerCase();
 
         if (nature === TaskNature.INFORMATIVE) {
             return { hasGap: false, status: CapabilityStatus.AVAILABLE };
         }
 
+        // ── NOVO: Signal Boost (Evidência externa do InputHandler) ──────────
+        // Se temos um sinal explícito, aumentamos a prioridade dessa detecção
+        let signaledTool: string | null = null;
+        if (signal?.capability) {
+            signaledTool = signal.capability;
+            this.logger.info('capability_signal_received', '[RESOLVER] Sinal externo recebido', {
+                capability: signaledTool
+            });
+        }
+
         const category = this.detectTaskCategory(text, taskType);
-        if (!category) {
+
+        // Se não detectou categoria por heurística mas temos um signal, 
+        // tentamos inferir a categoria a partir do signal
+        let effectiveCategory = category;
+        if (!effectiveCategory && signaledTool) {
+            if (signaledTool === 'whisper_transcription' || signaledTool === 'ffmpeg') {
+                effectiveCategory = 'audio_processing';
+            }
+        }
+
+        if (!effectiveCategory && !signaledTool) {
             return { hasGap: false, status: CapabilityStatus.AVAILABLE };
         }
 
-        const requiredTools = this.TASK_TOOL_MAP[category] || [];
+        const requiredTools = effectiveCategory ? (this.TASK_TOOL_MAP[effectiveCategory] || []) : [];
         const missing: string[] = [];
 
+        // Check tools from category
         for (const tool of requiredTools) {
-            if (this.isToolRequired(text, tool)) {
+            if (this.isToolRequired(text, tool) || tool === signaledTool) {
                 if (!this.adapter.isInstalled(tool)) {
                     missing.push(tool);
                 }
             }
         }
 
-        if (missing.length > 0) {
-            const primaryTool = missing[0];
-            const solution = this.adapter.resolveSolution(primaryTool);
+        // Se temos um signal mas ele não estava no MAP ou não foi detectado, 
+        // forçamos a verificação dele se for pertinente
+        if (signaledTool && !missing.includes(signaledTool)) {
+            if (!this.adapter.isInstalled(signaledTool)) {
+                missing.push(signaledTool);
+            }
+        }
 
+        if (missing.length > 0) {
+            // Priorizar a ferramenta sinalizada se estiver na lista de faltantes
+            const primaryTool = (signaledTool && missing.includes(signaledTool))
+                ? signaledTool
+                : missing[0];
+
+            const solution = this.adapter.resolveSolution(primaryTool);
             const suggestions = missing.map(m => this.adapter.resolveSolution(m)?.command).filter(Boolean) as string[];
 
             return {
@@ -123,8 +160,8 @@ export class CapabilityResolver {
                 status: CapabilityStatus.MISSING,
                 gap: {
                     resource: primaryTool,
-                    reason: `Missing tools for ${category}`,
-                    task: category,
+                    reason: signal?.reason || `Missing tools for ${effectiveCategory || 'requested task'}`,
+                    task: effectiveCategory || 'signaled_capability',
                     severity: 'blocking',
                     missing: missing,
                     installSuggestions: suggestions

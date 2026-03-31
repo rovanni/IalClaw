@@ -13,6 +13,10 @@ export type CognitiveInputPayload = {
     source_type: 'text' | 'document' | 'audio';
     requires_audio_reply: boolean;
     hasAudio?: boolean;
+    capability_gap?: {
+        capability: string;
+        reason: string;
+    };
 };
 
 export type OnboardingPayload = {
@@ -185,16 +189,29 @@ export class TelegramInputHandler {
                         filename
                     });
 
-                    // Se não houver Whisper, notificamos o usuário mas mantemos o arquivo salvo
+                    // Se não houver Whisper, sinalizamos a lacuna cognitiva
+                    let capabilityGap;
                     if (!capabilityRegistry.isAvailable('whisper_transcription')) {
                         this.logger.warn('whisper_missing', 'Whisper transcription capability is not available (file saved but processing limited)');
+                        capabilityGap = {
+                            capability: 'whisper_transcription',
+                            reason: 'Whisper is required for audio transcription but is not installed.'
+                        };
+                    } else if (!capabilityRegistry.isAvailable('ffmpeg')) {
+                        // Opcional: FFmpeg também é fundamental para o processamento de áudio se for converter
+                        this.logger.warn('ffmpeg_missing', 'FFmpeg capability is not available');
+                        capabilityGap = {
+                            capability: 'ffmpeg',
+                            reason: 'FFmpeg is required for audio processing.'
+                        };
                     }
 
                     return {
                         text: `Process please user voice message: ${filename}`,
                         source_type: 'audio',
                         requires_audio_reply: true,
-                        hasAudio: true
+                        hasAudio: true,
+                        capability_gap: capabilityGap
                     };
                 } catch (err: any) {
                     this.logger.error('audio_download_failed', err, 'Failed to download telegram audio');

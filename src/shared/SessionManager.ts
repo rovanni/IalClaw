@@ -49,6 +49,10 @@ export interface SessionContext {
         originalRequest: string;
         completedAt: number;
     };
+    last_input_gap?: {
+        capability: string;
+        reason: string;
+    };
 }
 
 export type Session = SessionContext;
