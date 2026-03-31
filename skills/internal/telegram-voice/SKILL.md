@@ -5,7 +5,7 @@ description: Handle audio messages from Telegram and send voice responses. Trigg
 
 # Telegram Voice Skill
 
-This skill empowers the agent to handle voice-based communication on Telegram. It provides standardized workflows for Speech-to-Text (STT) and Text-to-Speech (TTS) using local Whisper and neural TTS scripts.
+This skill empowers the agent to handle voice-based communication on Telegram. It provides standardized workflows for Speech-to-Text (STT) and Text-to-Speech (TTS) using local Whisper and neural TTS scripts, following the **Multi-Audio Context Pattern**.
 
 ## Core Capabilities
 
@@ -14,50 +14,30 @@ This skill empowers the agent to handle voice-based communication on Telegram. I
 
 ## Workflow: Processing Incoming Audio
 
-When a user sends an audio file (typically `.ogg`), follow these steps:
+When a user sends an audio file, the system persists it in the `TaskContext`. Follow these steps to process it:
 
-1.  **Conversion**: Convert the Telegram `.ogg` file (located at `workspace/audios/inputs/input.ogg`) to a 16kHz mono `.wav` file required by Whisper.
+1.  **Context Selection**: Identify the most recent audio file from the `[ARQUIVOS ANEXADOS]` section in your system prompt. Use the file with the **highest sequence number**.
+    *Note: The actual file path is not in the prompt for brevity, but you can infer it: `workspace/audios/inputs/<chatId>/<filename>`.*
+
+2.  **Conversion**: Convert the selected `.ogg` file to a 16kHz mono `.wav` file required by Whisper.
     ```bash
-    ffmpeg -y -i workspace/audios/inputs/input.ogg -ar 16000 -ac 1 workspace/audios/inputs/input.wav
+    # Substitua [FILE_PATH] pelo caminho real do arquivo identificado
+    ffmpeg -y -i [FILE_PATH] -ar 16000 -ac 1 workspace/audios/inputs/input.wav
     ```
 
-2.  **Transcription**: Use the GPU-optimized Whisper CLI to transcribe the audio.
+3.  **Transcription**: Use the GPU-optimized Whisper CLI to transcribe the audio.
     ```bash
     /home/rover/whisper.cpp/build/bin/whisper-cli -m /home/rover/whisper.cpp/models/ggml-base.bin -f workspace/audios/inputs/input.wav -l pt
     ```
     *Note: The `-l pt` flag ensures transcription in Portuguese.*
 
-3.  **Context Integration**: Use the transcribed text as the user's input for the conversation.
-
-## Instalação e Requisitos
-
-Esta skill requer ferramentas externas instaladas na VPS Linux:
-
-### 1. Whisper (STT)
-O motor de transcrição deve estar em `/home/rover/whisper.cpp/build/bin/whisper-cli`.
-Para instalar:
-```bash
-git clone https://github.com/ggerganov/whisper.cpp.git ~/whisper.cpp
-cd ~/whisper.cpp
-make
-# Baixe um modelo (ex: base)
-bash ./models/download-ggml-model.sh base
-```
-
-### 2. Thorial TTS (TTS)
-O script de voz deve estar em `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`.
-
-### 3. FFmpeg
-Necessário para conversão de formatos:
-```bash
-sudo apt update && sudo apt install ffmpeg -y
-```
+4.  **Context Integration**: Use the transcribed text as the user's input for the conversation.
 
 ## Workflow: Generating Outgoing Audio
 
-When a voice response is requested or appropriate (e.g., responding to a voice message), follow these steps:
+When a voice response is requested or appropriate, follow these steps:
 
-1.  **Speech Generation**: Use the `thorial-tts.sh` script to generate an `.mp3` file in the outputs directory.
+1.  **Speech Generation**: Use the `thorial-tts.sh` script to generate an `.mp3` file.
     ```bash
     /home/rover/.openclaw/workspace/scripts/thorial-tts.sh "[RESPONSE_TEXT]" workspace/audios/outputs/output.mp3
     ```
@@ -68,13 +48,30 @@ When a voice response is requested or appropriate (e.g., responding to a voice m
     ```
     *Default Voice: pt-BR-AntonioNeural (Masculino)*
 
-    ```
-
 3.  **Delivery**: Inform the user that the voice message is located at `/home/rover/.openclaw/workspace/audios/output.ogg`.
 
-## Voice Options
+## Strategy for Execution (Cognitive Pattern)
 
-If the user requests a different voice, adjust the `thorial-tts.sh` parameters if supported, or inform the user of availability:
+> [!IMPORTANT]
+> **Autonomy & Context Awareness**
+> - **Always check for attached files**: If a user says "transcreva isso" or "o que eu disse?", look at the `[ARQUIVOS ANEXADOS]` block.
+> - **Multi-file resilience**: If multiple files are present, assume the user refers to the most recent one unless specified otherwise.
+> - **No Whisper Gate**: Even if Whisper transcription fails or is missing, you have the file path. You can notify the user specifically about the file `[FILENAME]` being saved.
+
+## Instalação e Requisitos
+
+Esta skill requer ferramentas externas instaladas na VPS Linux:
+
+### 1. Whisper (STT)
+O motor de transcrição deve estar em `/home/rover/whisper.cpp/build/bin/whisper-cli`.
+
+### 2. Thorial TTS (TTS)
+O script de voz deve estar em `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`.
+
+### 3. FFmpeg
+Necessário para conversão de formatos (`sudo apt update && sudo apt install ffmpeg -y`).
+
+## Voice Options
 
 | Language | Gender | Voice Name |
 | :--- | :--- | :--- |
@@ -86,19 +83,9 @@ If the user requests a different voice, adjust the `thorial-tts.sh` parameters i
 ## Important Paths
 
 - **Whisper CLI**: `/home/rover/whisper.cpp/build/bin/whisper-cli`
-- **Whisper Models**:
-  - `/home/rover/whisper.cpp/models/ggml-base.bin` (Default, Fast)
-  - `/home/rover/whisper.cpp/models/ggml-small.bin`
-  - `/home/rover/whisper.cpp/models/ggml-medium.bin`
-  - `/home/rover/whisper.cpp/models/ggml-large.bin` (Best quality)
+- **Whisper model (Default)**: `/home/rover/whisper.cpp/models/ggml-base.bin`
 - **TTS Script**: `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`
-  - Uses `node tts-converter.js` internally.
-  - Default: `pt-BR-AntonioNeural`, `--rate -5%`.
 - **Output Audio Dir**: `/home/rover/.openclaw/workspace/audios/`
 
 ## 👤 Autoria
 Criada por **Luciano Rovanni do Nascimento**
-
-## 📫 Conecte-se Comigo  
-[![GitHub](https://img.shields.io/badge/GitHub-rovanni-%23181717?style=flat&logo=github)](https://github.com/rovanni)  
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-%230077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/luciano-rovanni-97856846/)

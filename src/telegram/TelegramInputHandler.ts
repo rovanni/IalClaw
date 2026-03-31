@@ -6,11 +6,13 @@ import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 import { OnboardingService } from '../services/OnboardingService';
 import { capabilityRegistry } from '../capabilities';
+import { getTaskContextManager } from '../core/context/TaskContextManager';
 
 export type CognitiveInputPayload = {
     text: string;
     source_type: 'text' | 'document' | 'audio';
     requires_audio_reply: boolean;
+    hasAudio?: boolean;
 };
 
 export type OnboardingPayload = {
@@ -147,52 +149,60 @@ export class TelegramInputHandler {
 
                 await ctx.replyWithChatAction('record_voice');
 
-                if (!capabilityRegistry.isAvailable('whisper_transcription')) {
-                    this.logger.warn('whisper_missing', 'Whisper transcription capability is not available');
-
-                    const missingMessage = `
-🧠 **Capability Gap Detected**: Audio Transcription
-
-I understand you sent an audio message, but I currently cannot process it because required dependencies are missing.
-
-**Missing:**
-- **Whisper** (speech-to-text)
-- **FFmpeg** (audio processing)
-
-You can fix this by running:
-\`\`\`bash
-pip install openai-whisper
-sudo apt install ffmpeg
-\`\`\`
-
-Or just say: "**install audio support**" and I will try to handle it for you.
-`;
-                    return {
-                        text: missingMessage,
-                        source_type: 'audio',
-                        requires_audio_reply: false
-                    };
-                }
-
                 try {
-                    const fileName = ctx.message.voice ? 'voice_input.ogg' : 'audio_input.ogg';
-                    const destPath = path.join(process.cwd(), 'workspace', 'audios', 'inputs', fileName);
+                    const timestamp = Date.now();
+                    const random = Math.floor(Math.random() * 10000);
+                    const fileExt = ctx.message.voice ? 'ogg' : (audioData as any).file_name?.split('.').pop() || 'ogg';
+                    const filename = `${timestamp}_${random}.${fileExt}`;
+                    const destDir = path.join(process.cwd(), 'workspace', 'audios', 'inputs', String(chatId));
+                    const destPath = path.join(destDir, filename);
+
+                    this.logger.info('audio_download_started', 'Starting audio download from Telegram', {
+                        chatId,
+                        file_id: audioData.file_id,
+                        destPath
+                    });
+
                     await this.downloadTelegramFile(ctx, audioData.file_id, destPath);
 
-                    this.logger.info('audio_downloaded', 'Audio downloaded successfully', { path: destPath });
+                    this.logger.info('audio_saved', 'Audio saved successfully to workspace', {
+                        chatId,
+                        path: destPath,
+                        filename
+                    });
+
+                    // Persistir no contexto da tarefa
+                    getTaskContextManager().addFile(String(chatId), {
+                        type: 'audio',
+                        path: destPath,
+                        filename: filename,
+                        createdAt: timestamp,
+                        source: 'telegram'
+                    });
+
+                    this.logger.info('audio_attached_to_context', 'Audio file reference attached to task context', {
+                        chatId,
+                        filename
+                    });
+
+                    // Se não houver Whisper, notificamos o usuário mas mantemos o arquivo salvo
+                    if (!capabilityRegistry.isAvailable('whisper_transcription')) {
+                        this.logger.warn('whisper_missing', 'Whisper transcription capability is not available (file saved but processing limited)');
+                    }
 
                     return {
-                        text: `Process please user voice message at workspace/audios/inputs/${fileName}`,
+                        text: `Process please user voice message: ${filename}`,
                         source_type: 'audio',
-                        requires_audio_reply: true
+                        requires_audio_reply: true,
+                        hasAudio: true
                     };
                 } catch (err: any) {
                     this.logger.error('audio_download_failed', err, 'Failed to download telegram audio');
-                    // Fallback to placeholder if download fails
                     return {
                         text: t('telegram.input.process_voice_placeholder'),
                         source_type: 'audio',
-                        requires_audio_reply: true
+                        requires_audio_reply: true,
+                        hasAudio: true
                     };
                 }
             }

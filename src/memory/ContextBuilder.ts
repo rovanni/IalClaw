@@ -1,10 +1,12 @@
 import { NodeResult } from './CognitiveMemory';
+import { getTaskContextManager } from '../core/context/TaskContextManager';
 
 export class ContextBuilder {
-    public build(context: { identity: NodeResult[], memory: NodeResult[], policy?: any }): string {
+    public build(context: { identity: NodeResult[], memory: NodeResult[], policy?: any, chatId?: string }): string {
         const identityBlock = this.buildIdentity(this.filterIdentity(context.identity));
         const memoryBlock = this.buildMemory(context.memory);
         const policyBlock = this.injectPolicyHints(context.policy);
+        const filesBlock = context.chatId ? this.buildFilesBlock(context.chatId) : '';
 
         return `
 [IDENTIDADE DO AGENTE]
@@ -36,7 +38,10 @@ REGRAS:
 - Se o usuario perguntar se voce consegue lembrar, responda que SIM
 - Se houver referencia a arquivos, diretorios ou projetos → use tools
 - Se houver continuidade de acao → continue executando
+- Se houver arquivos de audio anexados e nenhuma transcricao for fornecida → use a skill 'telegram-voice'
 - Se nao houver contexto util → responda normalmente
+
+${filesBlock}
 
 MEMORIA:
 ${memoryBlock}
@@ -112,5 +117,28 @@ ${memoryBlock}
             return `- ${n.name}: ${content}`;
         });
         return lines.join('\n');
+    }
+
+    /**
+     * Build a list of the 5 most recent attached files.
+     */
+    private buildFilesBlock(chatId: string): string {
+        const ctx = getTaskContextManager().get(chatId);
+        if (!ctx || !ctx.files || ctx.files.length === 0) {
+            return '';
+        }
+
+        // Ultimos 5 arquivos, ordenados por sequencia (mais recente por ultimo na exibicao)
+        const recentFiles = ctx.files
+            .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+            .slice(-5);
+
+        let block = '\n[ARQUIVOS ANEXADOS (CONTEXTO RECENTE)]\n';
+        for (const file of recentFiles) {
+            block += `${file.sequence}. ${file.filename} (${file.type})\n`;
+        }
+        block += '\nNota: Se for solicitado o processamento de um audio, utilize a skill "telegram-voice" referenciando o arquivo mais recente.\n';
+
+        return block;
     }
 }

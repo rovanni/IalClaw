@@ -1,12 +1,14 @@
 {
     "skill_name": "telegram-voice",
+    "eval_pattern": "multi-audio-context",
     "evals": [
         {
             "id": 1,
-            "prompt": "Eu acabei de enviar um áudio (audio.ogg). Você pode transcrever o que eu disse?",
-            "expected_output": "O modelo deve converter o áudio.ogg para .wav, rodar o whisper-cli e apresentar a transcrição.",
+            "prompt": "Eu acabei de enviar um áudio. Você pode transcrever o que eu disse?",
+            "context": "[ARQUIVOS ANEXADOS]\n1. 1711823738123_4321.ogg (audio)\n",
+            "expected_output": "O modelo deve identificar o arquivo de áudio com a maior sequência (1), converter para .wav e processar com o whisper-cli.",
             "files": [
-                "audio.ogg"
+                "1711823738123_4321.ogg"
             ]
         },
         {
@@ -20,6 +22,16 @@
             "prompt": "Gere uma resposta de voz usando a voz feminina Francisca.",
             "expected_output": "O modelo deve usar a voz pt-BR-FranciscaNeural no script de TTS.",
             "files": []
+        },
+        {
+            "id": 4,
+            "prompt": "O que eu disse no AUDIO MAIS RECENTE?",
+            "context": "[ARQUIVOS ANEXADOS]\n1. 1711823738123_4321.ogg (audio)\n2. 1711823741021_9876.ogg (audio)\n",
+            "expected_output": "O modelo deve selecionar o arquivo 1711823741021_9876.ogg (sequência 2) para transcrição.",
+            "files": [
+                "1711823738123_4321.ogg",
+                "1711823741021_9876.ogg"
+            ]
         }
     ]
 }

@@ -645,7 +645,7 @@ export class AgentController {
 
         const memoryNodes = await this.memory.retrieveWithTraversal(effectiveUserQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
-        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {} });
+        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {}, chatId: sessionId });
 
         // ── Injetar nome do usuário no contexto ────────────────────────────
         const userName = this.getUserName();

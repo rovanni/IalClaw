@@ -9,7 +9,16 @@ import { TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { t } from '../../i18n';
 import { SessionManager } from '../../shared/SessionManager';
+import * as fs from 'fs';
 
+export interface ContextFile {
+    type: 'audio' | 'image' | 'document';
+    path: string;
+    filename: string;
+    createdAt: number;
+    sequence: number;
+    source: string;
+}
 export interface TaskContext {
     type: TaskType;
     data: {
@@ -20,6 +29,8 @@ export interface TaskContext {
     inProgress: boolean;
     lastUpdated: number;
     createdAt: number;
+    files: ContextFile[];
+    fileSequence: number;
 }
 
 export interface AskResult {
@@ -58,7 +69,9 @@ export class TaskContextManager {
             data: {},
             inProgress: false,
             lastUpdated: Date.now(),
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            files: [],
+            fileSequence: 0
         };
         this.contexts.set(chatId, ctx);
         return ctx;
@@ -340,7 +353,54 @@ export class TaskContextManager {
             data: {},
             inProgress: false,
             lastUpdated: Date.now(),
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            files: [],
+            fileSequence: 0
+        });
+    }
+
+    /**
+     * Adiciona um arquivo ao contexto da tarefa.
+     * Implementa limite de 20 arquivos (janela deslizante) com limpeza de disco.
+     */
+    addFile(chatId: string, fileData: Omit<ContextFile, 'sequence'>): void {
+        let ctx = this.get(chatId);
+        if (!ctx) {
+            ctx = this.create(chatId, 'unknown');
+        }
+
+        const MAX_FILES = 20;
+        const sequence = ++ctx.fileSequence;
+        const file: ContextFile = { ...fileData, sequence };
+
+        if (ctx.files.length >= MAX_FILES) {
+            const dumped = ctx.files.shift();
+            if (dumped && dumped.path) {
+                try {
+                    if (fs.existsSync(dumped.path)) {
+                        fs.unlinkSync(dumped.path);
+                        this.logger.info('file_evicted_cleanup', '[CONTEXT] Arquivo antigo removido do disco para liberar espaço', {
+                            path: dumped.path,
+                            sequence: dumped.sequence
+                        });
+                    }
+                } catch (err: any) {
+                    this.logger.error('file_evicted_cleanup_failed', err, '[CONTEXT] Falha ao remover arquivo do disco durante limpeza automática', {
+                        path: dumped.path
+                    });
+                }
+            }
+        }
+
+        ctx.files.push(file);
+        ctx.lastUpdated = Date.now();
+
+        this.logger.info('file_added_to_context', '[CONTEXT] Arquivo anexado ao contexto', {
+            chatId,
+            type: file.type,
+            filename: file.filename,
+            sequence: file.sequence,
+            totalFiles: ctx.files.length
         });
     }
 
