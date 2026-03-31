@@ -54,9 +54,10 @@ export class ActionRouter {
         'listar', 'list', 'ls',
         'converter', 'convert', 'transformar', 'transform',
         'executar', 'run', 'rodar', 'apply', 'aplicar',
-        'instalar', 'install', 'add', 'adicionar',
+        'instalar', 'install', 'add', 'adicionar', 'instale',
         'workspace', 'diretório', 'directory', 'pasta', 'folder', 'arquivo', 'file',
-        'arquivos', 'files', 'pastas', 'folders'
+        'arquivos', 'files', 'pastas', 'folders', 'pacote', 'package', 'dependencia', 'dependency',
+        'library', 'biblioteca'
     ];
 
     /**
@@ -187,7 +188,7 @@ export class ActionRouter {
         const hasStrongVerb = tokens.some(t => this.ACTION_KEYWORDS.includes(t));
 
         // Verificar se há um objeto alvo (arquivo, pasta, etc)
-        const hasObject = /\b(arquivo|file|pasta|folder|diret[óo]rio|arquivos|files|pastas|folders)\b/i.test(input);
+        const hasObject = /\b(arquivo|file|pasta|folder|diret[óo]rio|arquivos|files|pastas|folders|pacote|package|dependencia|dependency|library|biblioteca)\b/i.test(input);
 
         // Se tem verbo forte E objeto → alta probabilidade de ação
         if (hasStrongVerb && hasObject) {

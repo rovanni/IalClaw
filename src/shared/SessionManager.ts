@@ -14,6 +14,7 @@ export interface PendingAction {
         skillName?: string;
         capability?: string;
         originalQuery?: string;
+        context?: Record<string, any>;
     };
     timestamp: number;
     expires_at: number;

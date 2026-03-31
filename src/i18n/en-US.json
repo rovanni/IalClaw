@@ -391,8 +391,8 @@
   "agent.orchestrator.ask.execution_unclear": "I understand the goal, but I'm not sure which tool to use. Could you provide more context?",
   "agent.orchestrator.ask.cognitive_conflict": "I found conflicting ways to handle your request. Could you be more specific about the desired outcome?",
   "agent.orchestrator.ask.low_confidence_fallback": "I'm not entirely sure how to proceed safely. Could you clarify your objective?",
-  "intent.confirm.strong": "^(yes|ok|okay|permission|can|you can|install|go ahead|confirm|confirmed|proceed|continue)$",
-  "intent.confirm.permissive": "\\b(yes|ok|okay|can|install|go ahead|proceed|continue|yes please)\\b",
+  "intent.confirm.strong": "^(yes|ok|okay|permission|can|you can|install|go ahead|confirm|confirmed|proceed|continue|1|y)$",
+  "intent.confirm.permissive": "\\b(yes|ok|okay|can|install|go ahead|proceed|continue|yes please|1|y)\\b",
   "intent.decline.regex": "^(no|cancel|stop|stop it|forget it|dont|do not|nevermind|better not)$",
   "intent.retry.regex": "\\b(try again|retry|repeat|re-run|execute again|re-execute)\\b"
 }

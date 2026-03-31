@@ -400,103 +400,8 @@ export class AgentController {
             return commandResponse;
         }
 
-        // ── Pending action: confirmação explícita dispara ação pendente ─────
-        if (session) {
-            const pending = getPendingAction(session);
-            if (pending) {
-                if (isDecline(userQuery)) {
-                    clearPendingAction(session, pending.id);
-                    const declined = t('agent.pending.cancelled');
-                    this.memory.saveMessage(sessionId, 'user', userQuery);
-                    this.memory.saveMessage(sessionId, 'assistant', declined);
-                    await this.memory.learn({
-                        query: userQuery,
-                        nodes_used: [],
-                        success: true,
-                        response: declined
-                    }).catch(() => { });
-                    return declined;
-                }
-
-                if (isConfirmation(userQuery) || isRetryIntent(userQuery)) {
-                    // Evitar re-execução se já estiver em andamento ou concluído
-                    if (pending.status === 'executing' || pending.status === 'completed') {
-                        logger.warn('pending_action_already_processed', '[ORCHESTRATOR] Ação já está em processamento ou concluída', {
-                            status: pending.status
-                        });
-                        return t('loop.fallback.default_answer');
-                    }
-
-                    // Se for instalação de capacidade, executar ANTES de processar
-                    if (pending.type === 'install_capability' && pending.payload.capability) {
-                        // Safety: prevent infinite retries
-                        session.retry_count = (session.retry_count || 0) + 1;
-                        if (session.retry_count > 2) {
-                            clearPendingAction(session, pending.id);
-                            session.retry_count = 0;
-                            const failMsg = '⚠️ Não foi possível completar após múltiplas tentativas. Tente instalar manualmente.';
-                            this.memory.saveMessage(sessionId, 'user', userQuery);
-                            this.memory.saveMessage(sessionId, 'assistant', failMsg);
-                            return failMsg;
-                        }
-
-                        logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
-                            capability: pending.payload.capability
-                        });
-
-                        pending.status = 'executing';
-                        const success = await skillManager.ensure(pending.payload.capability as any, 'auto-install');
-
-                        if (!success) {
-                            pending.status = 'awaiting_confirmation'; // Permite tentar novamente se falhar
-                            const failedMsg = t('agent.install.browser.failed'); // Mensagem de erro apropriada
-                            this.memory.saveMessage(sessionId, 'assistant', failedMsg);
-                            return failedMsg;
-                        }
-
-                        pending.status = 'completed';
-                        pending.completedAt = Date.now();
-
-                        // Persist completion state for execution continuity
-                        const originalQuery = pending.payload.originalQuery || this.buildPendingActionQuery(pending as any);
-                        session.lastCompletedAction = {
-                            type: pending.type,
-                            originalRequest: originalQuery,
-                            completedAt: Date.now()
-                        };
-
-                        // Clear pending action and reset retry count
-                        clearPendingAction(session, pending.id);
-                        session.retry_count = 0;
-
-                        // Auto-retry: reprocess original query through full pipeline with context hint
-                        const retryHint = t('node.continuity.retry_hint', {
-                            capability: pending.payload.capability,
-                            defaultValue: `[SYSTEM: Capability ${pending.payload.capability} was just installed and is now available. Proceed with the original request.] `
-                        });
-                        const retryQuery = `${retryHint}${originalQuery}`;
-
-                        return await this.runConversation(sessionId, retryQuery, onProgress, shouldStop, true);
-                    } else {
-                        session.retry_count = 0; // Reset para ações não-capability
-                        pending.status = 'executing';
-                        effectiveUserQuery = this.buildPendingActionQuery(pending as any);
-                        pending.status = 'completed';
-                        pending.completedAt = Date.now();
-                    }
-
-                    logger.info('pending_action_confirmed', t('log.agent.pending_action_confirmed'), {
-                        action_type: pending.type,
-                        payload: pending.payload
-                    });
-                } else if (shouldDropPendingActionOnTopicShift(userQuery)) {
-                    clearPendingAction(session, pending.id);
-                    logger.info('pending_action_dropped', t('log.agent.pending_action_dropped'), {
-                        action_type: pending.type
-                    });
-                }
-            }
-        }
+        // ── Pending action: (Movido para o Orquestrador) ─────────────────────
+        const pending = getPendingAction(session);
 
         this.memory.saveMessage(sessionId, 'user', userQuery);
         await this.captureLifecycleMemory(userQuery, {
@@ -602,8 +507,14 @@ export class AgentController {
                 projectId: session?.current_project_id,
             },
             isRetry,
-            inputGap // Passar evidência do input
+            inputGap, // Passar evidência do input
+            pendingAction: pending
         });
+
+        if (decision.clearPendingAction && pending) {
+            clearPendingAction(session, pending.id);
+            logger.info('pending_action_cleared', '[COGNITIVE] Ação pendente limpa por mudança de tópico');
+        }
 
         this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {
             strategy: decision.strategy,
@@ -623,6 +534,79 @@ export class AgentController {
                 break;
             }
 
+            case CognitiveStrategy.CANCEL_PENDING:
+                if (pending) {
+                    clearPendingAction(session, pending.id);
+                    const declined = t('agent.pending.cancelled');
+                    this.memory.saveMessage(sessionId, 'user', userQuery);
+                    this.memory.saveMessage(sessionId, 'assistant', declined);
+                    await this.memory.learn({
+                        query: userQuery,
+                        nodes_used: [],
+                        success: true,
+                        response: declined
+                    }).catch(() => { });
+                    return declined;
+                }
+                break;
+
+            case CognitiveStrategy.EXECUTE_PENDING:
+                if (pending && pending.type === 'install_capability' && pending.payload.capability) {
+                    // Se for instalação de capacidade, executar ANTES de processar
+                    session.retry_count = (session.retry_count || 0) + 1;
+                    if (session.retry_count > 2) {
+                        clearPendingAction(session, pending.id);
+                        session.retry_count = 0;
+                        const failMsg = '⚠️ Não foi possível completar após múltiplas tentativas. Tente instalar manualmente.';
+                        this.memory.saveMessage(sessionId, 'assistant', failMsg);
+                        return failMsg;
+                    }
+
+                    logger.info('executing_pending_installation', t('log.agent.executing_pending_installation'), {
+                        capability: pending.payload.capability
+                    });
+
+                    pending.status = 'executing';
+                    const success = await skillManager.ensure(pending.payload.capability as any, 'auto-install');
+
+                    if (!success) {
+                        pending.status = 'awaiting_confirmation';
+                        const failedMsg = t('agent.install.browser.failed');
+                        this.memory.saveMessage(sessionId, 'assistant', failedMsg);
+                        return failedMsg;
+                    }
+
+                    pending.status = 'completed';
+                    pending.completedAt = Date.now();
+
+                    // Persist completion state for execution continuity (REUSANDO LÓGICA DE RETRY)
+                    const originalQuery = pending.payload.originalQuery || (this as any).buildPendingActionQuery(pending);
+                    session.lastCompletedAction = {
+                        type: pending.type,
+                        originalRequest: originalQuery,
+                        completedAt: Date.now()
+                    };
+
+                    clearPendingAction(session, pending.id);
+                    session.retry_count = 0;
+
+                    const retryHint = t('node.continuity.retry_hint', {
+                        capability: pending.payload.capability,
+                        defaultValue: `[SYSTEM: Capability ${pending.payload.capability} was just installed and is now available. Proceed with the original request.] `
+                    });
+                    const retryQuery = `${retryHint}${originalQuery}`;
+
+                    return await this.runConversation(sessionId, retryQuery, onProgress, shouldStop, true);
+                } else if (pending) {
+                    // Outras ações pendentes
+                    pending.status = 'executing';
+                    effectiveUserQuery = (this as any).buildPendingActionQuery(pending);
+                    pending.status = 'completed';
+                    pending.completedAt = Date.now();
+                    clearPendingAction(session, pending.id);
+                }
+                break;
+
             case CognitiveStrategy.ASK:
             case CognitiveStrategy.CONFIRM:
                 if (decision.strategy === CognitiveStrategy.CONFIRM && decision.capabilityGap?.hasGap) {
@@ -635,7 +619,7 @@ export class AgentController {
                                 originalQuery: userQuery
                             }
                         });
-                        this.logger.info('pending_install_capability_set', t('log.agent.pending_install_capability_set'), {
+                        this.logger.info('pending_install_capability_set', t('log.agent.pending_install_capability_set', { capability: gap.resource }), {
                             capability: gap.resource
                         });
 

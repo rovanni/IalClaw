@@ -59,12 +59,28 @@ function detectExecute(text: string): IntentResult | null {
     return null;
 }
 
+function detectQuestion(text: string): IntentResult | null {
+    const hasQuestionMark = text.includes('?');
+    const questionWords = /^(que|quem|quando|onde|como|por que|por que|pq|o que|qual|quais|quanto|quantos|servir|serve|seguro)\b/i;
+
+    if (hasQuestionMark) {
+        return { type: 'question', confidence: 0.9, raw: text };
+    }
+
+    if (questionWords.test(text) && text.length < 100) {
+        return { type: 'question', confidence: 0.7, raw: text };
+    }
+
+    return null;
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────
 
 const INTENT_REGISTRY: IntentDetectorFn[] = [
     detectContinue,
     detectStop,
     detectExecute,
+    detectQuestion,
 ];
 
 /**

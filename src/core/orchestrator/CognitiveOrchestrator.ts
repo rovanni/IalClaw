@@ -18,7 +18,9 @@ export enum CognitiveStrategy {
     LLM = "llm",
     HYBRID = "hybrid",      // LLM + Tool opcional
     ASK = "ask",
-    CONFIRM = "confirm"
+    CONFIRM = "confirm",
+    EXECUTE_PENDING = "execute_pending",
+    CANCEL_PENDING = "cancel_pending"
 }
 
 export interface CognitiveInput {
@@ -31,6 +33,7 @@ export interface CognitiveInput {
     };
     isRetry?: boolean;
     inputGap?: { capability: string; reason: string };
+    pendingAction?: any; // PendingAction | null
 }
 
 export interface CognitiveDecision {
@@ -44,6 +47,7 @@ export interface CognitiveDecision {
     suggestedTool?: string; // Sugestão para estratégia HYBRID
     capabilityGap?: ResolutionProposal; // Lacuna detectada
     aggregatedConfidence?: AggregatedConfidence; // Score unificado
+    clearPendingAction?: boolean; // Flag para limpar ação pendente (topic shift)
 }
 
 /**
@@ -66,17 +70,28 @@ export class CognitiveOrchestrator {
      * Decide a melhor estratégia para processar o input do usuário.
      */
     async decide(input: CognitiveInput): Promise<CognitiveDecision> {
-        const { input: text, taskType, context } = input;
+        const { input: text, taskType, context, pendingAction } = input;
+
+        // 0. Detecção de Intenção e Topic Shift para Ações Pendentes
+        let suggestedIntent = null;
+        if (pendingAction) {
+            const { detectIntent } = require('../agent/IntentDetector');
+            suggestedIntent = detectIntent(text);
+
+            // Detecção de Topic Shift (se o input for longo ou não tiver relação com as intenções conhecidas)
+            const isTopicShift = !suggestedIntent && text.length > 100;
+            if (isTopicShift) {
+                this.logger.info('topic_shift_detected', '[ORCHESTRATOR] Mudança de assunto detectada, limpando ação pendente');
+                return {
+                    strategy: CognitiveStrategy.LLM,
+                    confidence: 0.9,
+                    reason: "topic_shift",
+                    clearPendingAction: true
+                };
+            }
+        }
 
         // 1. Estado atual do Flow (Prioridade máxima de continuidade)
-        const flowActive = this.flowManager?.isInFlow();
-        if (flowActive) {
-            return {
-                strategy: CognitiveStrategy.FLOW,
-                confidence: 1,
-                reason: "flow_active"
-            };
-        }
 
         // 2. Roteamento de Intenção (Determina se exige ação no mundo real)
         const routeDecision = this.actionRouter.decideRoute(text, taskType || null);
@@ -112,7 +127,7 @@ export class CognitiveOrchestrator {
         // 7. Decision Engine (DECIDE: O que fazer baseado no risco, confiança e gaps)
         const autonomyContext: AutonomyContext = {
             intent: taskType || 'unknown',
-            isContinuation: false, // Refinar com memória se necessário
+            isContinuation: !!pendingAction,
             hasAllParams: true,
             riskLevel: policy.riskLevel as 'low' | 'medium' | 'high',
             isDestructive: policy.isDestructive,
@@ -122,7 +137,9 @@ export class CognitiveOrchestrator {
             intentSubtype: routeDecision.subtype,
             route: routeDecision.route,
             nature: routeDecision.nature,
-            capabilityGap
+            capabilityGap,
+            pendingAction,
+            suggestedIntent
         };
 
         const autonomyDecision = decideAutonomy(autonomyContext);
@@ -170,6 +187,22 @@ export class CognitiveOrchestrator {
                     aggregatedConfidence
                 };
             }
+        }
+
+        if (autonomyDecision === AutonomyDecision.CANCEL) {
+            return {
+                strategy: CognitiveStrategy.CANCEL_PENDING,
+                confidence: 1,
+                reason: "user_cancelled_pending_action"
+            };
+        }
+
+        if (autonomyDecision === AutonomyDecision.EXECUTE_PENDING) {
+            return {
+                strategy: CognitiveStrategy.EXECUTE_PENDING,
+                confidence: 1,
+                reason: "user_confirmed_pending_action"
+            };
         }
 
         if (autonomyDecision === AutonomyDecision.CONFIRM) {

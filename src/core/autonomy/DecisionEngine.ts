@@ -10,7 +10,9 @@ export enum AutonomyDecision {
     CONFIRM = "confirm",           // Confirmar antes de executar
     ASK_CLARIFICATION = "ask_clarification",     // Intenção obscura
     ASK_TOOL_SELECTION = "ask_tool_selection",   // Intenção clara, mas ferramenta incerta
-    ASK_EXECUTION_STRATEGY = "ask_strategy"      // Conflito interno (intenção vs ação)
+    ASK_EXECUTION_STRATEGY = "ask_strategy",      // Conflito interno (intenção vs ação)
+    EXECUTE_PENDING = "execute_pending",         // Executar ação pendente confirmada
+    CANCEL = "cancel"                            // Cancelar ação pendente
 }
 
 export enum AutonomyLevel {
@@ -33,6 +35,8 @@ export interface AutonomyContext {
     route?: ExecutionRoute;    // Rota decidida pelo orquestrador/roteador
     nature?: TaskNature;       // Natureza da tarefa (informativa vs executável)
     capabilityGap?: ResolutionProposal; // Lacuna detectada pelo Resolver
+    pendingAction?: any;       // Ação pendente atual
+    suggestedIntent?: any;      // Intenção sugerida pelo IntentDetector
 }
 
 /**
@@ -43,6 +47,25 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     const level = ctx.autonomyLevel || AutonomyLevel.BALANCED;
     const confidence = ctx.aggregatedConfidence?.score ?? ctx.confidence ?? 1.0;
     const diagnostics = ctx.aggregatedConfidence;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🧠 PENDING ACTION CONTINUITY: Decidir baseado no intent detectado
+    // ═══════════════════════════════════════════════════════════════════
+    if (ctx.pendingAction && ctx.suggestedIntent) {
+        const intent = ctx.suggestedIntent.type;
+
+        if (intent === 'execute' || intent === 'continue') {
+            return AutonomyDecision.EXECUTE_PENDING;
+        }
+
+        if (intent === 'stop' || intent === 'cancel') {
+            return AutonomyDecision.CANCEL;
+        }
+
+        if (intent === 'question') {
+            return AutonomyDecision.ASK; // Delegar para o LLM explicar
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // 🔴 SAFE MODE: Sempre confirmação/pergunta
@@ -110,7 +133,7 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     if (ctx.intentSubtype === 'uncertain' && ctx.intent !== 'conversation') return AutonomyDecision.ASK;
 
     // 🟡 BAIXA CONFIANÇA (Fallback)
-    if (level === AutonomyLevel.BALANCED && confidence < 0.98 && ctx.riskLevel !== 'low') {
+    if (level === AutonomyLevel.BALANCED && confidence < 0.90 && ctx.riskLevel !== 'low') {
         if (ctx.route !== ExecutionRoute.DIRECT_LLM) {
             return AutonomyDecision.ASK;
         }
