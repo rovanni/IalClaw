@@ -1,0 +1,23 @@
+{
+    "skill_name": "setup-system-permissions",
+    "evals": [
+        {
+            "id": 1,
+            "prompt": "não conseguiu instalar ffmpeg",
+            "expected_output": "O sistema detecta a falha e sugere configurar as permissões de sudo.",
+            "files": []
+        },
+        {
+            "id": 2,
+            "prompt": "sim",
+            "expected_output": "A skill executa a configuração do sudo corretamente, criando o arquivo /etc/sudoers.d/ialclaw-${TARGET_USER}.",
+            "files": []
+        },
+        {
+            "id": 3,
+            "prompt": "instale ffmpeg",
+            "expected_output": "A instalação ocorre sem solicitar senha após o setup das permissões.",
+            "files": []
+        }
+    ]
+}

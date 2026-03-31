@@ -10,6 +10,7 @@ import { CapabilityResolver, ResolutionProposal } from '../autonomy/CapabilityRe
 import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceScorer';
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager } from '../../shared/SessionManager';
+import { t } from '../../i18n';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -173,7 +174,12 @@ export class CognitiveOrchestrator {
             let reasoning = capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation";
 
             if (capabilityGap.hasGap) {
-                reasoning = `
+                if (capabilityGap.gap?.resource === 'sudo_permissions') {
+                    reasoning = t('agent.confirm.sudo_permissions', {
+                        defaultValue: "Percebi que o comando falhou por falta de permissões de administrador (sudo).\nPosso configurar o acesso não interativo para o apt para que eu consiga completar a tarefa automaticamente. Deseja que eu faça isso?"
+                    });
+                } else {
+                    reasoning = `
 I understand your request, but I currently lack the capability to execute it.
 
 Instead of failing silently, I can:
@@ -183,6 +189,7 @@ Instead of failing silently, I can:
 
 Would you like me to install the required dependencies (${capabilityGap.gap?.resource}) automatically?
 `;
+                }
             }
 
             return {

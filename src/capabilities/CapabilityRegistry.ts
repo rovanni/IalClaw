@@ -7,7 +7,8 @@ export type Capability =
     | 'test_runner'
     | 'whisper_transcription'
     | 'tts_generation'
-    | 'ffmpeg';
+    | 'ffmpeg'
+    | 'sudo_permissions';
 
 export interface CapabilityState {
     available: boolean;

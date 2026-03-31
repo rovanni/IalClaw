@@ -133,6 +133,30 @@ export class CapabilityResolver {
             };
         }
 
+        // Detecção de falha de permissão (sudo)
+        const isPermissionError = text.includes('sudo_failed_non_interactive') ||
+            text.includes('password required') ||
+            text.includes('permission denied');
+
+        if (isPermissionError && process.platform !== 'win32') {
+            return {
+                hasGap: true,
+                status: CapabilityStatus.MISSING,
+                gap: {
+                    resource: 'sudo_permissions',
+                    reason: 'Command failed due to sudo requirement in non-interactive mode',
+                    task: 'system_permissions',
+                    severity: 'blocking'
+                },
+                solution: {
+                    type: 'install',
+                    tool: 'sudo_permissions',
+                    command: 'setup-system-permissions',
+                    requiresConfirmation: true
+                }
+            };
+        }
+
         return { hasGap: false, status: CapabilityStatus.AVAILABLE };
     }
 

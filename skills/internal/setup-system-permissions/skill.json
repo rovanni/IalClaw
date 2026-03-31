@@ -1,0 +1,16 @@
+{
+    "name": "setup-system-permissions",
+    "kind": "internal",
+    "trusted": true,
+    "version": "1.0.0",
+    "entry": "SKILL.md",
+    "invocation": {
+        "freeText": [
+            "log.execution.sudo_failed_non_interactive",
+            "password required",
+            "permission denied",
+            "não conseguiu instalar",
+            "erro de sudo"
+        ]
+    }
+}
