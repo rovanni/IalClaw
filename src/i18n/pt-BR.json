@@ -383,5 +383,8 @@
   "skills.marketplace.crypto_tracker.desc": "Rastreamento em tempo real de preços e análise de mercado cripto",
   "skills.marketplace.paxg_monitor.desc": "Monitor específico para PAX Gold e stablecoins lastreadas em ouro",
   "skills.marketplace.defi_analyzer.desc": "Análise completa de protocolos DeFi e yield farming",
-  "skills.marketplace.token_price_alert.desc": "Alertas de preço configuráveis para qualquer criptomoeda"
+  "skills.marketplace.token_price_alert.desc": "Alertas de preço configuráveis para qualquer criptomoeda",
+  "agent.orchestrator.gap.title": "Entendo seu pedido, mas no momento não tenho a capacidade necessária para executá-lo.",
+  "agent.orchestrator.gap.options": "Em vez de falhar silenciosamente, eu posso:\n1. Ajudar você a instalar as ferramentas necessárias\n2. Sugerir uma abordagem alternativa\n3. Guiar você passo a passo",
+  "agent.orchestrator.gap.confirm_install": "Você gostaria que eu instalasse as dependências necessárias ({resource}) automaticamente?"
 }

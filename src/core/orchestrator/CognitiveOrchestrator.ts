@@ -181,16 +181,10 @@ export class CognitiveOrchestrator {
                         defaultValue: "Percebi que o comando falhou por falta de permissões de administrador (sudo).\nPosso configurar o acesso não interativo para o apt para que eu consiga completar a tarefa automaticamente. Deseja que eu faça isso?"
                     });
                 } else {
-                    reasoning = `
-I understand your request, but I currently lack the capability to execute it.
-
-Instead of failing silently, I can:
-1. Help you install the required tools
-2. Suggest an alternative approach
-3. Guide you step-by-step
-
-Would you like me to install the required dependencies (${capabilityGap.gap?.resource}) automatically?
-`;
+                    const title = t('agent.orchestrator.gap.title');
+                    const options = t('agent.orchestrator.gap.options');
+                    const confirm = t('agent.orchestrator.gap.confirm_install', { resource: capabilityGap.gap?.resource });
+                    reasoning = `\n${title}\n\n${options}\n\n${confirm}\n`;
                 }
             }
 

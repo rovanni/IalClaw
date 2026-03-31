@@ -383,5 +383,8 @@
   "onboarding.suggestion.code": "Want me to help with some code in your Workspace?",
   "onboarding.suggestion.research": "Want me to research something new today?",
   "onboarding.suggestion.content": "Need help writing something?",
-  "onboarding.pronto": "✅ Onboarding completed!"
+  "onboarding.pronto": "✅ Onboarding completed!",
+  "agent.orchestrator.gap.title": "I understand your request, but I currently lack the capability to execute it.",
+  "agent.orchestrator.gap.options": "Instead of failing silently, I can:\n1. Help you install the required tools\n2. Suggest an alternative approach\n3. Guide you step-by-step",
+  "agent.orchestrator.gap.confirm_install": "Would you like me to install the required dependencies ({resource}) automatically?"
 }

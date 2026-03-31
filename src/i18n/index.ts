@@ -4,10 +4,10 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { AgentContext, Lang, TranslationCatalog, TranslationDictionary, TranslationParams } from './types';
 
 const SUPPORTED_LANGS: Lang[] = ['pt-BR', 'en-US'];
-const DEFAULT_LANG: Lang = 'pt-BR';
+const DEFAULT_LANG: Lang = (process.env.APP_LANG || process.env.DEFAULT_LANG || 'pt-BR') as Lang;
 const languageScope = new AsyncLocalStorage<Lang>();
 
-let globalLanguage: Lang = DEFAULT_LANG;
+let globalLanguage: Lang = normalizeLang(DEFAULT_LANG);
 
 function loadJsonDictionary(fileName: string): TranslationDictionary {
     const filePath = path.join(__dirname, fileName);
