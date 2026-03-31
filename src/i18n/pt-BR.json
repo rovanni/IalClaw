@@ -386,5 +386,13 @@
   "skills.marketplace.token_price_alert.desc": "Alertas de preço configuráveis para qualquer criptomoeda",
   "agent.orchestrator.gap.title": "Entendo seu pedido, mas no momento não tenho a capacidade necessária para executá-lo.",
   "agent.orchestrator.gap.options": "Em vez de falhar silenciosamente, eu posso:\n1. Ajudar você a instalar as ferramentas necessárias\n2. Sugerir uma abordagem alternativa\n3. Guiar você passo a passo",
-  "agent.orchestrator.gap.confirm_install": "Você gostaria que eu instalasse as dependências necessárias ({resource}) automaticamente?"
+  "agent.orchestrator.gap.confirm_install": "Você gostaria que eu instalasse as dependências necessárias ({resource}) automaticamente?",
+  "agent.orchestrator.ask.intent_unclear": "Desculpe, não entendi bem o seu pedido. Poderia reformular ou dar mais detalhes?",
+  "agent.orchestrator.ask.execution_unclear": "Entendi o que você quer, mas não tenho certeza de qual ferramenta usar para isso. Pode me dar mais contexto?",
+  "agent.orchestrator.ask.cognitive_conflict": "Encontrei abordagens conflitantes para o seu pedido. Poderia ser mais específico sobre o resultado desejado?",
+  "agent.orchestrator.ask.low_confidence_fallback": "Não tenho certeza absoluta de como proceder com segurança. Poderia esclarecer seu objetivo?",
+  "intent.confirm.strong": "^(sim|yes|ok|okay|pode|pode sim|instala|instalar|instale|pode instalar|pode instalar sim|go ahead|manda ver|confirmo|confirmado|pode prosseguir|prosseguir)$",
+  "intent.confirm.permissive": "\\b(sim|yes|ok|instala|instalar|instale|go ahead|prosseguir|pode)\\b",
+  "intent.decline.regex": "^(nao|não|no|cancelar|cancela|cancel|parar|pare|deixa|deixa pra la|deixa pra lá|melhor nao|melhor não)$",
+  "intent.retry.regex": "\\b(tente|tentar|tenta)\\s+(novamente|de novo)\\b|\\b(try again|retry|repetir|repita|re-executar)\\b|\\b(rodar|executar)\\s+novamente\\b"
 }

@@ -1,4 +1,5 @@
 import { PendingAction, SessionContext } from '../../shared/SessionManager';
+import { t } from '../../i18n';
 
 const PENDING_ACTION_TTL_MS = 10 * 60 * 1000; // 10 minutos
 const MAX_PENDING_ACTIONS = 3;
@@ -67,10 +68,10 @@ export function isConfirmation(text: string): boolean {
     if (!normalized || normalized.length > 80) return false;
     if (normalized.includes('?')) return false;
 
-    const strong = /^(sim|yes|ok|okay|pode|pode sim|instala|instalar|instale|pode instalar|pode instalar sim|go ahead|manda ver|confirmo|confirmado|pode prosseguir|prosseguir)$/i;
+    const strong = new RegExp(t('intent.confirm.strong'), 'i');
     if (strong.test(normalized)) return true;
 
-    const permissive = /\b(sim|yes|ok|instala|instalar|instale|go ahead|prosseguir|pode)\b/i;
+    const permissive = new RegExp(t('intent.confirm.permissive'), 'i');
     return permissive.test(normalized);
 }
 
@@ -78,7 +79,16 @@ export function isDecline(text: string): boolean {
     const normalized = normalizeText(text);
     if (!normalized || normalized.length > 80) return false;
 
-    return /^(nao|não|no|cancelar|cancela|cancel|parar|pare|deixa|deixa pra la|deixa pra lá|melhor nao|melhor não)$/i.test(normalized);
+    const regex = new RegExp(t('intent.decline.regex'), 'i');
+    return regex.test(normalized);
+}
+
+export function isRetryIntent(text: string): boolean {
+    const normalized = normalizeText(text);
+    if (!normalized || normalized.length > 80) return false;
+
+    const regex = new RegExp(t('intent.retry.regex'), 'i');
+    return regex.test(normalized);
 }
 
 export function shouldDropPendingActionOnTopicShift(text: string): boolean {

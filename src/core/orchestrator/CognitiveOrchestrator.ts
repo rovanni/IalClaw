@@ -141,10 +141,10 @@ export class CognitiveOrchestrator {
             autonomyDecision === AutonomyDecision.ASK_EXECUTION_STRATEGY) {
 
             const strategyMap: Record<string, string> = {
-                [AutonomyDecision.ASK_CLARIFICATION]: "intent_unclear",
-                [AutonomyDecision.ASK_TOOL_SELECTION]: "execution_unclear",
-                [AutonomyDecision.ASK_EXECUTION_STRATEGY]: "cognitive_conflict",
-                [AutonomyDecision.ASK]: "low_confidence_fallback"
+                [AutonomyDecision.ASK_CLARIFICATION]: t('agent.orchestrator.ask.intent_unclear'),
+                [AutonomyDecision.ASK_TOOL_SELECTION]: t('agent.orchestrator.ask.execution_unclear'),
+                [AutonomyDecision.ASK_EXECUTION_STRATEGY]: t('agent.orchestrator.ask.cognitive_conflict'),
+                [AutonomyDecision.ASK]: t('agent.orchestrator.ask.low_confidence_fallback')
             };
 
             // Override ASK fallback during execution continuity

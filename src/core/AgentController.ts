@@ -25,6 +25,7 @@ import {
     getPendingAction,
     isConfirmation,
     isDecline,
+    isRetryIntent,
     setPendingAction,
     shouldDropPendingActionOnTopicShift
 } from './agent/PendingActionTracker';
@@ -372,6 +373,15 @@ export class AgentController {
             isRetry = false;
         }
 
+        // NOVO: Detecção de intenção manual de retry (ex: "tente novamente")
+        if (!isRetry && isRetryIntent(userQuery) && session.lastCompletedAction) {
+            logger.info('manual_retry_detected', '[CONTINUITY] Detetada intenção manual de retry', {
+                query: userQuery,
+                lastAction: session.lastCompletedAction.type
+            });
+            isRetry = true;
+        }
+
         // ── Roteamento de comandos (antes do LLM) ──────────────────────────
         const commandResponse = this.handleCommand(userQuery, sessionId);
         if (commandResponse) {
@@ -408,7 +418,7 @@ export class AgentController {
                     return declined;
                 }
 
-                if (isConfirmation(userQuery)) {
+                if (isConfirmation(userQuery) || isRetryIntent(userQuery)) {
                     // Evitar re-execução se já estiver em andamento ou concluído
                     if (pending.status === 'executing' || pending.status === 'completed') {
                         logger.warn('pending_action_already_processed', '[ORCHESTRATOR] Ação já está em processamento ou concluída', {
