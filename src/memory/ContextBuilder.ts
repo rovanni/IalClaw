@@ -1,5 +1,5 @@
 import { NodeResult } from './CognitiveMemory';
-import { getTaskContextManager } from '../core/context/TaskContextManager';
+import { SessionManager } from '../shared/SessionManager';
 
 export class ContextBuilder {
     public build(context: { identity: NodeResult[], memory: NodeResult[], policy?: any, chatId?: string }): string {
@@ -123,7 +123,8 @@ ${memoryBlock}
      * Build a list of the 5 most recent attached files.
      */
     private buildFilesBlock(chatId: string): string {
-        const ctx = getTaskContextManager().get(chatId);
+        const session = SessionManager.getSession(chatId);
+        const ctx = session?.task_context;
         if (!ctx || !ctx.files || ctx.files.length === 0) {
             return '';
         }

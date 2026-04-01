@@ -6,7 +6,7 @@ import { createLogger } from '../shared/AppLogger';
 import { t } from '../i18n';
 import { OnboardingService } from '../services/OnboardingService';
 import { capabilityRegistry } from '../capabilities';
-import { getTaskContextManager } from '../core/context/TaskContextManager';
+import { SessionManager } from '../shared/SessionManager';
 
 export type CognitiveInputPayload = {
     text: string;
@@ -175,14 +175,26 @@ export class TelegramInputHandler {
                         filename
                     });
 
-                    // Persistir no contexto da tarefa
-                    getTaskContextManager().addFile(String(chatId), {
+                    // Persistir no contexto da tarefa via SessionManager
+                    const session = SessionManager.getSafeSession(String(chatId));
+                    const removedFile = SessionManager.addTaskFile(session, {
                         type: 'audio',
                         path: destPath,
                         filename: filename,
                         createdAt: timestamp,
                         source: 'telegram'
                     });
+
+                    // Limpeza de disco do arquivo evictado, se houver
+                    if (removedFile && removedFile.path) {
+                        try {
+                            if (fs.existsSync(removedFile.path)) {
+                                fs.unlinkSync(removedFile.path);
+                            }
+                        } catch (err) {
+                            this.logger.error('file_evicted_cleanup_failed', err, 'Falha ao deletar arquivo antigo evictado');
+                        }
+                    }
 
                     this.logger.info('audio_attached_to_context', 'Audio file reference attached to task context', {
                         chatId,

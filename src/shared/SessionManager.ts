@@ -24,6 +24,29 @@ export interface PendingAction {
     completedAt?: number;
 }
 
+export interface ContextFile {
+    type: 'audio' | 'image' | 'document';
+    path: string;
+    filename: string;
+    createdAt: number;
+    sequence: number;
+    source: string;
+}
+
+export interface TaskContextData {
+    active: boolean;
+    type: string;
+    data: {
+        task?: string;
+        source?: string;
+        goal?: string;
+    };
+    lastUpdated: number;
+    createdAt: number;
+    files: ContextFile[];
+    fileSequence: number;
+}
+
 const STM_MAX_MESSAGES = 10; // 5 exchanges
 
 export interface SessionContext {
@@ -58,6 +81,7 @@ export interface SessionContext {
     };
     reactive_state?: any; // Estado de recuperação de falhas (ReactiveState)
     flow_state?: FlowState;
+    task_context?: TaskContextData; // Estado operacional contínuo da tarefa
 }
 
 export type Session = SessionContext;
@@ -232,6 +256,70 @@ export class SessionManager {
     }
 
     /**
+     * Atualiza o TaskContext com informações puramente operacionais.
+     */
+    static updateTaskContext(session: SessionContext, updateData: Partial<TaskContextData>): void {
+        if (!session.task_context) {
+            session.task_context = {
+                active: false,
+                type: 'unknown',
+                data: {},
+                lastUpdated: Date.now(),
+                createdAt: Date.now(),
+                files: [],
+                fileSequence: 0
+            };
+        }
+
+        // Atualiza campos
+        Object.assign(session.task_context, updateData);
+        session.task_context.lastUpdated = Date.now();
+
+        // Sincroniza estado de atividade com pending_actions e ações explícitas
+        // Se a tarefa foi marcada como ativa OU se há ações pendentes, ela está ativa
+        const hasPending = session.pending_actions.length > 0;
+        session.task_context.active = session.task_context.active || hasPending;
+    }
+
+    /**
+     * Adiciona um arquivo ao contexto da tarefa (limita a 20 arquivos).
+     * O cleanup de disco deve ser feto externamente para evitar lock no SessionManager.
+     */
+    static addTaskFile(session: SessionContext, fileData: Omit<ContextFile, 'sequence'>): ContextFile | null {
+        if (!session.task_context) {
+            this.updateTaskContext(session, { active: true });
+        }
+
+        const ctx = session.task_context!;
+        const sequence = ++ctx.fileSequence;
+        const file: ContextFile = { ...fileData, sequence };
+
+        let removedFile: ContextFile | null = null;
+        if (ctx.files.length >= 20) {
+            removedFile = ctx.files.shift() || null;
+        }
+
+        ctx.files.push(file);
+        ctx.lastUpdated = Date.now();
+
+        return removedFile; // Retorna para que o chamador apague do disco
+    }
+
+    /**
+     * Limpa o TaskContext. 
+     * Deve ser chamado em: sucesso final, falha crítica, ou reset forçado.
+     */
+    static clearTaskContext(session: SessionContext): void {
+        if (session.task_context) {
+            session.task_context.active = false;
+            session.task_context.files = [];
+            session.task_context.data = {};
+            session.task_context.type = 'unknown';
+            session.task_context.lastUpdated = Date.now();
+        }
+    }
+
+    /**
      * Cleanup de sessões antigas com lock para evitar remoção durante iteração.
      */
     static cleanupOldSessions(maxAgeMs: number = 3600000): number {
@@ -344,7 +432,8 @@ export class SessionManager {
             isInRecovery: hasReactiveFailure,
             isStable: !pending && !hasReactiveFailure,
             pendingAction: pending,
-            reactiveState: session.reactive_state
+            reactiveState: session.reactive_state,
+            taskContext: session.task_context
         };
     }
 }

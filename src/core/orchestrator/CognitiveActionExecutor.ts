@@ -114,8 +114,9 @@ export class CognitiveActionExecutor {
             const success = await skillManager.ensure(capabilityId as any, 'auto-install');
 
             if (!success) {
-                pending.status = 'awaiting_confirmation';
-                const failedMsg = t('agent.install.browser.failed');
+                clearPendingAction(session, pending.id);
+                session.retry_count = 0;
+                const failedMsg = t('agent.install.browser.failed') || "Não consegui instalar automaticamente. Pode me dar mais contexto ou escolhemos outra abordagem?";
                 this.memory.saveMessage(session.conversation_id, 'assistant', failedMsg);
                 return { answer: failedMsg };
             }

@@ -269,7 +269,7 @@ class OllamaProvider implements LLMProvider {
 
         // Resposta final - não há retry para isso
         return {
-            final_answer: response.message?.content || 'Sem resposta do Ollama.'
+            final_answer: response.message?.content || 'Tive um problema ao processar seu áudio agora. Vou tentar novamente ou posso responder em texto. Deseja que eu continue?'
         };
     }
 

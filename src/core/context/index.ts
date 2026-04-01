@@ -2,8 +2,6 @@
 // Gerenciamento de estado contínuo de tarefa entre mensagens.
 
 export {
-    TaskContextManager,
-    getTaskContextManager,
-    type TaskContext,
+    TaskContextSignals,
     type AskResult
-} from './TaskContextManager';
+} from './TaskContextSignals';

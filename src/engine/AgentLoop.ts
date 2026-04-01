@@ -6,7 +6,7 @@ import { SessionManager } from '../shared/SessionManager';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
-import { getTaskContextManager, TaskContext } from '../core/context';
+import { TaskContextSignals } from '../core/context/TaskContextSignals';
 import { getPlanExecutionValidator, PlanExecutionValidator } from '../core/validation/PlanExecutionValidator';
 import { getDecisionHandler, clearDecisionHandler, DecisionHandler, DecisionRequest } from '../core/validation/DecisionHandler';
 import { StepValidator, ValidationContext } from './StepValidator';
@@ -201,7 +201,6 @@ export class AgentLoop {
     private isContinuation: boolean = false;  // É continuação de tarefa anterior?
 
     // Gerenciamento de contexto contínuo
-    private taskContextManager = getTaskContextManager();
     private planValidator = getPlanExecutionValidator();
     private decisionHandler: DecisionHandler;
     private chatId: string = 'default';
@@ -321,7 +320,6 @@ export class AgentLoop {
         this.currentTaskConfidence = 0;
         this.isContinuation = false;
         this.lastStepResult = '';
-        this.taskContextManager.clearContext(this.chatId || 'default');
 
         // Limpar histórico da sessão se for o padrão (evita vazamento em testes)
         const session = SessionManager.getCurrentSession();
@@ -475,6 +473,17 @@ export class AgentLoop {
         this.logger.info('forced_step_execution', `[EXECUTE] Forçando execução do step: ${step.description} (tool: ${step.tool || 'none'})`);
     }
 
+    private clearTaskContextIfDone(isCriticalFailure: boolean = false): void {
+        const session = SessionManager.getSafeSession(this.chatId);
+        // Não limpa o contexto se houver ações pendentes explícitas (esperando o usuário)
+        if (session.pending_actions.length > 0) {
+            return;
+        }
+
+        SessionManager.clearTaskContext(session);
+        this.logger.info('task_context_cleared', '[CONTEXT] Contexto operacional limpo ' + (isCriticalFailure ? '(falha crítica)' : '(execução finalizada)'));
+    }
+
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string; newMessages: MessagePayload[] }> {
         const session = SessionManager.getCurrentSession();
         this.chatId = session?.conversation_id || 'default';
@@ -483,7 +492,12 @@ export class AgentLoop {
         this.decisionHandler = getDecisionHandler(this.chatId);
 
         try {
-            return await this.runInternal(initialMessages, policy);
+            const result = await this.runInternal(initialMessages, policy);
+            this.clearTaskContextIfDone();
+            return result;
+        } catch (err) {
+            this.clearTaskContextIfDone(true);
+            throw err;
         } finally {
             clearDecisionHandler(this.chatId);
         }
@@ -507,8 +521,12 @@ export class AgentLoop {
         // "O agente não está pensando em continuidade, está reagindo por mensagem."
         // ═══════════════════════════════════════════════════════════════════
 
-        // Verificar se há execução em andamento
-        if (this.taskContextManager.isInProgress(this.chatId)) {
+        // Verificar se há execução em andamento (se há ações pendentes ou task context active)
+        const currentSession = SessionManager.getSafeSession(this.chatId);
+        const cognitiveState = SessionManager.getCognitiveState(currentSession);
+
+        if (cognitiveState.taskContext?.active && !cognitiveState.isStable && !cognitiveState.hasPendingAction) {
+            // Em progresso puramente
             this.logger.warn('task_in_progress', '[CONTEXT] Tarefa em andamento, aguarde');
             return {
                 answer: t('context.task_in_progress'),
@@ -516,24 +534,27 @@ export class AgentLoop {
             };
         }
 
-        // Verificar se contexto é VÁLIDO (recente + relevante)
-        const isContextValid = this.taskContextManager.isContextValid(this.chatId, userInput);
-        const hasActiveTask = this.taskContextManager.hasActiveTask(this.chatId);
+        // Recuperar idade da ultima ação concluída
+        const lastCompletedAgeMs = currentSession.lastCompletedAction ? (Date.now() - currentSession.lastCompletedAction.completedAt) : undefined;
+
+        // Verificar se contexto é VÁLIDO (recente + relevante) usando os Sinais puros
+        const isContextValid = TaskContextSignals.detectContinuation(userInput, cognitiveState.taskContext, lastCompletedAgeMs);
+        const hasActiveTask = cognitiveState.taskContext?.active === true;
         const hasValidPlan = this.executionContext.currentPlan !== null;
 
         // Verificar se última execução foi bem-sucedida
         const lastExecutionFailed = this.executionContext.toolsFailed.size > 0;
 
-        if (isContextValid && hasActiveTask && hasValidPlan && !lastExecutionFailed) {
-            // Contexto válido + tarefa ativa + plano válido + última execução OK → continuação
-            const previousCtx = this.taskContextManager.get(this.chatId);
+        if (isContextValid && (hasActiveTask || hasValidPlan) && !lastExecutionFailed) {
+            // Contexto válido + tarefa ativa/plano válido + última execução OK → continuação
+            const previousCtx = cognitiveState.taskContext;
             this.isContinuation = true;
-            this.currentTaskType = previousCtx?.type || null;
+            this.currentTaskType = previousCtx?.type as TaskType || null;
             this.currentTaskConfidence = 1.0;
 
             this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido com tarefa ativa', {
                 type: previousCtx?.type,
-                hasSource: !!previousCtx?.data.source
+                hasSource: !!previousCtx?.data?.source
             });
         } else {
             // Contexto inválido, sem tarefa ativa, sem plano, ou última execução falhou → nova tarefa
@@ -548,13 +569,28 @@ export class AgentLoop {
         this.ensureMinimalPlan();
 
         // Atualizar contexto com tipo final
-        const taskCtx = this.taskContextManager.update(this.chatId, userInput, this.currentTaskType || 'unknown');
+        const extractedData = TaskContextSignals.extractTaskData(userInput);
+        SessionManager.updateTaskContext(currentSession, {
+            type: this.currentTaskType || 'unknown',
+            data: {
+                ...cognitiveState.taskContext?.data,
+                ...extractedData
+            }
+        });
 
-        // Detectar fonte de conteúdo e adicionar ao contexto
+        // Detectar fonte de conteúdo e adicionar ao contexto explicitamente via data
         const detectedSource = this.detectSource(userInput);
         if (detectedSource) {
-            this.taskContextManager.setSource(this.chatId, detectedSource);
+            SessionManager.updateTaskContext(currentSession, {
+                data: {
+                    ...cognitiveState.taskContext?.data,
+                    source: detectedSource
+                }
+            });
         }
+
+        // Refresh cognitive state pós atualização inicial
+        const updatedCognitiveState = SessionManager.getCognitiveState(currentSession);
 
         // ═══════════════════════════════════════════════════════════════════
         // AUTONOMY ENGINE: Decidir se EXECUTA, PERGUNTA ou CONFIRMA
@@ -566,7 +602,7 @@ export class AgentLoop {
             this.currentTaskType || 'unknown',
             {
                 isContinuation: this.isContinuation,
-                hasAllParams: taskCtx.data.source ? true : this.hasRequiredParams(userInput, this.currentTaskType),
+                hasAllParams: updatedCognitiveState.taskContext?.data?.source ? true : this.hasRequiredParams(userInput, this.currentTaskType),
                 riskLevel: this.detectRiskLevel(this.currentTaskType, userInput),
                 isDestructive: false,
                 isReversible: true,
@@ -668,11 +704,11 @@ export class AgentLoop {
             }
 
             if (userInput.startsWith('/status')) {
-                const ctx = this.taskContextManager.get(this.chatId);
+                const ctx = SessionManager.getSession(this.chatId)?.task_context;
                 return {
                     answer: t('agent.command.status', {
                         sessionId: this.chatId,
-                        project: ctx?.data.source || 'Nenhum',
+                        project: ctx?.data?.source || 'Nenhum',
                         messages: initialMessages.length
                     }),
                     newMessages: []
@@ -888,12 +924,11 @@ export class AgentLoop {
                             }
                         }
 
-                        const loopMsg: MessagePayload = {
-                            role: 'system',
-                            content: `MUDANÇA FORÇADA:_tool=${response.tool_call.name}_repetida_2x._Tente_ferramenta_diferente_ou_mude_estratégia._Plano_atual=${this.executionContext.currentPlan?.goal}`
-                        };
-                        messages.push(loopMsg);
-                        toolRepeatCount = 0;
+                        // UX FIX: Interromper loop infinito de ferramenta e pedir elaboração
+                        const loopAns = "Não consegui avançar com essa ação. Você pode esclarecer o que deseja fazer?";
+                        const loopAnsMsg: MessagePayload = { role: 'assistant', content: loopAns };
+                        newMessages.push(loopAnsMsg);
+                        return { answer: loopAns, newMessages };
                     }
                 } else {
                     lastToolName = response.tool_call.name;
@@ -1198,11 +1233,11 @@ export class AgentLoop {
                     }
 
                     if (consecutiveToolFailures >= 2) {
-                        const fallbackHint: MessagePayload = {
-                            role: 'system',
-                            content: t('loop.system.multiple_tool_failures')
-                        };
-                        messages.push(fallbackHint);
+                        this.logger.warn('multiple_tool_failures_detected', '[LOOP] Detecção de falhas consecutivas de ferramenta');
+                        const failureAns = "Desculpe, encontrei uma falha técnica executando essa ação e não consegui prosseguir. Como prefere continuar?";
+                        const failureAnsMsg: MessagePayload = { role: 'assistant', content: failureAns };
+                        newMessages.push(failureAnsMsg);
+                        return { answer: failureAns, newMessages };
                     }
                     continue;
                 }

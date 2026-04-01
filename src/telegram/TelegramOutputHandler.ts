@@ -14,7 +14,17 @@ export class TelegramOutputHandler {
     private readonly MAX_RETRIES = 3;
     private readonly REPLY_TIMEOUT_MS = 10000; // 10 segundos
 
+    private sanitizeOutput(text: string): string {
+        if (!text) return text;
+        return text
+            .replace(/capabilitygapdetected/gi, "Ainda não tenho suporte completo para essa ação, mas posso tentar uma alternativa.")
+            .replace(/fallback/gi, "")
+            .replace(/Sem resposta do Ollama\.?/gi, "Tive um problema ao processar. Deseja que eu continue?");
+    }
+
     public async sendResponse(ctx: Context, response: string, requiresAudio: boolean = false) {
+        response = this.sanitizeOutput(response);
+
         if (requiresAudio) {
             if (!capabilityRegistry.isAvailable('tts_generation')) {
                 this.logger.warn('tts_missing', 'TTS generation capability is not available');
