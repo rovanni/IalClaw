@@ -128,15 +128,16 @@ export class CognitiveOrchestrator {
         if (signals.route) {
             this.logger.info('signal_route_observed', '[ORCHESTRATOR PASSIVE] RouteAutonomySignal observado', {
                 sessionId,
-                autonomyLevel: signals.route.autonomyLevel,
-                recommendedRoute: signals.route.recommendedRoute
+                recommendedStrategy: signals.route.recommendedStrategy,
+                route: signals.route.route,
+                reason: signals.route.reason
             });
         }
 
         if (signals.failSafe) {
             this.logger.info('signal_failsafe_observed', '[ORCHESTRATOR PASSIVE] FailSafeSignal observado', {
                 sessionId,
-                isActivated: signals.failSafe.isActivated,
+                isActivated: signals.failSafe.activated,
                 trigger: signals.failSafe.trigger
             });
         }
