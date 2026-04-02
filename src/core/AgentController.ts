@@ -84,7 +84,9 @@ export class AgentController {
             this.loop.getDecisionMemory()
         );
         // ETAPA 5 — injeta o Orchestrator no AgentLoop para governança ativa dos signals.
-        this.loop.setOrchestrator(this.orchestrator);
+        if (typeof (this.loop as AgentLoop & { setOrchestrator?: (orchestrator: CognitiveOrchestrator) => void })?.setOrchestrator === 'function') {
+            this.loop.setOrchestrator(this.orchestrator);
+        }
     }
 
     private assertLoopHasProvider(loop: AgentLoop): void {

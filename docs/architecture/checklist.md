@@ -22,6 +22,11 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- **ETAPA 7 IMPLEMENTADA**: hierarquia completa de autoridade no `CognitiveOrchestrator` via `resolveSignalAuthority(context)`.
+- Precedencia ativa e consistente: `FailSafe` > `StopContinue` > `Validation` > `SelfHealing` > delegacao.
+- Resolucao de conflitos aplicada nos 3 pontos cognitivos do loop (`decideRetryWithLlm`, `decideReclassification`, `decidePlanAdjustment`) sem duplicar heuristica.
+- Safe mode mantido em todos os call sites: `finalDecision = orchestratorDecision ?? loopDecision`.
+- Nenhuma regressao de fluxo externo introduzida; sem alteracao de mensagens de usuario e sem alteracao de thresholds.
 - Estabilização estrutural pre-ETAPA 2.4: regex corrompidos no `AgentController` corrigidos (variantes acentuadas + compatibilidade com texto mojibake), sem alterar fluxo.
 - Estabilização estrutural pre-ETAPA 2.4: erros de compilação no `CognitiveOrchestrator` corrigidos com ajustes mínimos de escopo/tipagem (sem alterar heurísticas).
 - Validacao obrigatoria executada: `npx tsc --noEmit` sem erros apos cada bloco de correção.

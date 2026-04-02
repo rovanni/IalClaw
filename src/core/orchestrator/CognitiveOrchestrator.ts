@@ -52,16 +52,18 @@ export interface CognitiveDecision {
     aggregatedConfidence?: AggregatedConfidence;
 }
 
-type SignalAuthorityAction =
-    | 'block_execution'
-    | 'stop_execution'
-    | 'require_retry_or_fix'
-    | 'allow_retry'
-    | 'allow_execution';
-
 type SignalAuthorityDecision = {
-    action: SignalAuthorityAction;
-    overriddenSignals: string[];
+    override?: boolean;
+};
+
+type SignalAuthorityContext = {
+    sessionId: string;
+    type: 'retry' | 'reclassification' | 'plan_adjustment' | 'retry_after_failure' | 'stop_continue' | 'route_autonomy';
+    selfHealing?: SelfHealingSignal;
+    stopContinue?: StopContinueSignal;
+    failSafe?: FailSafeSignal;
+    validation?: StepValidationSignal;
+    route?: RouteAutonomySignal;
 };
 
 type RetryAfterFailureContext = {
@@ -229,6 +231,8 @@ export class CognitiveOrchestrator {
         }
 
         const authorityDecision = this.resolveSignalAuthority({
+            sessionId,
+            type: 'retry_after_failure',
             selfHealing: selfHealingSignal,
             stopContinue: stopSignal,
             failSafe: failSafeSignal,
@@ -236,10 +240,7 @@ export class CognitiveOrchestrator {
             route: this.observedSignals.route
         });
 
-        const authorityOverride =
-            authorityDecision?.action === 'block_execution' || authorityDecision?.action === 'stop_execution'
-                ? false
-                : undefined;
+        const authorityOverride = authorityDecision.override;
 
         const finalDecision = authorityOverride ?? orchestratorDecision;
 
@@ -248,7 +249,7 @@ export class CognitiveOrchestrator {
             sessionId,
             decisionPoint: 'self_healing_retry',
             authorityDecision,
-            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            overriddenSignals: [],
             finalDecision
         });
 
@@ -374,61 +375,42 @@ export class CognitiveOrchestrator {
         }
     }
 
-    public resolveSignalAuthority(
-        context?: {
-            selfHealing?: SelfHealingSignal;
-            stopContinue?: StopContinueSignal;
-            failSafe?: FailSafeSignal;
-            validation?: StepValidationSignal;
-            route?: RouteAutonomySignal;
-        }
-    ): SignalAuthorityDecision | undefined {
-        const selfHealing = context?.selfHealing ?? this.observedSelfHealingSignal;
-        const stopContinue = context?.stopContinue ?? this.observedSignals.stop;
-        const failSafe = context?.failSafe ?? this.observedSignals.failSafe;
-        const validation = context?.validation ?? this.observedSignals.validation;
-        const route = context?.route ?? this.observedSignals.route;
+    public resolveSignalAuthority(context: SignalAuthorityContext): { override?: boolean } {
+        const session = SessionManager.getSession(context.sessionId);
+        const state = SessionManager.getCognitiveState(session) as {
+            failSafe?: { activated?: boolean };
+            stopContinue?: { shouldStop?: boolean };
+        };
+        const signals = this.observedSignals;
 
-        if (failSafe?.activated) {
-            return {
-                action: 'block_execution',
-                overriddenSignals: ['stop_continue', 'validation', 'self_healing', 'route_autonomy']
-            };
-        }
+        const failSafe = context.failSafe ?? signals.failSafe;
+        const stopContinue = context.stopContinue ?? signals.stop;
+        const validation = context.validation ?? signals.validation;
+        const selfHealing = context.selfHealing ?? this.observedSelfHealingSignal;
 
-        if (stopContinue?.shouldStop) {
-            return {
-                action: 'stop_execution',
-                overriddenSignals: ['validation', 'self_healing', 'route_autonomy']
-            };
-        }
-
-        if (validation && !validation.validationPassed) {
-            return {
-                action: 'require_retry_or_fix',
-                overriddenSignals: ['self_healing', 'route_autonomy']
-            };
-        }
-
-        if (selfHealing?.activated) {
-            return {
-                action: 'allow_retry',
-                overriddenSignals: ['route_autonomy']
-            };
-        }
-
-        const routeWantsExecution = !!route && (
-            route.route === ExecutionRoute.DIRECT_LLM ||
-            route.route === ExecutionRoute.TOOL_LOOP
+        const validationFailed = !!validation && (
+            (validation as StepValidationSignal & { valid?: boolean }).valid === false ||
+            validation.validationPassed === false
         );
-        if (routeWantsExecution) {
-            return {
-                action: 'allow_execution',
-                overriddenSignals: []
-            };
+        const selfHealingBlocked = (selfHealing as SelfHealingSignal & { blocked?: boolean } | undefined)?.blocked === true;
+
+        if (state.failSafe?.activated || failSafe?.activated) {
+            return { override: false };
         }
 
-        return undefined;
+        if (state.stopContinue?.shouldStop || stopContinue?.shouldStop) {
+            return { override: false };
+        }
+
+        if (validationFailed) {
+            return { override: false };
+        }
+
+        if (selfHealingBlocked) {
+            return { override: false };
+        }
+
+        return {};
     }
 
     private _reportSignalConflict(
@@ -493,6 +475,8 @@ export class CognitiveOrchestrator {
         }
 
         const authorityDecision = this.resolveSignalAuthority({
+            sessionId,
+            type: 'route_autonomy',
             route: routeSignal,
             failSafe: this.observedSignals.failSafe,
             stopContinue: this.observedSignals.stop,
@@ -501,7 +485,9 @@ export class CognitiveOrchestrator {
         });
 
         let authorityOverride: RouteAutonomySignal | undefined;
-        if (authorityDecision?.action === 'allow_execution') {
+        if (authorityDecision.override === false) {
+            authorityOverride = undefined;
+        } else {
             authorityOverride = routeSignal;
         }
 
@@ -512,7 +498,7 @@ export class CognitiveOrchestrator {
             sessionId,
             decisionPoint: 'route_autonomy',
             authorityDecision,
-            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            overriddenSignals: [],
             finalDecision: finalDecision ? {
                 recommendedStrategy: finalDecision.recommendedStrategy,
                 route: finalDecision.route,
@@ -787,6 +773,8 @@ export class CognitiveOrchestrator {
         const finalDecision = adjustedDecision ?? baseDecision;
 
         const authorityDecision = this.resolveSignalAuthority({
+            sessionId,
+            type: 'stop_continue',
             stopContinue: finalDecision,
             failSafe: this.observedSignals.failSafe,
             validation: this.observedSignals.validation,
@@ -802,7 +790,7 @@ export class CognitiveOrchestrator {
             sessionId,
             decisionPoint: 'stop_continue',
             authorityDecision,
-            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            overriddenSignals: [],
             finalDecision: {
                 shouldStop: authoritativeFinalDecision.shouldStop,
                 reason: authoritativeFinalDecision.reason,
@@ -1058,28 +1046,31 @@ export class CognitiveOrchestrator {
     public decideRetryWithLlm(context: { sessionId: string; signal: LlmRetrySignal }): boolean | undefined {
         const { sessionId, signal } = context;
 
-        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
-        const failSafe = this.observedSignals.failSafe;
-        const stopContinue = this.observedSignals.stop;
+        const authority = this.resolveSignalAuthority({
+            sessionId,
+            type: 'retry'
+        });
 
-        if (failSafe?.activated) {
+        if (authority.override !== undefined) {
+            const failSafe = this.observedSignals.failSafe;
+            const stopContinue = this.observedSignals.stop;
+
+            if (failSafe?.activated) {
             this.logger.info('llm_retry_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] LLM retry bloqueado pelo FailSafe', {
                 sessionId,
                 failSafeTrigger: failSafe.trigger,
                 signal_reason: signal?.reason
             });
-            this._orchestratorAppliedDecisions.llmRetry = signal;
-            return false;
-        }
+            } else if (stopContinue?.shouldStop) {
+                this.logger.info('llm_retry_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] LLM retry bloqueado pelo StopContinue', {
+                    sessionId,
+                    stopReason: stopContinue.reason,
+                    signal_reason: signal?.reason
+                });
+            }
 
-        if (stopContinue?.shouldStop) {
-            this.logger.info('llm_retry_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] LLM retry bloqueado pelo StopContinue', {
-                sessionId,
-                stopReason: stopContinue.reason,
-                signal_reason: signal?.reason
-            });
             this._orchestratorAppliedDecisions.llmRetry = signal;
-            return false;
+            return authority.override;
         }
 
         // Sem bloqueio — delegar ao loop (safe mode).
@@ -1097,28 +1088,31 @@ export class CognitiveOrchestrator {
     public decideReclassification(context: { sessionId: string; signal: ReclassificationSignal }): boolean | undefined {
         const { sessionId, signal } = context;
 
-        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
-        const failSafe = this.observedSignals.failSafe;
-        const stopContinue = this.observedSignals.stop;
+        const authority = this.resolveSignalAuthority({
+            sessionId,
+            type: 'reclassification'
+        });
 
-        if (failSafe?.activated) {
-            this.logger.info('reclassification_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo FailSafe', {
-                sessionId,
-                failSafeTrigger: failSafe.trigger,
-                signal_reason: signal?.reason
-            });
-            this._orchestratorAppliedDecisions.reclassification = signal;
-            return false;
-        }
+        if (authority.override !== undefined) {
+            const failSafe = this.observedSignals.failSafe;
+            const stopContinue = this.observedSignals.stop;
 
-        if (stopContinue?.shouldStop) {
-            this.logger.info('reclassification_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo StopContinue', {
-                sessionId,
-                stopReason: stopContinue.reason,
-                signal_reason: signal?.reason
-            });
+            if (failSafe?.activated) {
+                this.logger.info('reclassification_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo FailSafe', {
+                    sessionId,
+                    failSafeTrigger: failSafe.trigger,
+                    signal_reason: signal?.reason
+                });
+            } else if (stopContinue?.shouldStop) {
+                this.logger.info('reclassification_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo StopContinue', {
+                    sessionId,
+                    stopReason: stopContinue.reason,
+                    signal_reason: signal?.reason
+                });
+            }
+
             this._orchestratorAppliedDecisions.reclassification = signal;
-            return false;
+            return authority.override;
         }
 
         // Sem bloqueio — delegar ao loop (safe mode).
@@ -1136,28 +1130,31 @@ export class CognitiveOrchestrator {
     public decidePlanAdjustment(context: { sessionId: string; signal: PlanAdjustmentSignal }): boolean | undefined {
         const { sessionId, signal } = context;
 
-        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
-        const failSafe = this.observedSignals.failSafe;
-        const stopContinue = this.observedSignals.stop;
+        const authority = this.resolveSignalAuthority({
+            sessionId,
+            type: 'plan_adjustment'
+        });
 
-        if (failSafe?.activated) {
-            this.logger.info('plan_adjustment_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo FailSafe', {
-                sessionId,
-                failSafeTrigger: failSafe.trigger,
-                signal_failedStep: signal?.failedStep
-            });
-            this._orchestratorAppliedDecisions.planAdjustment = signal;
-            return false;
-        }
+        if (authority.override !== undefined) {
+            const failSafe = this.observedSignals.failSafe;
+            const stopContinue = this.observedSignals.stop;
 
-        if (stopContinue?.shouldStop) {
-            this.logger.info('plan_adjustment_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo StopContinue', {
-                sessionId,
-                stopReason: stopContinue.reason,
-                signal_failedStep: signal?.failedStep
-            });
+            if (failSafe?.activated) {
+                this.logger.info('plan_adjustment_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo FailSafe', {
+                    sessionId,
+                    failSafeTrigger: failSafe.trigger,
+                    signal_failedStep: signal?.failedStep
+                });
+            } else if (stopContinue?.shouldStop) {
+                this.logger.info('plan_adjustment_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo StopContinue', {
+                    sessionId,
+                    stopReason: stopContinue.reason,
+                    signal_failedStep: signal?.failedStep
+                });
+            }
+
             this._orchestratorAppliedDecisions.planAdjustment = signal;
-            return false;
+            return authority.override;
         }
 
         // Sem bloqueio — delegar ao loop (safe mode).
