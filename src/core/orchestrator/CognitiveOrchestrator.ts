@@ -13,7 +13,7 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal } from '../../engine/AgentLoop';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal } from '../../engine/AgentLoop';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 
@@ -1044,6 +1044,123 @@ export class CognitiveOrchestrator {
         }
 
         if (taskType === 'data_analysis') return 'crypto-tracker';
+        return undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide whether to retry with LLM based on observed LlmRetrySignal.
+     *
+     * Regras obrigatórias:
+     * - Não recalcular heurística de retry
+     * - Apenas interpretar o signal já produzido pelo AgentLoop
+     * - Safe mode: signal ausente => undefined (AgentLoop permanece decisor)
+     */
+    public decideRetryWithLlm(context: { sessionId: string; signal: LlmRetrySignal }): boolean | undefined {
+        const { sessionId, signal } = context;
+
+        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
+        const failSafe = this.observedSignals.failSafe;
+        const stopContinue = this.observedSignals.stop;
+
+        if (failSafe?.activated) {
+            this.logger.info('llm_retry_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] LLM retry bloqueado pelo FailSafe', {
+                sessionId,
+                failSafeTrigger: failSafe.trigger,
+                signal_reason: signal?.reason
+            });
+            this._orchestratorAppliedDecisions.llmRetry = signal;
+            return false;
+        }
+
+        if (stopContinue?.shouldStop) {
+            this.logger.info('llm_retry_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] LLM retry bloqueado pelo StopContinue', {
+                sessionId,
+                stopReason: stopContinue.reason,
+                signal_reason: signal?.reason
+            });
+            this._orchestratorAppliedDecisions.llmRetry = signal;
+            return false;
+        }
+
+        // Sem bloqueio — delegar ao loop (safe mode).
+        return undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide whether to reclassify task based on observed ReclassificationSignal.
+     *
+     * Regras obrigatórias:
+     * - Não recalcular heurística de reclassificação
+     * - Apenas interpretar o signal já produzido pelo AgentLoop
+     * - Safe mode: signal ausente => undefined (AgentLoop permanece decisor)
+     */
+    public decideReclassification(context: { sessionId: string; signal: ReclassificationSignal }): boolean | undefined {
+        const { sessionId, signal } = context;
+
+        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
+        const failSafe = this.observedSignals.failSafe;
+        const stopContinue = this.observedSignals.stop;
+
+        if (failSafe?.activated) {
+            this.logger.info('reclassification_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo FailSafe', {
+                sessionId,
+                failSafeTrigger: failSafe.trigger,
+                signal_reason: signal?.reason
+            });
+            this._orchestratorAppliedDecisions.reclassification = signal;
+            return false;
+        }
+
+        if (stopContinue?.shouldStop) {
+            this.logger.info('reclassification_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Reclassificação bloqueada pelo StopContinue', {
+                sessionId,
+                stopReason: stopContinue.reason,
+                signal_reason: signal?.reason
+            });
+            this._orchestratorAppliedDecisions.reclassification = signal;
+            return false;
+        }
+
+        // Sem bloqueio — delegar ao loop (safe mode).
+        return undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide whether to adjust plan based on observed PlanAdjustmentSignal.
+     *
+     * Regras obrigatórias:
+     * - Não recalcular heurística de ajuste de plano
+     * - Apenas interpretar o signal já produzido pelo AgentLoop
+     * - Safe mode: signal ausente => undefined (AgentLoop permanece decisor)
+     */
+    public decidePlanAdjustment(context: { sessionId: string; signal: PlanAdjustmentSignal }): boolean | undefined {
+        const { sessionId, signal } = context;
+
+        // ETAPA 6 — Autoridade de bloqueio via signals já observados (sem heurística nova).
+        const failSafe = this.observedSignals.failSafe;
+        const stopContinue = this.observedSignals.stop;
+
+        if (failSafe?.activated) {
+            this.logger.info('plan_adjustment_blocked_by_failsafe', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo FailSafe', {
+                sessionId,
+                failSafeTrigger: failSafe.trigger,
+                signal_failedStep: signal?.failedStep
+            });
+            this._orchestratorAppliedDecisions.planAdjustment = signal;
+            return false;
+        }
+
+        if (stopContinue?.shouldStop) {
+            this.logger.info('plan_adjustment_blocked_by_stop', '[ORCHESTRATOR AUTHORITY] Ajuste de plano bloqueado pelo StopContinue', {
+                sessionId,
+                stopReason: stopContinue.reason,
+                signal_failedStep: signal?.failedStep
+            });
+            this._orchestratorAppliedDecisions.planAdjustment = signal;
+            return false;
+        }
+
+        // Sem bloqueio — delegar ao loop (safe mode).
         return undefined;
     }
 

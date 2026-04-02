@@ -3,6 +3,7 @@ import { SkillRegistry } from './SkillRegistry';
 import { createLogger } from '../shared/AppLogger';
 import { emitDebug } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
+import { CognitiveOrchestrator } from '../core/orchestrator/CognitiveOrchestrator';
 import { t } from '../i18n';
 import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
@@ -190,6 +191,11 @@ export type CognitiveSignalsState = {
     validation?: StepValidationSignal;
     stop?: StopContinueSignal;
     failSafe?: FailSafeSignal;
+    // ETAPA 4 — signals extraídos do mini-brain do AgentLoop
+    // AgentLoop ainda decide localmente (safe stage); Orchestrator consumirá em fase futura.
+    reclassification?: ReclassificationSignal;
+    llmRetry?: LlmRetrySignal;
+    planAdjustment?: PlanAdjustmentSignal;
 };
 
 export type ExecutionMemoryEntry = {
@@ -315,6 +321,10 @@ export class AgentLoop {
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
     private failSafe: boolean = false;
+
+    // ETAPA 5 — Orchestrator injetado pelo AgentController para governança ativa.
+    // Safe mode: se não injetado, todas as decisões permanecem no AgentLoop.
+    private orchestrator?: CognitiveOrchestrator;
 
     // Detecção de intenção incompleta
     // Agregação de signals — espelho do estado cognitivo ativo (sem lógica de decisão).
@@ -464,6 +474,11 @@ export class AgentLoop {
 
     public getDecisionMemory(): DecisionMemory | null {
         return this.decisionMemory;
+    }
+
+    /** ETAPA 5 — Injeta o CognitiveOrchestrator para governança ativa dos 3 call sites. */
+    public setOrchestrator(orchestrator: CognitiveOrchestrator): void {
+        this.orchestrator = orchestrator;
     }
 
     private evaluateModeTransition(): void {
@@ -1388,9 +1403,18 @@ export class AgentLoop {
                             this.markCurrentStepFailed(validation.reason);
 
                             const reclassificationSignal = this.shouldReclassify(consecutiveToolFailures);
-                            if (reclassificationSignal.reclassificationRecommended) {
-                                // TODO (Single Brain): ReclassificationSignal deve ser decidido pelo CognitiveOrchestrator.
-                                // AgentLoop deve apenas aplicar plano ja definido.
+                            // ETAPA 4 — signal explícito de reclassificação registrado no snapshot cognitivo.
+                            // AgentLoop ainda decide localmente (safe stage).
+                            // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
+                            this.currentSignals.reclassification = reclassificationSignal;
+                            const loopDecisionReclassify = reclassificationSignal.reclassificationRecommended;
+                            // ETAPA 5 — Orchestrator decide reclassificação (safe mode: undefined => fallback ao loop).
+                            const orchestratorDecisionReclassify = this.orchestrator?.decideReclassification({
+                                sessionId: this.chatId,
+                                signal: reclassificationSignal
+                            });
+                            const finalDecisionReclassify = orchestratorDecisionReclassify ?? loopDecisionReclassify;
+                            if (finalDecisionReclassify) {
                                 this.logger.info('reclassification_signal_emitted', '[SIGNAL] Reclassification recommended', {
                                     reason: reclassificationSignal.reason,
                                     suggested_task_type: reclassificationSignal.suggestedTaskType,
@@ -1400,10 +1424,18 @@ export class AgentLoop {
                             }
 
                             const llmRetrySignal = this.shouldRetryWithLlm(validation, consecutiveToolFailures);
-
-                            // Ponto de integração futuro: o Orchestrator pode consumir este signal
-                            // e decidir se pede nova validação ao LLM ou se altera a estratégia.
-                            if (llmRetrySignal.retryRecommended) {
+                            // ETAPA 4 — signal explícito de retry via LLM registrado no snapshot cognitivo.
+                            // AgentLoop ainda decide localmente (safe stage).
+                            // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
+                            this.currentSignals.llmRetry = llmRetrySignal;
+                            const loopDecisionLlmRetry = llmRetrySignal.retryRecommended;
+                            // ETAPA 5 — Orchestrator decide retry via LLM (safe mode: undefined => fallback ao loop).
+                            const orchestratorDecisionLlmRetry = this.orchestrator?.decideRetryWithLlm({
+                                sessionId: this.chatId,
+                                signal: llmRetrySignal
+                            });
+                            const finalDecisionLlmRetry = orchestratorDecisionLlmRetry ?? loopDecisionLlmRetry;
+                            if (finalDecisionLlmRetry) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
                                     content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
@@ -1411,13 +1443,26 @@ export class AgentLoop {
                                 messages.push(llmCheck);
                             } else if (!validation.needsLlm) {
                                 const planAdjustment = this.adjustPlanAfterFailure(messages, execStep, validation);
-                                messages = planAdjustment.messages;
-                                this.logger.info('plan_adjustment_signal_emitted', '[SIGNAL] Plan adjustment requested after step failure', {
-                                    failed_step: planAdjustment.signal.failedStep,
-                                    reason: planAdjustment.signal.reason,
-                                    failure_reason: planAdjustment.signal.failureReason,
-                                    suggested_actions: planAdjustment.signal.suggestedActions
+                                // ETAPA 4 — signal explícito de ajuste de plano registrado no snapshot cognitivo.
+                                // AgentLoop aplica o ajuste localmente (safe stage).
+                                // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
+                                this.currentSignals.planAdjustment = planAdjustment.signal;
+                                const loopDecisionPlanAdjust = planAdjustment.signal.shouldAdjustPlan;
+                                // ETAPA 5 — Orchestrator decide ajuste de plano (safe mode: undefined => fallback ao loop).
+                                const orchestratorDecisionPlanAdjust = this.orchestrator?.decidePlanAdjustment({
+                                    sessionId: this.chatId,
+                                    signal: planAdjustment.signal
                                 });
+                                const finalDecisionPlanAdjust = orchestratorDecisionPlanAdjust ?? loopDecisionPlanAdjust;
+                                if (finalDecisionPlanAdjust) {
+                                    messages = planAdjustment.messages;
+                                    this.logger.info('plan_adjustment_signal_emitted', '[SIGNAL] Plan adjustment requested after step failure', {
+                                        failed_step: planAdjustment.signal.failedStep,
+                                        reason: planAdjustment.signal.reason,
+                                        failure_reason: planAdjustment.signal.failureReason,
+                                        suggested_actions: planAdjustment.signal.suggestedActions
+                                    });
+                                }
                             }
                         }
 

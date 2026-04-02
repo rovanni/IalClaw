@@ -83,6 +83,8 @@ export class AgentController {
             this.flowManager,
             this.loop.getDecisionMemory()
         );
+        // ETAPA 5 — injeta o Orchestrator no AgentLoop para governança ativa dos signals.
+        this.loop.setOrchestrator(this.orchestrator);
     }
 
     private assertLoopHasProvider(loop: AgentLoop): void {

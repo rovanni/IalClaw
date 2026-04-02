@@ -105,30 +105,37 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Validação final: `npx tsc --noEmit` sem erros ✓.
 
 ## O que esta em andamento
-- Estabilizacao do codigo base (pre-ETAPA 2.4), com foco exclusivo em integridade estrutural e zero regressao de comportamento.
-- Consolidação da coerência de autoridade entre os 5 signals ativos (StopContinue + ToolFallback + Validation + RouteAutonomy + FailSafe).
-- Auditoria cruzada dos signals: conflitos FailSafe vs Route já monitorados; outros conflitos podem surgir na auditoria global.
-- Revisar pontos residuais no AgentLoop para migracao futura, um sinal por vez.
-- Auditoria incremental dos signals em modo seguro (uma integração por vez, sem alterar heurísticas).
-- Validacao de compilacao incremental da extracao passiva de SelfHealingSignal (executor -> runtime -> orchestrator).
-- Validacao de conflitos reais para self-healing governado: FailSafe/StopContinue vs retry do executor, garantindo bloqueio apenas em casos extremos.
-- Verificacao de ruido de auditoria: acompanhar volume de eventos `signal_conflict` para calibrar falsos positivos sem alterar heuristicas.
-- Verificacao de ruido da hierarquia: acompanhar volume de `signal_authority_resolution` e confirmar ausencia de overrides agressivos.
-- Monitorar ruido de auditoria do novo evento `retry_decision` para evitar duplicidade excessiva em ambientes com alto volume de retry.
+- Monitoramento pós-ETAPA 6: verificar logs `[ORCHESTRATOR AUTHORITY]` de bloqueio em produção para os 3 novos call sites.
+- Verificação de divergência: quando loop quer continuar e Orchestrator bloqueia via FailSafe/StopContinue.
 
 ## O que ainda falta
-- Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
+- Expandir `auditSignalConsistency` para incluir reclassification, llmRetry e planAdjustment
+- Testes de regressão pós-ETAPA 6: cenário de bloqueio e cenário sem sinal ativo
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
-- Testes de regressão pós-migração dos 5 signals
-- Auditoria cruzada global dos 5 signals juntos (StopContinue + ToolFallback + Validation + RouteAutonomy + FailSafe)
-- Expandir auditoria cruzada para incluir `SelfHealingSignal` contra `FailSafe/StopContinue/Validation` (apenas observacao, sem override).
-- Adicionar testes de regressao especificos para governanca de self-healing no executor (bloqueio e fallback seguro).
-- Remoção de mini-brains residuais no AgentLoop (fase seguinte)
-- Implementar detecção de conflitos de forma gradual, iniciando por um conflito simples (FailSafe vs Route).
-- Auditoria de divergencia Loop vs Orchestrator para todos os signals governados (somente observabilidade, sem override).
-- Expandir override de autoridade para pontos adicionais apenas apos validacao de regressao nos 3 pontos iniciais.
-- Consolidar, em etapa futura, desativacao da API legada `decideSelfHealing(sessionId)` apos estabilizacao completa do fluxo `decideRetryAfterFailure(context)`.
+- Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
+
+- **ETAPA 5 IMPLEMENTADA**: Orchestrator ativado no AgentLoop para os 3 call sites de decisão cognitiva.
+  - `decideRetryWithLlm`, `decideReclassification` e `decidePlanAdjustment` adicionados ao `CognitiveOrchestrator`.
+  - Campo `private orchestrator?: CognitiveOrchestrator` adicionado ao `AgentLoop` com método `setOrchestrator()`.
+  - AgentController injeta o orchestrator no loop via `this.loop.setOrchestrator(this.orchestrator)` após criação.
+  - 3 call sites atualizados: `orchestratorDecision = undefined` substituído pelas chamadas reais ao Orchestrator.
+  - Safe mode mantido: `orchestratorDecision ?? loopDecision` — loop continua como fallback quando Orchestrator retorna `undefined`.
+  - Nenhuma heurística alterada. Nenhuma mensagem alterada. Nenhum fluxo externo modificado.
+  - Orchestrator apenas interpreta o signal — não recalcula lógica nem acessa variáveis externas ao signal.
+
+  - **ETAPA 6 IMPLEMENTADA**: Orchestrator passa a ter autoridade real de bloqueio nos 3 call sites cognitivos.
+    - Padrão aplicado nos 3 métodos (`decideRetryWithLlm`, `decideReclassification`, `decidePlanAdjustment`):
+      - `FailSafe.activated === true` → retorna `false` (bloqueio máximo)
+      - `StopContinue.shouldStop === true` → retorna `false` (bloqueio por parada solicitada)
+      - Caso contrário → retorna `undefined` (delega ao loop — safe mode)
+    - Orchestrator usa apenas `this.observedSignals` (já ingeridos via `ingestSignalsFromLoop`) — sem recalcular heurística.
+    - Hierarquia respeitada: `FailSafe > StopContinue > (loop decide)`.
+    - Comportamento idêntico ao anterior quando nenhum sinal de bloqueio está ativo.
+    - Divergência controlada: quando loop quer continuar (`loopDecision = true`) e Orchestrator bloqueia (`false`), `finalDecision = false ?? true = false` — bloqueio vence.
+    - Nenhuma heurística criada. Nenhuma mensagem alterada. Nenhum fluxo externo modificado.
+    - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
+  - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
 
 ## O que NAO deve ser tocado agora
 - `decisionGate` — nao alterar
@@ -172,7 +179,36 @@ Toda correcao deve atualizar este checklist vivo com:
 
 ## Atualizado em
 - Data: 2 de abril de 2026
-- Contexto: ETAPA 3.2 concluída. Governança de aborts locais implementada em 7 pontos críticos do AgentExecutor sem alterar heurísticas ou fluxo lógico. Safe mode, compilação e comportamento externo preservados. Base pronta para ETAPA 3.3 (governança de continuidade do loop).
+- Contexto: **ETAPA 4 INICIADA E CONCLUÍDA**. Neutralização do AgentLoop como mini-brain: signals de `reclassification`, `llmRetry` e `planAdjustment` explicitados no `CognitiveSignalsState`, armazenados em `this.currentSignals` e protegidos por safe mode (`orchestratorDecision ?? loopDecision`). AgentLoop ainda decide localmente. Orchestrator preparado para assumir via `getSignalsSnapshot()`. Compilação limpa. Nenhuma heurística alterada. Nenhuma regressão introduzida.
+
+---
+
+## ETAPA 4 — NEUTRALIZAÇÃO DO AGENTLOOP ✓ INICIADA E CONCLUÍDA
+
+### Decisões extraídas como signals explícitos
+
+| Signal | Função-origem | Campo em `CognitiveSignalsState` | Safe mode aplicado |
+|---|---|---|---|
+| `ReclassificationSignal` | `shouldReclassify()` | `currentSignals.reclassification` | ✓ `finalDecisionReclassify` |
+| `LlmRetrySignal` | `shouldRetryWithLlm()` | `currentSignals.llmRetry` | ✓ `finalDecisionLlmRetry` |
+| `PlanAdjustmentSignal` | `adjustPlanAfterFailure()` | `currentSignals.planAdjustment` | ✓ armazenado no branch |
+| `ToolFallbackSignal` | `buildToolFallbackSignal()` | `currentSignals.fallback` | ✓ já existia |
+| `StopContinueSignal` | `shouldStopExecution()` / `checkDeltaAndStop()` | `currentSignals.stop` | ✓ já existia |
+| `FailSafeSignal` | `buildFailSafeSignal()` | `currentSignals.failSafe` | ✓ já existia |
+| `RouteAutonomySignal` | `buildRouteAutonomySignal()` | `currentSignals.route` | ✓ já existia |
+| `StepValidationSignal` | `buildStepValidationResult()` | `currentSignals.validation` | ✓ já existia |
+
+### Garantias desta etapa
+- ✓ AgentLoop ainda decide localmente em todos os pontos (safe stage)
+- ✓ Orchestrator pode observar TODOS os signals via `getSignalsSnapshot()`
+- ✓ `CognitiveSignalsState` agora consolida 8 tipos de signal
+- ✓ Padrão `orchestratorDecision ?? loopDecision` aplicado nos 3 novos pontos
+- ✓ `orchestratorDecision = undefined` em todos os novos pontos (Orchestrator não conectado ainda)
+- ✓ Nenhuma heurística alterada
+- ✓ Nenhuma mensagem alterada
+- ✓ Nenhuma função movida ou renomeada
+- ✓ Nenhuma string nova introduzida
+- ✓ `npx tsc --noEmit` — zero erros ✓
 
 ---
 
