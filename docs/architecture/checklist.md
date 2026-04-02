@@ -22,6 +22,8 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Correcao cirurgica de compatibilidade de testes: `AgentController` agora injeta orchestrator com guarda defensiva (`typeof this.loop?.setOrchestrator === 'function'`) para evitar crash em mocks parciais.
+- Validacao da correcao de integracao concluida: `npx tsc --noEmit` sem erros e `npm.cmd test` com `All tests passed`.
 - **ETAPA 7 IMPLEMENTADA**: hierarquia completa de autoridade no `CognitiveOrchestrator` via `resolveSignalAuthority(context)`.
 - Precedencia ativa e consistente: `FailSafe` > `StopContinue` > `Validation` > `SelfHealing` > delegacao.
 - Resolucao de conflitos aplicada nos 3 pontos cognitivos do loop (`decideRetryWithLlm`, `decideReclassification`, `decidePlanAdjustment`) sem duplicar heuristica.
@@ -110,10 +112,12 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Validação final: `npx tsc --noEmit` sem erros ✓.
 
 ## O que esta em andamento
+- Monitoramento pos-correcao da camada de integracao do `AgentController` para garantir compatibilidade continua com mocks legados sem alterar fluxo de producao.
 - Monitoramento pós-ETAPA 6: verificar logs `[ORCHESTRATOR AUTHORITY]` de bloqueio em produção para os 3 novos call sites.
 - Verificação de divergência: quando loop quer continuar e Orchestrator bloqueia via FailSafe/StopContinue.
 
 ## O que ainda falta
+- Blindagem opcional dos testes com mocks tipados de `AgentLoop` para reduzir risco de quebras futuras por metodos de integracao ausentes.
 - Expandir `auditSignalConsistency` para incluir reclassification, llmRetry e planAdjustment
 - Testes de regressão pós-ETAPA 6: cenário de bloqueio e cenário sem sinal ativo
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
@@ -143,6 +147,7 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
 
 ## O que NAO deve ser tocado agora
+- Nao remover `setOrchestrator` do `AgentLoop` real; a guarda defensiva existe apenas para compatibilidade de integracao em testes.
 - `decisionGate` — nao alterar
 - `buildFailSafeSignal` no AgentLoop — nao mover nem duplicar heuristicas
 - AgentLoop — nao alterar comportamento de execucao
