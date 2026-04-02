@@ -34,6 +34,7 @@ import {
 import { cloneExecutionPlan, RepairResult, repairPlanStructure } from './repairPipeline';
 import { hashLearningInput, pushLearningRecord } from './operationalLearning';
 import { RuntimeDecision } from '../runtime/decisionGate';
+import { CognitiveOrchestrator } from '../orchestrator/CognitiveOrchestrator';
 import { t } from '../../i18n';
 
 const MAX_RETRIES = 5;
@@ -73,14 +74,62 @@ export interface ExecutionTrace {
     recoveryAttempt?: number;
 }
 
+export type SelfHealingSignal = {
+    activated: boolean;
+    attempts: number;
+    maxAttempts: number;
+    success: boolean;
+    lastError?: string;
+    stepId?: string;
+    toolName?: string;
+};
+
 export class AgentExecutor {
     private llm: LLMProvider;
     private memory: CognitiveMemory;
     private logger = createLogger('AgentExecutor');
+    private lastSelfHealingSignal?: SelfHealingSignal;
+    private orchestrator?: CognitiveOrchestrator;
 
-    constructor(memory: CognitiveMemory) {
+    constructor(memory: CognitiveMemory, orchestrator?: CognitiveOrchestrator) {
         this.memory = memory;
+        this.orchestrator = orchestrator;
         this.llm = ProviderFactory.getProvider();
+    }
+
+    private shouldRetryWithGovernance(session: Session, attempt: number, executorDecision: boolean): boolean {
+        if (this.lastSelfHealingSignal) {
+            this.orchestrator?.ingestSelfHealingSignal(this.lastSelfHealingSignal, session.conversation_id);
+        }
+
+        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+            sessionId: session.conversation_id,
+            attempt,
+            executorDecision
+        });
+        const finalDecision = orchestratorDecision ?? executorDecision;
+
+        debugBus.emit('self_healing_governance', {
+            type: 'self_healing_governance',
+            sessionId: session.conversation_id,
+            attempt,
+            executorDecision,
+            orchestratorDecision,
+            finalDecision,
+            trace_id: getTraceIdSafe()
+        });
+
+        debugBus.emit('retry_decision', {
+            type: 'retry_decision',
+            sessionId: session.conversation_id,
+            attempt,
+            orchestratorDecision,
+            executorDecision,
+            finalDecision,
+            trace_id: getTraceIdSafe()
+        });
+
+        return finalDecision;
     }
 
     async run(plan: ExecutionPlan, session?: Session) {
@@ -249,8 +298,62 @@ export class AgentExecutor {
         let lastError: string | null = null;
         session._tool_input_attempts = 0;
 
+        const selfHealingSignal: SelfHealingSignal = {
+            activated: true,
+            attempts: 0,
+            maxAttempts: MAX_RETRIES + 1,
+            success: false,
+            stepId: plan.steps[0]?.id?.toString(),
+            toolName: plan.steps[0]?.tool
+        };
+        const updateSelfHealingSignal = (patch: Partial<SelfHealingSignal>) => {
+            Object.assign(selfHealingSignal, patch);
+            this.lastSelfHealingSignal = { ...selfHealingSignal };
+        };
+        updateSelfHealingSignal({});
+
+        debugBus.emit('executor_self_healing_start', {
+            type: 'executor_self_healing_start',
+            sessionId: session.conversation_id,
+            stepId: plan.steps[0]?.id,
+            toolName: plan.steps[0]?.tool,
+            trace_id: getTraceIdSafe()
+        });
+
+        const emitSelfHealingEnd = (totalAttempts: number, success: boolean) => {
+            updateSelfHealingSignal({
+                attempts: totalAttempts,
+                success,
+                lastError: success ? undefined : (lastError || undefined)
+            });
+            debugBus.emit('executor_self_healing_end', {
+                type: 'executor_self_healing_end',
+                sessionId: session.conversation_id,
+                totalAttempts,
+                success,
+                trace_id: getTraceIdSafe()
+            });
+        };
+
         while (attempt <= MAX_RETRIES) {
+            updateSelfHealingSignal({
+                attempts: attempt + 1,
+                stepId: plan.steps[0]?.id?.toString(),
+                toolName: plan.steps[0]?.tool
+            });
             debugBus.emit('executor:attempt', { attempt });
+            debugBus.emit('executor_self_healing', {
+                type: 'executor_self_healing',
+                sessionId: session.conversation_id,
+                attempt: attempt + 1,
+                maxAttempts: MAX_RETRIES + 1,
+                error: undefined,
+                stepId: plan.steps[0]?.id,
+                toolName: plan.steps[0]?.tool,
+                timestamp: new Date().toISOString(),
+                action: 'attempt_started',
+                trace_id: getTraceIdSafe()
+            });
 
             try {
                 await this.run(plan, session);
@@ -258,6 +361,11 @@ export class AgentExecutor {
                 const failureMessage = error.message || 'Falha desconhecida na execucao do plano.';
                 const failedStepIndex = error instanceof StepExecutionError ? error.stepIndex : 0;
                 const currentStep = plan.steps[failedStepIndex] || plan.steps[0];
+                updateSelfHealingSignal({
+                    lastError: failureMessage,
+                    stepId: currentStep?.id?.toString(),
+                    toolName: currentStep?.tool
+                });
 
                 if (failureMessage.startsWith('tool_input_error::')) {
                     let payload: any;
@@ -272,15 +380,33 @@ export class AgentExecutor {
                     session._tool_input_attempts = toolInputAttempts;
 
                     if (toolInputAttempts >= MAX_TOOL_INPUT_RETRIES) {
+                        const executorDecision = false;
+                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: false
+                        });
+                        const finalDecision = orchestratorDecision ?? executorDecision;
+
                         debugBus.emit('self_healing_abort', {
                             reason: 'tool_input_not_converging',
                             tool: payload.tool,
-                            issues: payload.issues
+                            issues: payload.issues,
+                            governedByOrchestrator: finalDecision !== false
                         });
+
+                        emitSelfHealingEnd(attempt + 1, false);
+
+                        if (orchestratorDecision === true) {
+                            return {
+                                success: false,
+                                error: t('error.executor.governance.tool_input_not_converging', { attempts: String(toolInputAttempts), max: String(MAX_TOOL_INPUT_RETRIES) })
+                            };
+                        }
 
                         return {
                             success: false,
-                            error: 'Self-healing aborted: tool_input not converging'
+                            error: t('error.executor.selfhealing.tool_input_not_converging')
                         };
                     }
 
@@ -304,6 +430,18 @@ export class AgentExecutor {
                     debugBus.emit('executor:replan', {
                         attempt,
                         reason: 'tool_input_error'
+                    });
+                    debugBus.emit('executor_self_healing', {
+                        type: 'executor_self_healing',
+                        sessionId: session.conversation_id,
+                        attempt: attempt + 1,
+                        maxAttempts: MAX_RETRIES + 1,
+                        error: failureMessage,
+                        stepId: currentStep?.id,
+                        toolName: currentStep?.tool,
+                        timestamp: new Date().toISOString(),
+                        action: 'replan_triggered',
+                        trace_id: getTraceIdSafe()
                     });
 
                     const repairBaselineInput = payload.received_input && typeof payload.received_input === 'object'
@@ -331,60 +469,132 @@ export class AgentExecutor {
                         && payload.tool === repairStep.tool;
 
                     if (newStep?.tool !== repairStep.tool) {
+                        const executorDecision = false;
+                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: false
+                        });
+                        const finalDecision = orchestratorDecision ?? executorDecision;
+
                         debugBus.emit('self_healing_abort', {
                             reason: 'tool_mismatch_during_repair',
                             expected_tool: repairStep.tool,
                             received_tool: newStep?.tool,
                             repair_step: repairStep,
-                            normalized_step: newStep
+                            normalized_step: newStep,
+                            governedByOrchestrator: finalDecision !== false
                         });
+
+                        emitSelfHealingEnd(attempt + 1, false);
+
+                        if (orchestratorDecision === true) {
+                            return {
+                                success: false,
+                                error: t('error.executor.governance.tool_mismatch_repair', { expected: repairStep.tool, received: newStep?.tool ?? '' })
+                            };
+                        }
 
                         return {
                             success: false,
-                            error: 'Tool mismatch during tool_input correction'
+                            error: t('error.executor.selfhealing.tool_mismatch_repair')
                         };
                     }
 
                     if (isCorrectionMode && JSON.stringify(repairStep.input) === JSON.stringify(newStep?.input)) {
+                        const executorDecision = false;
+                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: false
+                        });
+                        const finalDecision = orchestratorDecision ?? executorDecision;
+
                         debugBus.emit('self_healing_abort', {
                             reason: 'noop_correction',
                             tool: payload.tool,
-                            input: newStep?.input
+                            input: newStep?.input,
+                            governedByOrchestrator: finalDecision !== false
                         });
+
+                        emitSelfHealingEnd(attempt + 1, false);
+
+                        if (orchestratorDecision === true) {
+                            return {
+                                success: false,
+                                error: t('error.executor.governance.noop_correction')
+                            };
+                        }
 
                         return {
                             success: false,
-                            error: 'No-op correction detected'
+                            error: t('error.executor.selfhealing.noop_correction')
                         };
                     }
 
                     if (isCorrectionMode && !isMinimalChange(repairStep, newStep, payload.issues || [])) {
+                        const executorDecision = false;
+                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: false
+                        });
+                        const finalDecision = orchestratorDecision ?? executorDecision;
+
                         debugBus.emit('self_healing_abort', {
                             reason: 'non_minimal_change',
                             tool: payload.tool,
                             issues: payload.issues,
                             prev_input: repairStep.input,
-                            new_input: newStep?.input
+                            new_input: newStep?.input,
+                            governedByOrchestrator: finalDecision !== false
                         });
+
+                        emitSelfHealingEnd(attempt + 1, false);
+
+                        if (orchestratorDecision === true) {
+                            return {
+                                success: false,
+                                error: t('error.executor.governance.non_minimal_correction')
+                            };
+                        }
 
                         return {
                             success: false,
-                            error: 'Non-minimal correction detected'
+                            error: t('error.executor.selfhealing.non_minimal_correction')
                         };
                     }
 
                     session._input_history = session._input_history || [];
 
                     if (isCorrectionMode && detectOscillation(session._input_history, newStep.input)) {
+                        const executorDecision = false;
+                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: false
+                        });
+                        const finalDecision = orchestratorDecision ?? executorDecision;
+
                         debugBus.emit('self_healing_abort', {
                             reason: 'input_oscillation',
                             tool: payload.tool,
-                            input: newStep.input
+                            input: newStep.input,
+                            governedByOrchestrator: finalDecision !== false
                         });
+
+                        emitSelfHealingEnd(attempt + 1, false);
+
+                        if (orchestratorDecision === true) {
+                            return {
+                                success: false,
+                                error: t('error.executor.governance.input_oscillation')
+                            };
+                        }
 
                         return {
                             success: false,
-                            error: 'Input oscillation detected'
+                            error: t('error.executor.selfhealing.input_oscillation')
                         };
                     }
 
@@ -395,6 +605,28 @@ export class AgentExecutor {
                         ...plan,
                         steps: [{ ...newStep, is_repair: false }]
                     };
+
+                    const shouldRetry = this.shouldRetryWithGovernance(session, attempt + 1, true);
+                    if (!shouldRetry) {
+                        emitSelfHealingEnd(attempt + 1, false);
+                        return {
+                            success: false,
+                            error: failureMessage
+                        };
+                    }
+
+                    debugBus.emit('executor_self_healing', {
+                        type: 'executor_self_healing',
+                        sessionId: session.conversation_id,
+                        attempt: attempt + 1,
+                        maxAttempts: MAX_RETRIES + 1,
+                        error: failureMessage,
+                        stepId: currentStep?.id,
+                        toolName: currentStep?.tool,
+                        timestamp: new Date().toISOString(),
+                        action: 'automatic_retry',
+                        trace_id: getTraceIdSafe()
+                    });
                     attempt++;
                     continue;
                 }
@@ -415,6 +647,7 @@ export class AgentExecutor {
                 });
 
                 if (attempt === MAX_RETRIES) {
+                    emitSelfHealingEnd(attempt + 1, false);
                     return {
                         success: false,
                         error: `Falha na execucao apos ${MAX_RETRIES} tentativas: ${lastError}`
@@ -425,13 +658,48 @@ export class AgentExecutor {
                     attempt,
                     reason: 'execution_error'
                 });
+                const shouldRetry = this.shouldRetryWithGovernance(session, attempt + 1, true);
+                if (!shouldRetry) {
+                    emitSelfHealingEnd(attempt + 1, false);
+                    return {
+                        success: false,
+                        error: failureMessage
+                    };
+                }
+
+                debugBus.emit('executor_self_healing', {
+                    type: 'executor_self_healing',
+                    sessionId: session.conversation_id,
+                    attempt: attempt + 1,
+                    maxAttempts: MAX_RETRIES + 1,
+                    error: failureMessage,
+                    stepId: currentStep?.id,
+                    toolName: currentStep?.tool,
+                    timestamp: new Date().toISOString(),
+                    action: 'replan_triggered',
+                    trace_id: getTraceIdSafe()
+                });
                 plan = await this.replan(plan, failureMessage, session);
+
+                debugBus.emit('executor_self_healing', {
+                    type: 'executor_self_healing',
+                    sessionId: session.conversation_id,
+                    attempt: attempt + 1,
+                    maxAttempts: MAX_RETRIES + 1,
+                    error: failureMessage,
+                    stepId: currentStep?.id,
+                    toolName: currentStep?.tool,
+                    timestamp: new Date().toISOString(),
+                    action: 'automatic_retry',
+                    trace_id: getTraceIdSafe()
+                });
                 attempt++;
                 continue;
             }
 
             if (!session.current_project_id) {
                 debugBus.emit('executor:success', { skipped_validation: true });
+                emitSelfHealingEnd(attempt + 1, true);
                 return { success: true };
             }
 
@@ -490,6 +758,7 @@ export class AgentExecutor {
                         });
 
                         if (attempt === MAX_RETRIES) {
+                            emitSelfHealingEnd(attempt + 1, false);
                             return {
                                 success: false,
                                 error: `Falha na validacao apos ${MAX_RETRIES} tentativas: ${lastError}`
@@ -500,7 +769,41 @@ export class AgentExecutor {
                             attempt,
                             reason: 'validation_error'
                         });
+                        const shouldRetry = this.shouldRetryWithGovernance(session, attempt + 1, true);
+                        if (!shouldRetry) {
+                            emitSelfHealingEnd(attempt + 1, false);
+                            return {
+                                success: false,
+                                error: validationError
+                            };
+                        }
+
+                        debugBus.emit('executor_self_healing', {
+                            type: 'executor_self_healing',
+                            sessionId: session.conversation_id,
+                            attempt: attempt + 1,
+                            maxAttempts: MAX_RETRIES + 1,
+                            error: validationError,
+                            stepId: plan.steps[0]?.id,
+                            toolName: plan.steps[0]?.tool,
+                            timestamp: new Date().toISOString(),
+                            action: 'replan_triggered',
+                            trace_id: getTraceIdSafe()
+                        });
                         plan = await this.replan(plan, validationError, session);
+
+                        debugBus.emit('executor_self_healing', {
+                            type: 'executor_self_healing',
+                            sessionId: session.conversation_id,
+                            attempt: attempt + 1,
+                            maxAttempts: MAX_RETRIES + 1,
+                            error: validationError,
+                            stepId: plan.steps[0]?.id,
+                            toolName: plan.steps[0]?.tool,
+                            timestamp: new Date().toISOString(),
+                            action: 'automatic_retry',
+                            trace_id: getTraceIdSafe()
+                        });
                         attempt++;
                         continue;
                     }
@@ -523,6 +826,8 @@ export class AgentExecutor {
                         fallback,
                         trace_id: getTraceIdSafe()
                     });
+
+                    emitSelfHealingEnd(attempt + 1, false);
 
                     return {
                         success: false,
@@ -568,6 +873,7 @@ export class AgentExecutor {
                 session._input_history = [];
 
                 debugBus.emit('executor:success', { runtime_skipped: true });
+                emitSelfHealingEnd(attempt + 1, true);
                 return { success: true };
             }
 
@@ -586,11 +892,31 @@ export class AgentExecutor {
                 const normalizedError = normalizeError(runtimeError);
 
                 if (errorType === 'environment_dependency') {
+                    const executorDecision = false;
+                    const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                        sessionId: session.conversation_id,
+                        attempt,
+                        executorDecision: false
+                    });
+                    const finalDecision = orchestratorDecision ?? executorDecision;
+
                     debugBus.emit('self_healing_abort', {
                         reason: 'missing_runtime_dependency',
                         error: runtimeError,
-                        dependency: 'puppeteer'
+                        dependency: 'puppeteer',
+                        governedByOrchestrator: finalDecision !== false
                     });
+
+                    emitSelfHealingEnd(attempt + 1, false);
+
+                    if (orchestratorDecision === true) {
+                        return {
+                            success: false,
+                            error: t('error.executor.governance.missing_runtime_dependency', { error: runtimeError }),
+                            error_type: 'environment_dependency',
+                            dependency: 'puppeteer'
+                        };
+                    }
 
                     return {
                         success: false,
@@ -601,16 +927,34 @@ export class AgentExecutor {
                 }
 
                 if (session.last_error_fingerprint && session.last_error_fingerprint === normalizedError) {
+                    const executorDecision = false;
+                    const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
+                        sessionId: session.conversation_id,
+                        attempt,
+                        executorDecision: false
+                    });
+                    const finalDecision = orchestratorDecision ?? executorDecision;
+
                     debugBus.emit('self_healing_abort', {
                         reason: 'equivalent_error_loop',
                         error: runtimeError,
                         error_hash: runtimeHash,
-                        normalized: normalizedError
+                        normalized: normalizedError,
+                        governedByOrchestrator: finalDecision !== false
                     });
+
+                    emitSelfHealingEnd(attempt + 1, false);
+
+                    if (orchestratorDecision === true) {
+                        return {
+                            success: false,
+                            error: t('error.executor.governance.equivalent_error_loop', { error: runtimeError })
+                        };
+                    }
 
                     return {
                         success: false,
-                        error: `Self-healing aborted: equivalent error loop (${runtimeError})`
+                        error: t('error.executor.selfhealing.equivalent_error_loop', { error: runtimeError })
                     };
                 }
 
@@ -631,6 +975,7 @@ export class AgentExecutor {
                 });
 
                 if (attempt === MAX_RETRIES) {
+                    emitSelfHealingEnd(attempt + 1, false);
                     return {
                         success: false,
                         error: `Falha de runtime apos ${MAX_RETRIES} tentativas: ${runtimeError}`
@@ -641,7 +986,41 @@ export class AgentExecutor {
                     attempt,
                     reason: 'runtime_error'
                 });
+                const shouldRetry = this.shouldRetryWithGovernance(session, attempt + 1, true);
+                if (!shouldRetry) {
+                    emitSelfHealingEnd(attempt + 1, false);
+                    return {
+                        success: false,
+                        error: runtimeError
+                    };
+                }
+
+                debugBus.emit('executor_self_healing', {
+                    type: 'executor_self_healing',
+                    sessionId: session.conversation_id,
+                    attempt: attempt + 1,
+                    maxAttempts: MAX_RETRIES + 1,
+                    error: runtimeError,
+                    stepId: plan.steps[0]?.id,
+                    toolName: plan.steps[0]?.tool,
+                    timestamp: new Date().toISOString(),
+                    action: 'replan_triggered',
+                    trace_id: getTraceIdSafe()
+                });
                 plan = await this.replan(plan, runtimeError, session);
+
+                debugBus.emit('executor_self_healing', {
+                    type: 'executor_self_healing',
+                    sessionId: session.conversation_id,
+                    attempt: attempt + 1,
+                    maxAttempts: MAX_RETRIES + 1,
+                    error: runtimeError,
+                    stepId: plan.steps[0]?.id,
+                    toolName: plan.steps[0]?.tool,
+                    timestamp: new Date().toISOString(),
+                    action: 'automatic_retry',
+                    trace_id: getTraceIdSafe()
+                });
                 attempt++;
                 continue;
             }
@@ -666,13 +1045,23 @@ export class AgentExecutor {
             session._input_history = [];
 
             debugBus.emit('executor:success', {});
+            emitSelfHealingEnd(attempt + 1, true);
             return { success: true };
         }
 
+        emitSelfHealingEnd(MAX_RETRIES + 1, false);
         return {
             success: false,
             error: `Loop de healing excedeu o numero maximo de tentativas. Ultimo erro: ${lastError}`
         };
+    }
+
+    public getSelfHealingSignal(): SelfHealingSignal | undefined {
+        if (!this.lastSelfHealingSignal) {
+            return undefined;
+        }
+
+        return { ...this.lastSelfHealingSignal };
     }
 
     async executeDirect(userInput: string, session?: Session, confidenceScore?: number): Promise<{

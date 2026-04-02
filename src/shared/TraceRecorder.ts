@@ -88,6 +88,10 @@ export function startTraceRecorder(): boolean {
         'executor:attempt',
         'executor:replan',
         'executor:success',
+        'executor_self_healing_start',
+        'executor_self_healing',
+        'executor_self_healing_end',
+        'self_healing_governance',
         'execution_success',
         'self_healing',
         'self_healing_abort',
@@ -121,7 +125,9 @@ export function startTraceRecorder(): boolean {
         'skill_install_required',
         'skill_auto_install_start',
         'skill_auto_install_result',
-        'skill_auto_install_failed'
+        'skill_auto_install_failed',
+        'signal_conflict',
+        'signal_authority_resolution'
     ];
 
     for (const eventName of tracedEvents) {

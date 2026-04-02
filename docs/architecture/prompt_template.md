@@ -43,6 +43,33 @@ Antes de qualquer implementação, você DEVE:
 
 ---
 
+## ⚙️ ESTRATÉGIA DE REFATORAÇÃO (OBRIGATÓRIO)
+
+A refatoração deve ser estrutural, não funcional.
+O comportamento do sistema deve permanecer exatamente igual.
+
+### 📌 Granularidade obrigatória
+
+* Refatorar função por função
+* NÃO refatorar arquivo inteiro de uma vez
+
+### 🧩 Ordem obrigatória por função
+
+1. Identificar partes cognitivas dentro da função
+2. Separar lógica técnica e lógica cognitiva
+3. Manter lógica técnica no local atual
+4. Converter lógica cognitiva em signal apropriado (criando ou reutilizando)
+5. Manter a execução local por enquanto
+6. Adicionar TODO explícito para migração futura ao Orchestrator
+
+### 🚫 Restrições desta etapa
+
+* NÃO alterar comportamento atual
+* NÃO ativar decisão nova no Orchestrator nesta fase
+* NÃO remover lógica existente durante a extração para signal
+
+---
+
 ## 📋 CHECKLIST VIVO (OBRIGATÓRIO)
 
 Arquivo:
@@ -67,6 +94,28 @@ d. O que NÃO deve ser tocado agora
 * AgentLoop NÃO decide (estado alvo)
 * NÃO alterar heurísticas existentes
 * NÃO remover branches existentes
+
+---
+
+## 🌐 INTERNACIONALIZAÇÃO (i18n) — OBRIGATÓRIO
+
+Mantenha sempre o padrão do sistema com foco em internacionalização (i18n).
+Certifique-se de aplicar as diretrizes de internacionalização (i18n) do sistema em todas as etapas.
+
+### 📌 Regras obrigatórias
+
+* Todo string visível ao usuário deve usar `t('chave')` do módulo `src/i18n`
+* Nunca usar strings hardcoded em mensagens de erro, logs externos ou respostas ao usuário
+* Adicionar sempre as chaves em **ambos** os catálogos: `src/i18n/pt-BR.json` **e** `src/i18n/en-US.json`
+* Usar params tipados quando a mensagem contiver valores dinâmicos: `t('chave', { param: valor })`
+* Seguir o namespace existente: `error.executor.*`, `runtime.*`, `agent.*`, etc.
+
+### ✅ Checklist i18n por etapa
+
+* [ ] Chaves adicionadas em `pt-BR.json`
+* [ ] Chaves adicionadas em `en-US.json`
+* [ ] Strings hardcoded substituídas por `t()`
+* [ ] `npx tsc --noEmit` sem erros após as alterações
 
 ---
 

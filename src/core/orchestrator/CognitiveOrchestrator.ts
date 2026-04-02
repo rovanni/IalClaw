@@ -14,6 +14,8 @@ import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
 import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal } from '../../engine/AgentLoop';
+import { SelfHealingSignal } from '../executor/AgentExecutor';
+import { emitDebug } from '../../shared/DebugBus';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -50,6 +52,24 @@ export interface CognitiveDecision {
     aggregatedConfidence?: AggregatedConfidence;
 }
 
+type SignalAuthorityAction =
+    | 'block_execution'
+    | 'stop_execution'
+    | 'require_retry_or_fix'
+    | 'allow_retry'
+    | 'allow_execution';
+
+type SignalAuthorityDecision = {
+    action: SignalAuthorityAction;
+    overriddenSignals: string[];
+};
+
+type RetryAfterFailureContext = {
+    sessionId: string;
+    attempt?: number;
+    executorDecision?: boolean;
+};
+
 /**
  * CognitiveOrchestrator: Centraliza a tomada de decisão do agente.
  * Coordena entre fluxos guiados, execução de ferramentas e resposta direta via LLM.
@@ -67,6 +87,8 @@ export class CognitiveOrchestrator {
     // TODO: Quando o CognitiveOrchestrator assumir as decisões, usará esses signals
     // para tomar decisões reais em vez de o AgentLoop decidir localmente.
     private observedSignals: Partial<CognitiveSignalsState> = {};
+    private observedSelfHealingSignal?: SelfHealingSignal;
+    private routeVsFailSafeConflictLoggedInCycle = false;
 
         // ─── Orchestrator Applied Decisions (para auditSignalConsistency) ─────────
         // Rastreia o que cada decide*() retornou no ciclo atual para permitir
@@ -107,6 +129,7 @@ export class CognitiveOrchestrator {
 
         // Store the observed signals (immutably merge new observations)
         this.observedSignals = { ...signals };
+        this.routeVsFailSafeConflictLoggedInCycle = false;
 
             // Reseta decisões aplicadas do ciclo anterior para evitar estado stale na auditoria
             this._orchestratorAppliedDecisions = {};
@@ -155,6 +178,117 @@ export class CognitiveOrchestrator {
     }
 
     /**
+     * SAFE MODE: Ingest self-healing signal from AgentExecutor in passive mode.
+     * The Orchestrator only observes and logs. No decision or override is applied.
+     */
+    public ingestSelfHealingSignal(signal: Readonly<SelfHealingSignal>, sessionId: string): void {
+        this.observedSelfHealingSignal = { ...signal };
+
+        this.logger.info('signal_self_healing_observed', '[ORCHESTRATOR PASSIVE] SelfHealingSignal observado', {
+            sessionId,
+            activated: signal.activated,
+            attempts: signal.attempts,
+            maxAttempts: signal.maxAttempts,
+            success: signal.success,
+            lastError: signal.lastError,
+            stepId: signal.stepId,
+            toolName: signal.toolName
+        });
+    }
+
+    /**
+     * ACTIVE MODE: decide explicitamente retry apos falha usando apenas sinais ja existentes.
+     *
+     * Regras desta etapa:
+     * - Sem heuristica nova
+     * - Reuso de signals observados (FailSafe/StopContinue/Validation/SelfHealing)
+     * - Sem alterar estado de self-healing
+     */
+    public decideRetryAfterFailure(context: RetryAfterFailureContext): boolean | undefined {
+        const { sessionId, attempt, executorDecision } = context;
+        const selfHealingSignal = this.observedSelfHealingSignal;
+        const failSafeSignal = this.observedSignals.failSafe;
+        const stopSignal = this.observedSignals.stop;
+        const validationSignal = this.observedSignals.validation;
+
+        let orchestratorDecision: boolean | undefined;
+        let reason = 'insufficient_context';
+
+        if (failSafeSignal?.activated) {
+            orchestratorDecision = false;
+            reason = 'fail_safe_activated';
+        } else if (stopSignal?.shouldStop) {
+            orchestratorDecision = false;
+            reason = 'stop_continue_should_stop';
+        } else if (validationSignal && !validationSignal.validationPassed) {
+            orchestratorDecision = true;
+            reason = 'validation_failed';
+        } else if (selfHealingSignal?.activated) {
+            orchestratorDecision = true;
+            reason = 'self_healing_active';
+        }
+
+        const authorityDecision = this.resolveSignalAuthority({
+            selfHealing: selfHealingSignal,
+            stopContinue: stopSignal,
+            failSafe: failSafeSignal,
+            validation: validationSignal,
+            route: this.observedSignals.route
+        });
+
+        const authorityOverride =
+            authorityDecision?.action === 'block_execution' || authorityDecision?.action === 'stop_execution'
+                ? false
+                : undefined;
+
+        const finalDecision = authorityOverride ?? orchestratorDecision;
+
+        emitDebug('signal_authority_resolution', {
+            type: 'signal_authority_resolution',
+            sessionId,
+            decisionPoint: 'self_healing_retry',
+            authorityDecision,
+            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            finalDecision
+        });
+
+        emitDebug('retry_decision', {
+            type: 'retry_decision',
+            sessionId,
+            attempt,
+            orchestratorDecision,
+            executorDecision,
+            finalDecision
+        });
+
+        this.logger.info('self_healing_active_decision', '[ORCHESTRATOR ACTIVE] Governança de self-healing avaliada', {
+            sessionId,
+            source: 'existing_signal_governance',
+            activated: selfHealingSignal?.activated ?? false,
+            attempts: selfHealingSignal?.attempts,
+            maxAttempts: selfHealingSignal?.maxAttempts,
+            success: selfHealingSignal?.success,
+            stepId: selfHealingSignal?.stepId,
+            toolName: selfHealingSignal?.toolName,
+            failSafeActivated: failSafeSignal?.activated ?? false,
+            stopShouldStop: stopSignal?.shouldStop ?? false,
+            validationPassed: validationSignal?.validationPassed,
+            orchestratorDecision: finalDecision,
+            reason
+        });
+
+        return finalDecision;
+    }
+
+    /**
+     * Compatibilidade retroativa: manter API antiga enquanto a migracao para
+     * decideRetryAfterFailure(context) e finalizada.
+     */
+    public decideSelfHealing(sessionId: string): boolean | undefined {
+        return this.decideRetryAfterFailure({ sessionId });
+    }
+
+    /**
      * Log StopContinueSignal with structured audit trail.
      * @private
      */
@@ -200,7 +334,124 @@ export class CognitiveOrchestrator {
             return;
         }
 
-        console.log('[ORCHESTRATOR AUDIT] Running signal consistency check');
+        const selfHealing = this.observedSelfHealingSignal;
+        const stopContinue = signals.stop;
+        const failSafe = signals.failSafe;
+        const validation = signals.validation;
+        const route = signals.route;
+
+        if (selfHealing?.activated && stopContinue?.shouldStop) {
+            this._reportSignalConflict('self_healing_vs_stop_continue', sessionId, 'high', {
+                selfHealing,
+                stopContinue
+            });
+        }
+
+        if (selfHealing?.activated && failSafe?.activated) {
+            this._reportSignalConflict('self_healing_vs_fail_safe', sessionId, 'critical', {
+                selfHealing,
+                failSafe
+            });
+        }
+
+        if (validation && !validation.validationPassed && selfHealing?.activated) {
+            this._reportSignalConflict('validation_vs_self_healing', sessionId, 'medium', {
+                validation,
+                selfHealing
+            });
+        }
+
+        const routeWantsExecution = !!route && (
+            route.route === ExecutionRoute.DIRECT_LLM ||
+            route.route === ExecutionRoute.TOOL_LOOP
+        );
+        if (failSafe?.activated && route && routeWantsExecution && !this.routeVsFailSafeConflictLoggedInCycle) {
+            this._reportSignalConflict('route_autonomy_vs_fail_safe', sessionId, 'high', {
+                route,
+                failSafe
+            });
+            this.routeVsFailSafeConflictLoggedInCycle = true;
+        }
+    }
+
+    public resolveSignalAuthority(
+        context?: {
+            selfHealing?: SelfHealingSignal;
+            stopContinue?: StopContinueSignal;
+            failSafe?: FailSafeSignal;
+            validation?: StepValidationSignal;
+            route?: RouteAutonomySignal;
+        }
+    ): SignalAuthorityDecision | undefined {
+        const selfHealing = context?.selfHealing ?? this.observedSelfHealingSignal;
+        const stopContinue = context?.stopContinue ?? this.observedSignals.stop;
+        const failSafe = context?.failSafe ?? this.observedSignals.failSafe;
+        const validation = context?.validation ?? this.observedSignals.validation;
+        const route = context?.route ?? this.observedSignals.route;
+
+        if (failSafe?.activated) {
+            return {
+                action: 'block_execution',
+                overriddenSignals: ['stop_continue', 'validation', 'self_healing', 'route_autonomy']
+            };
+        }
+
+        if (stopContinue?.shouldStop) {
+            return {
+                action: 'stop_execution',
+                overriddenSignals: ['validation', 'self_healing', 'route_autonomy']
+            };
+        }
+
+        if (validation && !validation.validationPassed) {
+            return {
+                action: 'require_retry_or_fix',
+                overriddenSignals: ['self_healing', 'route_autonomy']
+            };
+        }
+
+        if (selfHealing?.activated) {
+            return {
+                action: 'allow_retry',
+                overriddenSignals: ['route_autonomy']
+            };
+        }
+
+        const routeWantsExecution = !!route && (
+            route.route === ExecutionRoute.DIRECT_LLM ||
+            route.route === ExecutionRoute.TOOL_LOOP
+        );
+        if (routeWantsExecution) {
+            return {
+                action: 'allow_execution',
+                overriddenSignals: []
+            };
+        }
+
+        return undefined;
+    }
+
+    private _reportSignalConflict(
+        conflict: 'self_healing_vs_stop_continue' | 'self_healing_vs_fail_safe' | 'validation_vs_self_healing' | 'route_autonomy_vs_fail_safe',
+        sessionId: string,
+        severity: 'medium' | 'high' | 'critical',
+        details: Record<string, unknown>
+    ): void {
+        this.logger.warn('signal_conflict_detected', '[ORCHESTRATOR AUDIT] Conflito de signals detectado', {
+            type: 'signal_conflict',
+            conflict,
+            sessionId,
+            severity,
+            ...details
+        });
+
+        emitDebug('signal_conflict', {
+            type: 'signal_conflict',
+            conflict,
+            sessionId,
+            severity,
+            ...details
+        });
     }
 
     /**
@@ -241,6 +492,34 @@ export class CognitiveOrchestrator {
             return undefined;
         }
 
+        const authorityDecision = this.resolveSignalAuthority({
+            route: routeSignal,
+            failSafe: this.observedSignals.failSafe,
+            stopContinue: this.observedSignals.stop,
+            validation: this.observedSignals.validation,
+            selfHealing: this.observedSelfHealingSignal
+        });
+
+        let authorityOverride: RouteAutonomySignal | undefined;
+        if (authorityDecision?.action === 'allow_execution') {
+            authorityOverride = routeSignal;
+        }
+
+        const finalDecision = authorityOverride ?? routeSignal;
+
+        emitDebug('signal_authority_resolution', {
+            type: 'signal_authority_resolution',
+            sessionId,
+            decisionPoint: 'route_autonomy',
+            authorityDecision,
+            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            finalDecision: finalDecision ? {
+                recommendedStrategy: finalDecision.recommendedStrategy,
+                route: finalDecision.route,
+                reason: finalDecision.reason
+            } : undefined
+        });
+
         this.logger.info('route_autonomy_active_decision', '[ORCHESTRATOR ACTIVE] Route autonomy decision applied', {
             sessionId,
             source: 'loop_signal_applied_by_orchestrator',
@@ -254,7 +533,9 @@ export class CognitiveOrchestrator {
             suggestedTool: routeSignal.suggestedTool
         });
 
-        return routeSignal ?? undefined;
+        this._orchestratorAppliedDecisions.route = finalDecision;
+
+        return finalDecision ?? undefined;
     }
 
     /**
@@ -306,8 +587,21 @@ export class CognitiveOrchestrator {
                     routeRoute: routeSignal.route,
                     resolution: 'failsafe_has_priority — override nao aplicado ainda, apenas auditado'
                 });
+
+                this.routeVsFailSafeConflictLoggedInCycle = true;
+
+                emitDebug('signal_conflict', {
+                    type: 'signal_conflict',
+                    conflict: 'route_autonomy_vs_fail_safe',
+                    sessionId,
+                    severity: 'high',
+                    route: routeSignal,
+                    failSafe: signal
+                });
             }
         }
+
+        this._orchestratorAppliedDecisions.failSafe = signal;
 
         return signal ?? undefined;
     }
@@ -344,6 +638,8 @@ export class CognitiveOrchestrator {
             failureReason: validationSignal.failureReason,
             requiresLlmReview: validationSignal.requiresLlmReview
         });
+
+        this._orchestratorAppliedDecisions.validation = validationSignal;
 
         return validationSignal;
     }
@@ -490,15 +786,40 @@ export class CognitiveOrchestrator {
 
         const finalDecision = adjustedDecision ?? baseDecision;
 
+        const authorityDecision = this.resolveSignalAuthority({
+            stopContinue: finalDecision,
+            failSafe: this.observedSignals.failSafe,
+            validation: this.observedSignals.validation,
+            selfHealing: this.observedSelfHealingSignal,
+            route: this.observedSignals.route
+        });
+
+        const authorityOverride: StopContinueSignal | undefined = undefined;
+        const authoritativeFinalDecision = authorityOverride ?? finalDecision;
+
+        emitDebug('signal_authority_resolution', {
+            type: 'signal_authority_resolution',
+            sessionId,
+            decisionPoint: 'stop_continue',
+            authorityDecision,
+            overriddenSignals: authorityDecision?.overriddenSignals ?? [],
+            finalDecision: {
+                shouldStop: authoritativeFinalDecision.shouldStop,
+                reason: authoritativeFinalDecision.reason,
+                globalConfidence: authoritativeFinalDecision.globalConfidence,
+                stepCount: authoritativeFinalDecision.stepCount
+            }
+        });
+
         // Auditoria explícita de delta: registra apenas quando a decisão final muda
         // em relação ao signal base do loop (observabilidade sem alterar comportamento).
-        if (baseDecision.shouldStop !== finalDecision.shouldStop) {
+        if (baseDecision.shouldStop !== authoritativeFinalDecision.shouldStop) {
             this.logger.debug('stop_continue_decision_delta', '[ORCHESTRATOR DECISION DELTA] Comparação explícita base vs final', {
                 sessionId,
                 baseShouldStop: baseDecision.shouldStop,
-                finalShouldStop: finalDecision.shouldStop,
+                finalShouldStop: authoritativeFinalDecision.shouldStop,
                 baseReason: baseDecision.reason,
-                finalReason: finalDecision.reason,
+                finalReason: authoritativeFinalDecision.reason,
                 context: {
                     attempt: context?.attempt,
                     hasReactiveFailure: context?.hasReactiveFailure
@@ -511,15 +832,17 @@ export class CognitiveOrchestrator {
         // contextual leve quando elegível, mantendo fallback e compatibilidade.
         this.logger.info('stop_continue_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de parada/continuidade aplicada', {
             sessionId,
-            shouldStop: finalDecision.shouldStop,
-            reason: finalDecision.reason,
-            globalConfidence: finalDecision.globalConfidence,
-            stepCount: finalDecision.stepCount,
+            shouldStop: authoritativeFinalDecision.shouldStop,
+            reason: authoritativeFinalDecision.reason,
+            globalConfidence: authoritativeFinalDecision.globalConfidence,
+            stepCount: authoritativeFinalDecision.stepCount,
             source: adjustedDecision ? 'loop_signal_contextually_refined_by_orchestrator' : 'loop_heuristics_applied_by_orchestrator',
             contextualAdjustmentApplied: !!adjustedDecision
         });
 
-        return finalDecision;
+        this._orchestratorAppliedDecisions.stop = authoritativeFinalDecision;
+
+        return authoritativeFinalDecision;
     }
 
     /**
