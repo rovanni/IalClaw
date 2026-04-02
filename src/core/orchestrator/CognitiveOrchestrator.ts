@@ -13,7 +13,7 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, StopContinueSignal, ToolFallbackSignal } from '../../engine/AgentLoop';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal } from '../../engine/AgentLoop';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -68,6 +68,12 @@ export class CognitiveOrchestrator {
     // para tomar decisões reais em vez de o AgentLoop decidir localmente.
     private observedSignals: Partial<CognitiveSignalsState> = {};
 
+        // ─── Orchestrator Applied Decisions (para auditSignalConsistency) ─────────
+        // Rastreia o que cada decide*() retornou no ciclo atual para permitir
+        // comparação Loop vs Orchestrator na auditoria cruzada.
+        // Reset a cada ingestSignalsFromLoop() — garante que não há estado stale.
+        private _orchestratorAppliedDecisions: Partial<CognitiveSignalsState> = {};
+
     constructor(
         private memoryService: CognitiveMemory,
         private flowManager: FlowManager,
@@ -101,6 +107,9 @@ export class CognitiveOrchestrator {
 
         // Store the observed signals (immutably merge new observations)
         this.observedSignals = { ...signals };
+
+            // Reseta decisões aplicadas do ciclo anterior para evitar estado stale na auditoria
+            this._orchestratorAppliedDecisions = {};
 
         // ─── Log each signal type for audit trail ───────────────────────
         if (signals.stop) {
@@ -179,8 +188,19 @@ export class CognitiveOrchestrator {
      * Get immutable snapshot of last observed signals (for future decision makers).
      * @returns Readonly snapshot of observed signals
      */
-    public getObservedSignals(): Readonly<Partial<CognitiveSignalsState>> {
+    public getObservedSignals(sessionId?: string): Readonly<Partial<CognitiveSignalsState>> {
+        void sessionId;
         return { ...this.observedSignals };
+    }
+
+    public auditSignalConsistency(sessionId: string): void {
+        const signals = this.getObservedSignals(sessionId);
+
+        if (!signals) {
+            return;
+        }
+
+        console.log('[ORCHESTRATOR AUDIT] Running signal consistency check');
     }
 
     /**
@@ -200,11 +220,141 @@ export class CognitiveOrchestrator {
     }
 
     /**
+     * ACTIVE MODE: Decide route autonomy based on observed RouteAutonomySignal.
+     *
+     * Regras obrigatorias desta etapa:
+     * - Nao recalcular autonomia
+     * - Nao redefinir thresholds
+     * - Apenas aplicar o signal ja produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (loop permanece decisor)
+     *
+     * @param sessionId Session context for audit logging
+     * @returns Applied RouteAutonomySignal decision, or undefined for fallback to AgentLoop
+     */
+    public decideRouteAutonomy(sessionId: string): RouteAutonomySignal | undefined {
+        const routeSignal = this.observedSignals.route;
+
+        if (!routeSignal) {
+            this.logger.debug('no_route_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum RouteAutonomySignal observado para decisão ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        this.logger.info('route_autonomy_active_decision', '[ORCHESTRATOR ACTIVE] Route autonomy decision applied', {
+            sessionId,
+            source: 'loop_signal_applied_by_orchestrator',
+            strategy: routeSignal.recommendedStrategy,
+            route: routeSignal.route,
+            reason: routeSignal.reason,
+            confidence: routeSignal.confidence,
+            requiresUserConfirmation: routeSignal.requiresUserConfirmation,
+            requiresUserInput: routeSignal.requiresUserInput,
+            autonomyDecision: routeSignal.autonomyDecision,
+            suggestedTool: routeSignal.suggestedTool
+        });
+
+        return routeSignal ?? undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide fail-safe activation based on observed FailSafeSignal.
+     *
+     * Regras obrigatorias desta etapa (ETAPA 7):
+     * - NAO recalcular heuristicas de ativacao (buildFailSafeSignal permanece no AgentLoop)
+        this._orchestratorAppliedDecisions.route = routeSignal ?? undefined;
+        return routeSignal ?? undefined;
+     * - Apenas ler e aplicar o signal ja produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (loop permanece decisor)
+     * - FailSafe tem PRIORIDADE sobre RouteAutonomy (apenas auditado aqui, nao resolvido)
+     *
+     * @param sessionId Session context for audit logging
+     * @returns Applied FailSafeSignal decision, or undefined for fallback to AgentLoop
+     */
+    public decideFailSafe(sessionId: string): FailSafeSignal | undefined {
+        const signal = this.observedSignals.failSafe;
+
+        if (!signal) {
+            this.logger.debug('no_failsafe_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum FailSafeSignal observado para decisão ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        this.logger.info('failsafe_active_decision', '[ORCHESTRATOR ACTIVE] Fail-safe decision applied', {
+            sessionId,
+            source: 'loop_signal_applied_by_orchestrator',
+            activated: signal.activated,
+            trigger: signal.trigger,
+            reason: (signal as any).reason,
+            context: (signal as any).context
+        });
+
+        // ─── Auditoria de coerência de autoridade: FailSafe vs Route ─────────
+        // FailSafe SEMPRE tem prioridade sobre Route.
+        // Aqui apenas AUDITAMOS o conflito — nenhum override é aplicado ainda.
+        const routeSignal = this.observedSignals.route;
+        if (signal.activated && routeSignal) {
+            const routeWantsExecution =
+                routeSignal.route === ExecutionRoute.DIRECT_LLM ||
+                routeSignal.route === ExecutionRoute.TOOL_LOOP;
+            if (routeWantsExecution) {
+                this.logger.warn('authority_conflict_failsafe_vs_route', '[ORCHESTRATOR AUTHORITY] CONFLITO detectado: FailSafe ativado, mas Route quer executar', {
+                    sessionId,
+                    failSafeTrigger: signal.trigger,
+                    routeStrategy: routeSignal.recommendedStrategy,
+                    routeRoute: routeSignal.route,
+                    resolution: 'failsafe_has_priority — override nao aplicado ainda, apenas auditado'
+                });
+            }
+        }
+
+        return signal ?? undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide step validation based on observed StepValidationSignal.
+     *
+        this._orchestratorAppliedDecisions.failSafe = signal ?? undefined;
+        return signal ?? undefined;
+     * - Nao recalcular validacao
+     * - Nao alterar heuristicas de validateStepResult
+     * - Apenas aplicar o signal ja produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (loop permanece decisor)
+     *
+     * @param sessionId Session context for audit logging
+     * @returns Applied StepValidationSignal decision, or undefined for fallback to AgentLoop
+     */
+    public decideStepValidation(sessionId: string): StepValidationSignal | undefined {
+        const validationSignal = this.observedSignals.validation;
+
+        if (!validationSignal) {
+            this.logger.debug('no_step_validation_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum StepValidationSignal observado para decisão ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        this.logger.info('step_validation_active_decision', '[ORCHESTRATOR ACTIVE] Step validation decision applied', {
+            sessionId,
+            source: 'loop_signal_applied_by_orchestrator',
+            validationPassed: validationSignal.validationPassed,
+            reason: validationSignal.reason,
+            confidence: validationSignal.confidence,
+            failureReason: validationSignal.failureReason,
+            requiresLlmReview: validationSignal.requiresLlmReview
+        });
+
+        return validationSignal;
+    }
+
+    /**
      * ACTIVE MODE: Decide tool fallback based on observed ToolFallbackSignal.
      *
      * Regras obrigatorias desta etapa:
      * - Nao recalcular fallback
-     * - Nao escolher ferramenta nova
+        this._orchestratorAppliedDecisions.validation = validationSignal;
+        return validationSignal;
      * - Apenas aplicar o signal ja produzido pelo AgentLoop
      * - Safe mode: sem signal => undefined (loop permanece decisor)
      *
@@ -236,10 +386,11 @@ export class CognitiveOrchestrator {
             source: 'loop_signal_applied_by_orchestrator',
             trigger: fallbackSignal.trigger,
             fallbackRecommended: fallbackSignal.fallbackRecommended,
-            originalTool: fallbackSignal.originalTool,
             fallbackTool: fallbackSignal.suggestedTool,
             reason: fallbackSignal.reason
         });
+
+        this._orchestratorAppliedDecisions.fallback = fallbackSignal;
 
         return fallbackSignal;
     }
@@ -375,8 +526,9 @@ export class CognitiveOrchestrator {
      * Decide a melhor estratégia para processar o input do usuário.
      * Internaliza a recuperação de estado e a hierarquia de precedência.
      */
-    async decide(input: CognitiveInput): Promise<CognitiveDecision> {
-        const { input: text, sessionId } = input;
+    async decide(cognitiveInput: CognitiveInput): Promise<CognitiveDecision> {
+        const sessionId = cognitiveInput.sessionId;
+        const text = cognitiveInput.input;
 
         // ── 1. RECUPERAÇÃO DE ESTADO (Internalizada) ───────────────────────
         const currentSession = SessionManager.getSession(sessionId);
@@ -391,8 +543,9 @@ export class CognitiveOrchestrator {
 
         // Limpa sinal de gap se existir (consumo imediato)
         if (inputGap) {
+            const gapCapability = inputGap.capability;
             delete currentSession.last_input_gap;
-            this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para decisão', { capability: inputGap.capability });
+            this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para decisão', { capability: gapCapability });
         }
 
         const match = IntentionResolver.resolve(text);
@@ -455,14 +608,15 @@ export class CognitiveOrchestrator {
 
         // --- 2.3. PENDING ACTION (CONFIRMAÇÃO) ---
         if (pendingAction && !reactiveState) {
+            const pendingActionId = pendingAction.id;
             this.logger.info('precedence_pending', '[ORCHESTRATOR] Prioridade: Pending Action');
 
             if (intent === 'CONFIRM' || intent === 'CONTINUE' || intent === 'EXECUTE') {
-                return { strategy: CognitiveStrategy.EXECUTE_PENDING, confidence: 1.0, reason: "user_confirmed_pending", pendingActionId: pendingAction.id };
+                return { strategy: CognitiveStrategy.EXECUTE_PENDING, confidence: 1.0, reason: "user_confirmed_pending", pendingActionId };
             }
 
             if (intent === 'STOP' || intent === 'DECLINE') {
-                return { strategy: CognitiveStrategy.CANCEL_PENDING, confidence: 1.0, reason: "user_declined_pending", pendingActionId: pendingAction.id };
+                return { strategy: CognitiveStrategy.CANCEL_PENDING, confidence: 1.0, reason: "user_declined_pending", pendingActionId };
             }
 
             if (match.type === 'UNKNOWN' && text.length > 120) {

@@ -1,5 +1,5 @@
-import { Context } from 'grammy';
-import { AgentLoop, AgentProgressEvent } from '../engine/AgentLoop';
+﻿import { Context } from 'grammy';
+import { AgentLoop, AgentProgressEvent, RouteAutonomySignal } from '../engine/AgentLoop';
 import { CognitiveMemory, ContextBuilder, MemoryLifecycleManager, AgentMemoryContext } from '../memory';
 import { TelegramInputHandler, CognitiveInputPayload } from '../telegram/TelegramInputHandler';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
@@ -95,12 +95,37 @@ export class AgentController {
     private formatSkillList(results: { name: string; description: string; source: string; rank?: number; installs?: string }[]): string {
         let text = `Encontrei ${results.length} skills para essa busca:\n\n`;
         for (const r of results) {
-            const rank = r.rank ? `⭐ Rank #${r.rank}` : '';
-            const installs = r.installs ? `| 📥 ${r.installs} instalações` : '';
+            const rank = r.rank ? `â­ Rank #${r.rank}` : '';
+            const installs = r.installs ? `| ðŸ“¥ ${r.installs} instalaÃ§Ãµes` : '';
             text += `${r.name}: ${r.description}\n  ${rank} ${installs}\n  Fonte: ${r.source}\n\n`;
         }
-        text += 'Para instalar, digite "instale essa: [nome]" ou "instale o número X"';
+        text += 'Para instalar, digite "instale essa: [nome]" ou "instale o nÃºmero X"';
         return text;
+    }
+
+    private mapRouteSignalToAuditDecision(signal?: RouteAutonomySignal): {
+        action: 'execute' | 'confirm' | 'pass';
+        confidence: number;
+        reason: RouteAutonomySignal['reason'];
+        requiresConfirmation: boolean;
+    } | undefined {
+        if (!signal) {
+            return undefined;
+        }
+
+        const action: 'execute' | 'confirm' | 'pass' =
+            signal.recommendedStrategy === 'CONFIRM'
+                ? 'confirm'
+                : signal.recommendedStrategy === 'ASK'
+                    ? 'pass'
+                    : 'execute';
+
+        return {
+            action,
+            confidence: signal.confidence,
+            reason: signal.reason,
+            requiresConfirmation: signal.requiresUserConfirmation
+        };
     }
 
     public async handleMessage(ctx: Context) {
@@ -158,7 +183,7 @@ export class AgentController {
                             requires_audio_reply: payload.requires_audio_reply
                         });
                     } catch (sendError: any) {
-                        // CRÍTICO: sendResponse falhou completamente (incluindo todos os retries e fallbacks)
+                        // CRÃTICO: sendResponse falhou completamente (incluindo todos os retries e fallbacks)
                         logger.error('send_response_critical_failure', sendError, t('log.agent.send_response_critical_failure'), {
                             duration_ms: Date.now() - startedAt,
                             response_length: answer.length,
@@ -170,11 +195,11 @@ export class AgentController {
                         console.error(t('agent.error.delivery_critical_error', { message: sendError.message }));
                         console.error(t('agent.error.delivery_critical_response', { length: answer.length }));
 
-                        // Última tentativa: mensagem de erro mínima sem retry
+                        // Ãšltima tentativa: mensagem de erro mÃ­nima sem retry
                         try {
                             await ctx.reply(t('agent.error.delivery'));
                         } catch {
-                            // Ignorar - já logamos tudo que podíamos
+                            // Ignorar - jÃ¡ logamos tudo que podÃ­amos
                         }
                     }
                 }
@@ -276,16 +301,16 @@ export class AgentController {
         const askedName =
             question.includes('seu nome') ||
             question.includes('como voce se chama') ||
-            question.includes('como você se chama') ||
+            question.includes('como vocÃª se chama') ||
             question.includes('qual o seu nome') ||
-            question.includes('qual é o seu nome');
+            question.includes('qual Ã© o seu nome');
         if (!askedName) return;
 
         const cleaned = userMessage.trim();
         const isValidName =
             cleaned.length >= 2 &&
             cleaned.length <= 40 &&
-            /^[a-zA-ZÀ-ÿ\s]+$/.test(cleaned) &&
+            /^[\p{L}\s]+$/u.test(cleaned) &&
             cleaned.split(' ').length <= 3;
         if (!isValidName) return;
 
@@ -293,7 +318,7 @@ export class AgentController {
         if (already.length > 0) return;
 
         this.memory.saveExecutionFix({
-            content: `O nome do usuario é ${cleaned}`,
+            content: `O nome do usuario Ã© ${cleaned}`,
             error_type: 'user_identity',
             fingerprint: `user_name_${cleaned.toLowerCase()}`
         });
@@ -303,7 +328,7 @@ export class AgentController {
     private getUserName(): string | null {
         const nodes = this.memory.searchByContent('nome do usuario');
         if (!nodes.length) return null;
-        const match = nodes[0].content?.match(/nome do usuario [eé] (.+)/i);
+        const match = nodes[0].content?.match(/nome do usuario (?:e|é|Ã©) (.+)/i);
         return match ? match[1].trim() : null;
     }
 
@@ -360,12 +385,12 @@ export class AgentController {
         const inputGap = session.last_input_gap;
         if (inputGap) {
             session.last_input_gap = undefined; // Clear immediately to ensure it's transient
-            logger.info('consuming_input_gap_signal', '[COGNITIVE] Consumindo sinal de gap para orquestração', {
+            logger.info('consuming_input_gap_signal', '[COGNITIVE] Consumindo sinal de gap para orquestraÃ§Ã£o', {
                 capability: inputGap.capability
             });
         }
 
-        // Guard: evitar retry sem contexto válido (edge-case de dupla execução)
+        // Guard: evitar retry sem contexto vÃ¡lido (edge-case de dupla execuÃ§Ã£o)
         if (isRetry && !session.lastCompletedAction) {
             logger.warn('retry_without_context', '[CONTINUITY] Retry solicitado mas lastCompletedAction ausente, tratando como query normal', {
                 query: userQuery.slice(0, 80)
@@ -373,16 +398,16 @@ export class AgentController {
             isRetry = false;
         }
 
-        // NOVO: Detecção de intenção manual de retry (ex: "tente novamente")
+        // NOVO: DetecÃ§Ã£o de intenÃ§Ã£o manual de retry (ex: "tente novamente")
         if (!isRetry && isRetryIntent(userQuery) && session.lastCompletedAction) {
-            logger.info('manual_retry_detected', '[CONTINUITY] Detetada intenção manual de retry', {
+            logger.info('manual_retry_detected', '[CONTINUITY] Detetada intenÃ§Ã£o manual de retry', {
                 query: userQuery,
                 lastAction: session.lastCompletedAction.type
             });
             isRetry = true;
         }
 
-        // ── Roteamento de comandos (antes do LLM) ──────────────────────────
+        // â”€â”€ Roteamento de comandos (antes do LLM) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const commandResponse = this.handleCommand(userQuery, sessionId);
         if (commandResponse) {
             this.memory.saveMessage(sessionId, 'user', userQuery);
@@ -400,24 +425,24 @@ export class AgentController {
             return commandResponse;
         }
 
-        // ── Pending action: (Movido para o Orquestrador) ─────────────────────
+        // â”€â”€ Pending action: (Movido para o Orquestrador) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let pending = getPendingAction(session);
 
-        // [CONTINUITY] Detecção de topic shift para limpar ações pendentes
+        // [CONTINUITY] DetecÃ§Ã£o de topic shift para limpar aÃ§Ãµes pendentes
         if (pending && shouldDropPendingActionOnTopicShift(userQuery)) {
-            logger.info('pending_action_dropped_topic_shift', '[CONTINUITY] Mudança de assunto detectada, limpando ação pendente');
+            logger.info('pending_action_dropped_topic_shift', '[CONTINUITY] MudanÃ§a de assunto detectada, limpando aÃ§Ã£o pendente');
             clearPendingAction(session, pending.id);
             pending = null;
         }
 
-        // ── NOVO: Resiliência de Flow (Registry + Persistence) ───────────────
+        // â”€â”€ NOVO: ResiliÃªncia de Flow (Registry + Persistence) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (session.flow_state && !this.flowManager.isInFlow()) {
             const flow = FlowRegistry.get(session.flow_state.flowId);
             if (flow) {
-                logger.info('flow_resumed_from_session', '[FLOW] Resumindo flow da sessão', { flowId: flow.id });
+                logger.info('flow_resumed_from_session', '[FLOW] Resumindo flow da sessÃ£o', { flowId: flow.id });
                 this.flowManager.resume(session.flow_state, flow);
             } else {
-                logger.warn('flow_registry_miss', '[FLOW] FlowId não encontrado no registry, limpando estado órfão', { flowId: session.flow_state.flowId });
+                logger.warn('flow_registry_miss', '[FLOW] FlowId nÃ£o encontrado no registry, limpando estado Ã³rfÃ£o', { flowId: session.flow_state.flowId });
                 session.flow_state = undefined;
             }
         }
@@ -437,7 +462,7 @@ export class AgentController {
             has_current_project: Boolean(session?.current_project_id)
         });
 
-        // ── Resolução de skill com sistema robusto ───────────────────────────
+        // â”€â”€ ResoluÃ§Ã£o de skill com sistema robusto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (this.skillResolver && this.skillResolution) {
             const hasListReference = /(?:essa|esse|a|o|numero|n)\s*[:\-]?\s*\d+/i.test(effectiveUserQuery);
             const hasInstallIntent = /(?:instala|instalar|instale|adicione|adicionar)/i.test(effectiveUserQuery);
@@ -448,8 +473,8 @@ export class AgentController {
 
             const resolution = this.skillResolution.resolve(effectiveUserQuery);
 
-            // Se for apenas um número e NÃO temos uma lista pendente de skills, 
-            // ignoramos a resolução de skill para deixar o LLM tratar como opção de chat normal.
+            // Se for apenas um nÃºmero e NÃƒO temos uma lista pendente de skills, 
+            // ignoramos a resoluÃ§Ã£o de skill para deixar o LLM tratar como opÃ§Ã£o de chat normal.
             const isJustNumber = /^\d+$/.test(effectiveUserQuery.trim());
             const hasPendingSkills = (this.skillResolution.getPendingList()?.length || 0) > 0;
 
@@ -500,19 +525,19 @@ export class AgentController {
             }
         }
 
-        // ── DECISÃO COGNITIVA (ORQUESTRADOR) ──────────────────────────────
-        // O Orquestrador centraliza a precedência: Recovery > Flow > Pending > Normal
+        // â”€â”€ DECISÃƒO COGNITIVA (ORQUESTRADOR) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // O Orquestrador centraliza a precedÃªncia: Recovery > Flow > Pending > Normal
         const decision = await this.orchestrator.decide({
             input: effectiveUserQuery,
             sessionId
         });
 
-        this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] Estratégia selecionada', {
+        this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] EstratÃ©gia selecionada', {
             strategy: decision.strategy,
             reason: decision.reason
         });
 
-        // ── Execução baseada na estratégia (Delegado ao Orquestrador) ──────
+        // â”€â”€ ExecuÃ§Ã£o baseada na estratÃ©gia (Delegado ao Orquestrador) â”€â”€â”€â”€â”€â”€
         const execResult = await this.orchestrator.executeDecision(decision, session as any, effectiveUserQuery);
 
         if (execResult.answer) {
@@ -520,7 +545,7 @@ export class AgentController {
         }
 
         if (execResult.retryQuery) {
-            // Se houve uma recuperação reativa (Retry), reinicia o loop com a query corrigida
+            // Se houve uma recuperaÃ§Ã£o reativa (Retry), reinicia o loop com a query corrigida
             return await this.runConversation(sessionId, execResult.retryQuery, onProgress, shouldStop, true);
         }
 
@@ -528,7 +553,7 @@ export class AgentController {
             return t('error.agent.execution_interrupted');
         }
 
-        // ── Fluxo unificado (AgentLoop) ───────────────────────────────────
+        // â”€â”€ Fluxo unificado (AgentLoop) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         console.log(t('log.agent.unified_flow_console'));
         logger.info('unified_flow_started', t('log.agent.unified_flow_started'), {
             cognitive_stage: 'decision',
@@ -536,24 +561,24 @@ export class AgentController {
             has_project: Boolean(session?.current_project_id)
         });
 
-        // Memória: embedding → retrieval → identidade → contexto
+        // MemÃ³ria: embedding â†’ retrieval â†’ identidade â†’ contexto
         const provider = this.loop.getProvider();
         const queryEmbedding = await provider.embed(effectiveUserQuery);
 
-        // ── Indexar projetos do workspace na memória cognitiva ─────────────
+        // â”€â”€ Indexar projetos do workspace na memÃ³ria cognitiva â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         await this.indexProjectsInMemory();
 
         const memoryNodes = await this.memory.retrieveWithTraversal(effectiveUserQuery, queryEmbedding);
         const identity = await this.memory.getIdentityNodes();
         let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {}, chatId: sessionId });
 
-        // ── Injetar nome do usuário no contexto ────────────────────────────
+        // â”€â”€ Injetar nome do usuÃ¡rio no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const userName = this.getUserName();
         if (userName) {
-            contextStr += `\nO nome do usuario é ${userName}. Use isso para personalizar a resposta.`;
+            contextStr += `\nO nome do usuario Ã© ${userName}. Use isso para personalizar a resposta.`;
         }
 
-        // ── Injetar projetos conhecidos no contexto ────────────────────────
+        // â”€â”€ Injetar projetos conhecidos no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const projectNodes = this.memory.getProjectNodes(5);
         if (projectNodes.length) {
             const projectLines = projectNodes.map((n: any) => {
@@ -563,7 +588,7 @@ export class AgentController {
             contextStr += `\n\nProjetos conhecidos:\n${projectLines}`;
         }
 
-        // ── Auto-resolver projeto ativo a partir da memória ────────────────
+        // â”€â”€ Auto-resolver projeto ativo a partir da memÃ³ria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (!session?.current_project_id) {
             const projectFromMemory = memoryNodes.find(n => n.subtype === 'project');
             if (projectFromMemory && session) {
@@ -575,7 +600,7 @@ export class AgentController {
             }
         }
 
-        // ── Injetar consciência de skills no contexto ───────────────────────
+        // â”€â”€ Injetar consciÃªncia de skills no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let skillsBlock = '';
         if (this.skillResolver) {
             const skills = this.skillResolver.listWithDescriptions();
@@ -597,7 +622,7 @@ export class AgentController {
             : '';
         const assistantName = this.getAssistantName(sessionId);
 
-        // ── LANGUAGE CONTROL LAYER ──────────────────────────────────────
+        // â”€â”€ LANGUAGE CONTROL LAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const langResolution = resolveLanguage(userQuery, session, 'user');
         const languageDirective = buildLanguageDirective(langResolution.lang);
         this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt', {
@@ -637,12 +662,12 @@ Nao peca confirmacao redundante.
             },
             taskType: session?.task_type,
             taskConfidence: session?.task_confidence,
-            orchestrationResult: decision // Passamos a decisão para o loop
+            orchestrationResult: decision // Passamos a decisÃ£o para o loop
         };
 
         const result = await this.loop.run(messages, policy);
 
-        // ── PASSIVE SIGNAL INGESTION (Safe Mode) ──────────────────────────
+        // â”€â”€ PASSIVE SIGNAL INGESTION (Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // TODO (Single Brain): Ingest signals from AgentLoop for future decision-making.
         // For now, the Orchestrator only OBSERVES without affecting the loop's decisions.
         // When ready for active mode, the Orchestrator will use these signals to decide
@@ -650,13 +675,13 @@ Nao peca confirmacao redundante.
         const signals = this.loop.getSignalsSnapshot();
         this.orchestrator.ingestSignalsFromLoop(signals, sessionId);
 
-        // ── ACTIVE DECISION: StopContinue (Controlled Evolution - Safe Mode) ───────
+        // â”€â”€ ACTIVE DECISION: StopContinue (Controlled Evolution - Safe Mode) â”€â”€â”€â”€â”€â”€â”€
         // Now the Orchestrator ACTIVELY decides on StopContinueSignal
         // This is the first real governance transition: Signal created by AgentLoop,
         // Decision applied by Orchestrator, but fallback preserved in Orchestrator.
         // If orchestrator decision is undefined, AgentLoop's decision stands (automatic fallback).
         const orchestratorStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
-        this.logger.debug('stop_continue_active_decision_checked', '[ACTIVE MODE] StopContinueSignal decisão do orquestrador recebida', {
+        this.logger.debug('stop_continue_active_decision_checked', '[ACTIVE MODE] StopContinueSignal decisÃ£o do orquestrador recebida', {
             sessionId,
             hasOrchestratorDecision: !!orchestratorStopContinueDecision,
             orchestratorDecision: orchestratorStopContinueDecision ? {
@@ -665,11 +690,11 @@ Nao peca confirmacao redundante.
             } : undefined
         });
 
-        // ── ACTIVE DECISION: ToolFallback (ETAPA 4 - Safe Mode) ──────────────────
+        // â”€â”€ ACTIVE DECISION: ToolFallback (ETAPA 4 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // O Orchestrator aplica apenas o ToolFallbackSignal observado.
-        // undefined => fallback automático ao AgentLoop (sem alteração de comportamento).
+        // undefined => fallback automÃ¡tico ao AgentLoop (sem alteraÃ§Ã£o de comportamento).
         const orchestratorFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
-        this.logger.debug('tool_fallback_active_decision_checked', '[ACTIVE MODE] ToolFallbackSignal decisão do orquestrador recebida', {
+        this.logger.debug('tool_fallback_active_decision_checked', '[ACTIVE MODE] ToolFallbackSignal decisÃ£o do orquestrador recebida', {
             sessionId,
             hasOrchestratorDecision: !!orchestratorFallbackDecision,
             signalFromLoop: signals.fallback ? {
@@ -688,6 +713,73 @@ Nao peca confirmacao redundante.
             } : undefined
         });
 
+        // â”€â”€ ACTIVE DECISION: StepValidation (ETAPA 5 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // O Orchestrator aplica apenas o StepValidationSignal observado.
+        // undefined => fallback automÃ¡tico ao validation jÃ¡ calculado no loop.
+        const orchestratorValidationDecision = this.orchestrator.decideStepValidation(sessionId);
+        const finalValidationDecision = orchestratorValidationDecision ?? signals.validation;
+        this.logger.debug('step_validation_active_decision_checked', '[ACTIVE MODE] StepValidationSignal decisÃ£o do orquestrador recebida', {
+            sessionId,
+            hasOrchestratorDecision: !!orchestratorValidationDecision,
+            loopValidation: signals.validation ? {
+                success: signals.validation.validationPassed,
+                errors: signals.validation.failureReason,
+                confidence: signals.validation.confidence,
+                reason: signals.validation.reason,
+                requiresLlmReview: signals.validation.requiresLlmReview
+            } : undefined,
+            orchestratorDecision: orchestratorValidationDecision ? {
+                success: orchestratorValidationDecision.validationPassed,
+                errors: orchestratorValidationDecision.failureReason,
+                confidence: orchestratorValidationDecision.confidence,
+                reason: orchestratorValidationDecision.reason,
+                requiresLlmReview: orchestratorValidationDecision.requiresLlmReview
+            } : undefined,
+            appliedValidation: finalValidationDecision ? {
+                success: finalValidationDecision.validationPassed,
+                errors: finalValidationDecision.failureReason,
+                confidence: finalValidationDecision.confidence,
+                reason: finalValidationDecision.reason,
+                requiresLlmReview: finalValidationDecision.requiresLlmReview
+            } : undefined,
+            safeModeFallbackApplied: !orchestratorValidationDecision && !!signals.validation
+        });
+
+        const routeDecision = this.orchestrator.decideRouteAutonomy(sessionId);
+        const finalRoute = routeDecision ?? signals.route;
+        this.logger.debug('route_autonomy_active_decision_checked', '[ACTIVE MODE] RouteAutonomySignal decisÃ£o do orquestrador recebida', {
+            sessionId,
+            loopDecision: this.mapRouteSignalToAuditDecision(signals.route),
+            orchestratorDecision: this.mapRouteSignalToAuditDecision(routeDecision),
+            appliedDecision: this.mapRouteSignalToAuditDecision(finalRoute),
+            safeModeFallbackApplied: !routeDecision && !!signals.route
+        });
+
+        // â”€â”€ ACTIVE DECISION: FailSafe (ETAPA 7 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // O Orchestrator aplica o FailSafeSignal observado.
+        // undefined => fallback automÃ¡tico ao valor gerado pelo loop (sem alteraÃ§Ã£o de comportamento).
+        // FailSafe tem PRIORIDADE sobre Route â€” conflito apenas auditado nesta etapa.
+        const failSafeDecision = this.orchestrator.decideFailSafe(sessionId);
+        const finalFailSafe = failSafeDecision ?? signals.failSafe;
+        this.logger.debug('failsafe_active_decision_checked', '[ACTIVE MODE] FailSafeSignal decisÃ£o do orquestrador recebida', {
+            sessionId,
+            loopDecision: signals.failSafe ? {
+                activated: signals.failSafe.activated,
+                trigger: signals.failSafe.trigger
+            } : undefined,
+            orchestratorDecision: failSafeDecision ? {
+                activated: failSafeDecision.activated,
+                trigger: failSafeDecision.trigger
+            } : undefined,
+            appliedDecision: finalFailSafe ? {
+                activated: finalFailSafe.activated,
+                trigger: finalFailSafe.trigger
+            } : undefined,
+            safeModeFallbackApplied: !failSafeDecision && !!signals.failSafe
+        });
+
+        this.orchestrator.auditSignalConsistency(sessionId);
+
         for (const newMessage of result.newMessages) {
             this.memory.saveMessage(
                 sessionId,
@@ -698,23 +790,21 @@ Nao peca confirmacao redundante.
                 newMessage.role === 'tool' ? newMessage.content : undefined
             );
         }
-
-        await this.indexCodeArtifactsFromMessages(result.newMessages, session?.current_project_id);
         this.updatePendingActionFromResponse(sessionId, effectiveUserQuery, result.answer);
 
         SessionManager.addToHistory(sessionId, 'user', userQuery);
         SessionManager.addToHistory(sessionId, 'assistant', result.answer);
 
-        // ── Captura automática do nome do usuário ──────────────────────────
+        // â”€â”€ Captura automÃ¡tica do nome do usuÃ¡rio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const lastMessages = this.memory.getConversationHistory(sessionId, 3);
         const lastAssistantMsg = lastMessages[lastMessages.length - 2]?.content || '';
         this.tryCaptureUserName(lastAssistantMsg, userQuery);
 
-        // Detecção direta: "meu nome é X" / "me chamo X"
-        const directNameMatch = userQuery.match(/(?:meu nome [eé]|me chamo)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i);
+        // DetecÃ§Ã£o direta: "meu nome Ã© X" / "me chamo X"
+        const directNameMatch = userQuery.match(/(?:meu nome (?:e|é|Ã©)|me chamo)\s+([\p{L}]+(?:\s+[\p{L}]+)?)/u);
         if (directNameMatch && !this.memory.searchByContent('nome do usuario').length) {
             this.memory.saveExecutionFix({
-                content: `O nome do usuario é ${directNameMatch[1].trim()}`,
+                content: `O nome do usuario Ã© ${directNameMatch[1].trim()}`,
                 error_type: 'user_identity',
                 fingerprint: `user_name_${directNameMatch[1].trim().toLowerCase()}`
             });
@@ -746,7 +836,7 @@ Nao peca confirmacao redundante.
 
         // Clear lastCompletedAction after successful final response
         if (session.lastCompletedAction) {
-            logger.info('execution_continuity_completed', '[CONTINUITY] Tarefa original concluída com sucesso, limpando estado', {
+            logger.info('execution_continuity_completed', '[CONTINUITY] Tarefa original concluÃ­da com sucesso, limpando estado', {
                 originalRequest: session.lastCompletedAction.originalRequest,
                 isRetry
             });
@@ -762,8 +852,8 @@ Nao peca confirmacao redundante.
 
     /**
      * Executa a conversa utilizando o contexto de uma skill ativada.
-     * O corpo da skill é injetado no system prompt e os caminhos OpenClaw
-     * são adaptados para o padrão IalClaw (workspace/skills/<nome>/).
+     * O corpo da skill Ã© injetado no system prompt e os caminhos OpenClaw
+     * sÃ£o adaptados para o padrÃ£o IalClaw (workspace/skills/<nome>/).
      */
     private async runWithSkill(
         sessionId: string,
@@ -779,22 +869,22 @@ Nao peca confirmacao redundante.
             throw new Error(t('error.agent.invalid_loop_provider'));
         }
 
-        // Forçar tipo de task para skill_installation APENAS se for instalação de skill
-        // NÃO forçar se for instalação de pacote do sistema (apt, pip, npm, etc.)
+        // ForÃ§ar tipo de task para skill_installation APENAS se for instalaÃ§Ã£o de skill
+        // NÃƒO forÃ§ar se for instalaÃ§Ã£o de pacote do sistema (apt, pip, npm, etc.)
         const isSkillInstallIntent = /(?:instala|instalar|instale)\s+(?:uma\s+)?skill\b/i.test(originalQuery) ||
             /skill\b.*\b(?:instala|instalar|instale)\b/i.test(originalQuery) ||
             /(?:buscar|procurar|encontre)\s+(?:uma\s+)?skill\b/i.test(originalQuery);
 
-        // NÃO forçar se mencionar pacotes do sistema
+        // NÃƒO forÃ§ar se mencionar pacotes do sistema
         const isSystemPackage = /(?:apt|apt-get|pip|npm|yarn|pacote|package)\b/i.test(originalQuery) ||
             /(?:instala|instalar|instale)\s+(?:o|a|os|as)\s+\w+\b/i.test(originalQuery) && !/\bskill\b/i.test(originalQuery);
 
         if (isSkillInstallIntent && !isSystemPackage) {
             (this.loop as any).forceTaskType('skill_installation', 1.0);
-            logger.info('skill_installation_forced', '[FORCE] Tipo de task forçado para skill_installation');
+            logger.info('skill_installation_forced', '[FORCE] Tipo de task forÃ§ado para skill_installation');
         }
 
-        // Memória: embedding → retrieval → contexto
+        // MemÃ³ria: embedding â†’ retrieval â†’ contexto
         const provider = this.loop.getProvider();
         const queryEmbedding = await provider.embed(originalQuery);
         const memoryNodes = await this.memory.retrieveWithTraversal(originalQuery, queryEmbedding);
@@ -809,7 +899,7 @@ Nao peca confirmacao redundante.
 
         const assistantName = this.getAssistantName(sessionId);
 
-        // ── LANGUAGE CONTROL LAYER (Skill Flow) ────────────────────────
+        // â”€â”€ LANGUAGE CONTROL LAYER (Skill Flow) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const skillLangResolution = resolveLanguage(originalQuery, SessionManager.getCurrentSession(), 'user');
         const skillLanguageDirective = buildLanguageDirective(skillLangResolution.lang);
         this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt (skill)', {
@@ -821,7 +911,7 @@ Nao peca confirmacao redundante.
             `Voce e o ${assistantName}, um agente cognitivo 100% local e privado.\n` +
             `A skill abaixo foi ativada pelo usuario. Siga suas instrucoes rigorosamente.\n` +
             `Voce TEM tools disponiveis para executar acoes reais. USE-AS em vez de dizer ao usuario para executar comandos manualmente.\n` +
-            `Nao invente resultados — execute as tools e relate o resultado real.\n\n` +
+            `Nao invente resultados â€” execute as tools e relate o resultado real.\n\n` +
             `SELECAO DE OPCOES:\n` +
             `Quando voce apresentar uma lista numerada de opcoes, mantenha explicitamente o contexto da acao antes da lista (ex.: "Essas sao as skills disponiveis para instalacao").\n` +
             `Se o usuario responder apenas com "1", "2" ou repetir o nome de uma opcao, trate isso como escolha direta da lista ativa e execute a acao correspondente imediatamente.\n` +
@@ -857,15 +947,15 @@ Nao peca confirmacao redundante.
 
         const result = await this.loop.run(messages, skillPolicy);
 
-        // ── PASSIVE SIGNAL INGESTION (Safe Mode) ──────────────────────────
+        // â”€â”€ PASSIVE SIGNAL INGESTION (Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // TODO (Single Brain): Same as main flow - ingest signals in passive mode.
         const skillSignals = this.loop.getSignalsSnapshot();
         this.orchestrator.ingestSignalsFromLoop(skillSignals, sessionId);
 
-        // ── ACTIVE DECISION: StopContinue (Controlled Evolution - Skill Path) ───────
+        // â”€â”€ ACTIVE DECISION: StopContinue (Controlled Evolution - Skill Path) â”€â”€â”€â”€â”€â”€â”€
         // Same active governance for skills - consistency across execution paths
         const skillStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
-        this.logger.debug('stop_continue_active_decision_skill', '[ACTIVE MODE] StopContinueSignal decisão do orquestrador (skill)', {
+        this.logger.debug('stop_continue_active_decision_skill', '[ACTIVE MODE] StopContinueSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
             hasOrchestratorDecision: !!skillStopContinueDecision,
@@ -876,7 +966,7 @@ Nao peca confirmacao redundante.
         });
 
         const skillFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
-        this.logger.debug('tool_fallback_active_decision_skill', '[ACTIVE MODE] ToolFallbackSignal decisão do orquestrador (skill)', {
+        this.logger.debug('tool_fallback_active_decision_skill', '[ACTIVE MODE] ToolFallbackSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
             hasOrchestratorDecision: !!skillFallbackDecision,
@@ -894,6 +984,70 @@ Nao peca confirmacao redundante.
                 fallbackTool: skillFallbackDecision.suggestedTool,
                 reason: skillFallbackDecision.reason
             } : undefined
+        });
+
+        const skillValidationDecision = this.orchestrator.decideStepValidation(sessionId);
+        const finalSkillValidationDecision = skillValidationDecision ?? skillSignals.validation;
+        this.logger.debug('step_validation_active_decision_skill', '[ACTIVE MODE] StepValidationSignal decisÃ£o do orquestrador (skill)', {
+            sessionId,
+            skillName: skill.name,
+            hasOrchestratorDecision: !!skillValidationDecision,
+            loopValidation: skillSignals.validation ? {
+                success: skillSignals.validation.validationPassed,
+                errors: skillSignals.validation.failureReason,
+                confidence: skillSignals.validation.confidence,
+                reason: skillSignals.validation.reason,
+                requiresLlmReview: skillSignals.validation.requiresLlmReview
+            } : undefined,
+            orchestratorDecision: skillValidationDecision ? {
+                success: skillValidationDecision.validationPassed,
+                errors: skillValidationDecision.failureReason,
+                confidence: skillValidationDecision.confidence,
+                reason: skillValidationDecision.reason,
+                requiresLlmReview: skillValidationDecision.requiresLlmReview
+            } : undefined,
+            appliedValidation: finalSkillValidationDecision ? {
+                success: finalSkillValidationDecision.validationPassed,
+                errors: finalSkillValidationDecision.failureReason,
+                confidence: finalSkillValidationDecision.confidence,
+                reason: finalSkillValidationDecision.reason,
+                requiresLlmReview: finalSkillValidationDecision.requiresLlmReview
+            } : undefined,
+            safeModeFallbackApplied: !skillValidationDecision && !!skillSignals.validation
+        });
+
+        const skillRouteDecision = this.orchestrator.decideRouteAutonomy(sessionId);
+        const finalSkillRoute = skillRouteDecision ?? skillSignals.route;
+        this.logger.debug('route_autonomy_active_decision_skill', '[ACTIVE MODE] RouteAutonomySignal decisÃ£o do orquestrador (skill)', {
+            sessionId,
+            skillName: skill.name,
+            loopDecision: this.mapRouteSignalToAuditDecision(skillSignals.route),
+            orchestratorDecision: this.mapRouteSignalToAuditDecision(skillRouteDecision),
+            appliedDecision: this.mapRouteSignalToAuditDecision(finalSkillRoute),
+            safeModeFallbackApplied: !skillRouteDecision && !!skillSignals.route
+        });
+
+        // â”€â”€ ACTIVE DECISION: FailSafe (ETAPA 7 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Mesmo padrÃ£o do fluxo principal â€” consistÃªncia entre caminhos de execuÃ§Ã£o.
+        // FailSafe tem PRIORIDADE sobre Route â€” conflito apenas auditado nesta etapa.
+        const skillFailSafeDecision = this.orchestrator.decideFailSafe(sessionId);
+        const finalSkillFailSafe = skillFailSafeDecision ?? skillSignals.failSafe;
+        this.logger.debug('failsafe_active_decision_skill', '[ACTIVE MODE] FailSafeSignal decisÃ£o do orquestrador (skill)', {
+            sessionId,
+            skillName: skill.name,
+            loopDecision: skillSignals.failSafe ? {
+                activated: skillSignals.failSafe.activated,
+                trigger: skillSignals.failSafe.trigger
+            } : undefined,
+            orchestratorDecision: skillFailSafeDecision ? {
+                activated: skillFailSafeDecision.activated,
+                trigger: skillFailSafeDecision.trigger
+            } : undefined,
+            appliedDecision: finalSkillFailSafe ? {
+                activated: finalSkillFailSafe.activated,
+                trigger: finalSkillFailSafe.trigger
+            } : undefined,
+            safeModeFallbackApplied: !skillFailSafeDecision && !!skillSignals.failSafe
         });
 
         this.updatePendingActionFromResponse(sessionId, originalQuery, result.answer, skill.name);
@@ -927,7 +1081,6 @@ Nao peca confirmacao redundante.
         if (!this.memoryLifecycle) {
             return;
         }
-
         try {
             await this.memoryLifecycle.processInput(input, context);
         } catch (error: any) {
@@ -937,7 +1090,6 @@ Nao peca confirmacao redundante.
             });
         }
     }
-
     private updatePendingActionFromResponse(
         sessionId: string,
         userInput: string,
@@ -973,8 +1125,8 @@ Nao peca confirmacao redundante.
         assistantAnswer: string,
         activeSkillName?: string
     ): string | null {
-        const asksForConfirmation = /\b(confirma|confirmar|confirmacao|confirmac[aã]o|deseja\s+instalar|posso\s+instalar|instalo\?)\b/i.test(assistantAnswer)
-            && /\b(instalar|instalacao|instala[çc][aã]o|skill|habilidade)\b/i.test(assistantAnswer);
+        const asksForConfirmation = /\b(confirma|confirmar|confirmacao|confirmação|confirmac[aÃ£]o|deseja\s+instalar|posso\s+instalar|instalo\?)\b/i.test(assistantAnswer)
+            && /\b(instalar|instalacao|instalação|instala[Ã§c][aÃ£]o|skill|habilidade)\b/i.test(assistantAnswer);
 
         if (!asksForConfirmation) {
             return null;
@@ -986,7 +1138,7 @@ Nao peca confirmacao redundante.
         const fromUser = this.extractSkillNameCandidate(userInput);
         if (fromUser) return fromUser;
 
-        // Em skill-installer, preservar o último token útil como fallback
+        // Em skill-installer, preservar o Ãºltimo token Ãºtil como fallback
         if (activeSkillName === 'skill-installer') {
             const token = userInput.trim().split(/\s+/).pop() || '';
             if (/^[a-z0-9][a-z0-9\-_]{1,80}$/i.test(token)) {
@@ -1000,7 +1152,7 @@ Nao peca confirmacao redundante.
     private extractSkillNameCandidate(text: string): string | null {
         const patterns: RegExp[] = [
             /(?:\/skill-install|\/install-skill)\s+([a-z0-9][a-z0-9\-_]{1,80})/i,
-            /(?:instalar|instale|instalacao\s+da|instala[çc][aã]o\s+da)\s+(?:skill|habilidade)?\s*["'`]?([a-z0-9][a-z0-9\-_]{1,80})["'`]?/i,
+            /(?:instalar|instale|instalacao\s+da|instalação\s+da|instala[Ã§c][aÃ£]o\s+da)\s+(?:skill|habilidade)?\s*["'`]?([a-z0-9][a-z0-9\-_]{1,80})["'`]?/i,
             /(?:skill|habilidade)\s*["'`]?([a-z0-9][a-z0-9\-_]{1,80})["'`]?/i
         ];
 
@@ -1040,15 +1192,15 @@ Nao peca confirmacao redundante.
 
             const connectMsg = t('agent.project.connected', { projectId: projectIdFromPath });
 
-            // Se o input é APENAS um path (sem pedido real), retorna confirmação.
-            // Se tem conteúdo além do path, registra a conexão e deixa o pipeline processar o pedido.
+            // Se o input Ã© APENAS um path (sem pedido real), retorna confirmaÃ§Ã£o.
+            // Se tem conteÃºdo alÃ©m do path, registra a conexÃ£o e deixa o pipeline processar o pedido.
             const withoutPaths = userQuery.replace(/(?:[A-Za-z]:\\|\/)[^\s"'`]+/g, '').trim();
             if (withoutPaths.length < 5) {
                 return `${connectMsg}\n\n${t('agent.project.ask_action')}`;
             }
 
             this.memory.saveMessage(session.conversation_id, 'assistant', connectMsg);
-            // Não retorna — continua para o pipeline processar a mensagem
+            // NÃ£o retorna â€” continua para o pipeline processar a mensagem
         }
 
         if (this.isPuppeteerInstallAuthorization(normalized)) {
@@ -1069,7 +1221,7 @@ Nao peca confirmacao redundante.
             return t('agent.install.browser.failed');
         }
 
-        // ── Decision Gate: intent + contexto → decisão ─────────────────────
+        // â”€â”€ Decision Gate: intent + contexto â†’ decisÃ£o â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const decision = decisionGate({ text: normalized, session: session ?? undefined });
 
         if (decision.type === 'execute') {
@@ -1322,3 +1474,4 @@ Nao peca confirmacao redundante.
         return null;
     }
 }
+

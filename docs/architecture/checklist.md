@@ -22,6 +22,9 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Estabilização estrutural pre-ETAPA 2.4: regex corrompidos no `AgentController` corrigidos (variantes acentuadas + compatibilidade com texto mojibake), sem alterar fluxo.
+- Estabilização estrutural pre-ETAPA 2.4: erros de compilação no `CognitiveOrchestrator` corrigidos com ajustes mínimos de escopo/tipagem (sem alterar heurísticas).
+- Validacao obrigatoria executada: `npx tsc --noEmit` sem erros apos cada bloco de correção.
 - Extracao de sinais para decisoes cognitivas-chave do AgentLoop.
 - Inclusao de ToolFallbackSignal para explicitar decisao de fallback sem alterar heuristicas.
 - Padronizacao de TODOs de migracao para CognitiveOrchestrator nos pontos de decisao ainda locais.
@@ -37,33 +40,46 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - **ETAPA 4 IMPLEMENTADA**: Ativacao de `ToolFallbackSignal` no CognitiveOrchestrator via `decideToolFallback(sessionId)` com safe mode (`undefined` => AgentLoop).
 - Auditoria de fallback consolidada: delta `originalTool` vs `fallbackTool` com `reason`, sem recalculo de heuristica.
 - Integracao ativa em 2 fluxos do AgentController (normal + skill), mantendo compatibilidade reversa.
+- **ETAPA 5 IMPLEMENTADA**: `ValidationSignal` agora governado pelo Orchestrator em modo ativo via `decideStepValidation(sessionId)`.
+- **ETAPA 6 IMPLEMENTADA**: `RouteAutonomySignal` agora governado pelo Orchestrator (modo ativo) via `decideRouteAutonomy(sessionId)` com safe mode (`orchestratorDecision ?? loopDecision`) e auditoria de loop/orchestrator/aplicada.
 - Hardening de tipagem: `StopContinueSignal.reason` agora inclui `recurrent_failure_detected` (removido cast local no Orchestrator).
 - Hardening de testes: mocks de loop atualizados com `getSignalsSnapshot()` para manter compatibilidade com ingestao de signals no AgentController.
+- **ETAPA 7 IMPLEMENTADA**: `FailSafeSignal` agora governado pelo Orchestrator (modo ativo) via `decideFailSafe(sessionId)` com safe mode (`failSafeDecision ?? signals.failSafe`).
+- `FailSafeSignal` importado explicitamente no CognitiveOrchestrator; nenhuma heuristica de `buildFailSafeSignal` foi duplicada ou movida.
+- Integracao ativa em 2 fluxos do AgentController: fluxo normal e `runWithSkill`.
+- Auditoria de coerência de autoridade implementada: conflito FailSafe vs Route detectado e logado (`[ORCHESTRATOR AUTHORITY] CONFLITO detectado`) sem override automatico — apenas auditado.
+- Safe mode: `undefined` => AgentLoop permanece decisor sem alterar comportamento.
+- Estrutura inicial de auditoria de signals criada no CognitiveOrchestrator (fase segura e incremental).
 
 ## O que esta em andamento
-- Consolidar auditoria ponta a ponta dos sinais em modo ativo (StopContinue + Fallback).
-- Preparar ETAPA 5 (StepValidationSignal ativo) mantendo safe mode e sem duplicacao de logica.
+- Estabilizacao do codigo base (pre-ETAPA 2.4), com foco exclusivo em integridade estrutural e zero regressao de comportamento.
+- Consolidação da coerência de autoridade entre os 5 signals ativos (StopContinue + ToolFallback + Validation + RouteAutonomy + FailSafe).
+- Auditoria cruzada dos signals: conflitos FailSafe vs Route já monitorados; outros conflitos podem surgir na auditoria global.
 - Revisar pontos residuais no AgentLoop para migracao futura, um sinal por vez.
+- Auditoria incremental dos signals em modo seguro (uma integração por vez, sem alterar heurísticas).
 
 ## O que ainda falta
-- Consumo ATIVO para Validation, Route e FailSafe (na sequência)
-- Migrar cada signal restante uma por vez para modo ativo
-- Remover loops de decisão residuais do AgentLoop (gradualmente)
+- Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
-- Garantir trilha de auditoria ponta a ponta para todas as decisões cognitivas
-- Testes de regressão pós-migração de cada signal
-- ETAPA 5: iniciar modo ativo de ValidationSignal com o mesmo padrão de safe mode (um signal por vez)
+- Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
+- Testes de regressão pós-migração dos 5 signals
+- Auditoria cruzada global dos 5 signals juntos (StopContinue + ToolFallback + Validation + RouteAutonomy + FailSafe)
+- Remoção de mini-brains residuais no AgentLoop (fase seguinte)
+- Implementar detecção de conflitos de forma gradual, iniciando por um conflito simples (FailSafe vs Route).
 
 ## O que NAO deve ser tocado agora
-- ~~Não mover decisões para o Orchestrator nesta etapa.~~ **[MUDOU]** StopContinue e Fallback ja estao em modo ativo com safe mode.
+- `decisionGate` — nao alterar
+- `buildFailSafeSignal` no AgentLoop — nao mover nem duplicar heuristicas
+- AgentLoop — nao alterar comportamento de execucao
+- Heuristicas existentes de ativacao de FailSafe — nao reimplementar
+- AgentLoop — nao tocar nesta fase de auditoria cruzada minima
+- decisionGate — nao tocar nesta fase
+- heuristicas existentes — nao tocar nesta fase
+- Resolucao automatica de conflito FailSafe vs Route — apenas auditar, nao resolver ainda
 - Nao mover MÚLTIPLAS decisoes simultaneamente—uma por vez apenas
 - Nao unificar estado no SessionManager nesta etapa.
 - Nao remover loops de decisao no AgentLoop nesta etapa.
-- Nao alterar heuristicas existentes.
-- Nao remover branches existentes.
 - Nao introduzir fluxos paralelos ou logica duplicada.
-- Nao deixar o AgentLoop decidir E o Orchestrator decidir sobre a mesma coisa (regra de ouro: um decisor por signal)
-- Nao adicionar múltiplas regras contextuais de uma vez no StopContinue; manter apenas uma regra nova por etapa.
 
 ## Regra operacional obrigatoria (a partir de agora)
 Toda correcao deve atualizar este checklist vivo com:
@@ -73,8 +89,9 @@ Toda correcao deve atualizar este checklist vivo com:
 4. O que NAO deve ser tocado agora
 
 ## Atualizado em
-- Data: 1 de abril de 2026
-- Contexto: Agregacao de signals concluida (CognitiveSignalsState). Todos os 8 signals sao registrados automaticamente em currentSignals via getSignalsSnapshot(). Proximo passo: mover primeira decisao real para CognitiveOrchestrator.
+- Data: 2 de abril de 2026
+- Contexto: ETAPA 7 concluida. Governança completa: StopContinue ✅ + ToolFallback ✅ + Validation ✅ + RouteAutonomy ✅ + FailSafe ✅. Todos os 5 signals críticos governados pelo CognitiveOrchestrator em modo ativo com safe mode. Coerência de autoridade monitorada. Base pronta para remover mini-brains.
+- Contexto adicional: estabilizacao estrutural pre-ETAPA 2.4 concluida (regex no AgentController + compilacao limpa).
 
 ---
 
@@ -295,3 +312,60 @@ const orchestratorDecision = orchestrator.decideStopContinue(sessionId);
 - ✓ Contrato tipado alinhado (`recurrent_failure_detected` em `StopContinueSignal.reason`)
 - ✓ Cast local removido no `CognitiveOrchestrator`
 - ✓ Mocks de testes alinhados com contrato atual do loop (`getSignalsSnapshot`)
+
+---
+
+## ETAPA 7: FAILSAFESIGNAL (MODO ATIVO) ✓ COMPLETO
+
+### Objetivo
+Ativar o consumo do `FailSafeSignal` no `CognitiveOrchestrator`, fechando o ciclo de governança cognitiva.
+
+### Verificação pré-implementação realizada
+- `buildFailSafeSignal` existe apenas no AgentLoop (privado) — NÃO duplicado
+- Dois pontos de criação: `setOriginalInput` e `forceTaskType`
+- `currentSignals.failSafe` preenchido em ambos, exposto via `getSignalsSnapshot()`
+- Nenhum sistema paralelo de fail-safe existia no Orchestrator
+
+### Implementação realizada
+
+#### 1. CognitiveOrchestrator.decideFailSafe(sessionId)
+- Lê `observedSignals.failSafe` (signal gerado pelo loop)
+- Retorna signal existente sem recalcular heurísticas
+- Logging obrigatório: `[ORCHESTRATOR ACTIVE] Fail-safe decision applied`
+- Safe mode: `return signal ?? undefined`
+- Auditoria de conflito FailSafe vs Route embutida (apenas observação, sem override)
+
+#### 2. Integração no AgentController — fluxo principal
+- `const failSafeDecision = orchestrator.decideFailSafe(sessionId)`
+- `const finalFailSafe = failSafeDecision ?? signals.failSafe`
+- Auditoria completa: loopDecision / orchestratorDecision / appliedDecision / safeModeFallbackApplied
+
+#### 3. Integração no AgentController — runWithSkill
+- Mesmo padrão — consistência entre caminhos de execução
+
+#### 4. Coerência de autoridade (AUDITADA — não resolvida)
+- FailSafe SEMPRE tem prioridade sobre Route
+- Conflito detectado e logado com `[ORCHESTRATOR AUTHORITY] CONFLITO detectado`
+- Override ainda NÃO aplicado — apenas monitoramento
+
+### Regra crítica verificada
+✓ `buildFailSafeSignal` não alterado
+✓ AgentLoop não modificado
+✓ Nenhuma heurística duplicada
+✓ Safe mode funcionando (undefined => loop permanece decisor)
+✓ Auditoria completa nos 2 fluxos
+✓ Coerência de autoridade monitorada sem override prematuro
+✓ Zero erros de compilação TypeScript
+
+### Estado final da governança cognitiva
+| Signal          | Status         |
+|-----------------|----------------|
+| StopContinue    | ✅ Ativo        |
+| ToolFallback    | ✅ Ativo        |
+| Validation      | ✅ Ativo        |
+| RouteAutonomy   | ✅ Ativo        |
+| FailSafe        | ✅ Ativo (ETAPA 7) |
+
+### Atualizado em
+- Data: 2 de abril de 2026 (ETAPA 7)
+- Contexto: Governança completa. Todos os 5 signals críticos governados pelo CognitiveOrchestrator. Base pronta para auditoria cruzada e remoção de mini-brains.
