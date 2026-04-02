@@ -153,6 +153,7 @@ export type StopContinueSignal = {
         | 'fail_safe_prevents_stop_has_pending_steps'
         | 'insufficient_steps'
         | 'execution_continues'
+        | 'recurrent_failure_detected'
         | 'low_improvement_delta'
         | 'delta_check_continues'
         | 'insufficient_steps_for_delta'

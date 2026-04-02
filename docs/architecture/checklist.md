@@ -34,26 +34,28 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - getSignalsSnapshot(): metodo publico que expoe snapshot imutavel para consumo futuro pelo CognitiveOrchestrator.
 - **PRIMEIRA MIGRAÇÃO REALIZADA**: Consumo PASSIVO de StopContinueSignal no CognitiveOrchestrator (Safe Mode)
 - **ETAPA 3.1 IMPLEMENTADA**: Refinamento contextual de falha recorrente em `decideStopContinue(sessionId)` usando `hasReactiveFailure` + `attempt` do `SessionManager.getCognitiveState()`.
+- **ETAPA 4 IMPLEMENTADA**: Ativacao de `ToolFallbackSignal` no CognitiveOrchestrator via `decideToolFallback(sessionId)` com safe mode (`undefined` => AgentLoop).
+- Auditoria de fallback consolidada: delta `originalTool` vs `fallbackTool` com `reason`, sem recalculo de heuristica.
+- Integracao ativa em 2 fluxos do AgentController (normal + skill), mantendo compatibilidade reversa.
+- Hardening de tipagem: `StopContinueSignal.reason` agora inclui `recurrent_failure_detected` (removido cast local no Orchestrator).
+- Hardening de testes: mocks de loop atualizados com `getSignalsSnapshot()` para manter compatibilidade com ingestao de signals no AgentController.
 
 ## O que esta em andamento
-- Implementar consumo PASSIVO de signals no CognitiveOrchestrator (uma signal por vez)
-- Manter AgentLoop decidindo normalmente (sem mudança de comportamento)
-- Registrar/auditoria todos os signals consumidos pelo Orchestrator
-- Preparar sequência de migração (StopContinue → Fallback → Validation → Route → FailSafe)
-- Consolidar governança contextual do StopContinue em modo controlado (ETAPA 3.x), mantendo ajuste mínimo e reversível.
+- Consolidar auditoria ponta a ponta dos sinais em modo ativo (StopContinue + Fallback).
+- Preparar ETAPA 5 (StepValidationSignal ativo) mantendo safe mode e sem duplicacao de logica.
+- Revisar pontos residuais no AgentLoop para migracao futura, um sinal por vez.
 
 ## O que ainda falta
-- **Fase Ativa - StopContinue**: Fazer o CognitiveOrchestrator DECIDIR sobre shouldStop (ler o signal, não o AgentLoop)
-- Consumo PASSIVO para Fallback, Validation, Route (na sequência)
-- Migrar cada sinal uma por vez para modo ativo
+- Consumo ATIVO para Validation, Route e FailSafe (na sequência)
+- Migrar cada signal restante uma por vez para modo ativo
 - Remover loops de decisão residuais do AgentLoop (gradualmente)
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Garantir trilha de auditoria ponta a ponta para todas as decisões cognitivas
 - Testes de regressão pós-migração de cada signal
-- ETAPA 4: iniciar modo ativo de FallbackSignal com o mesmo padrão de safe mode (um sinal por vez)
+- ETAPA 5: iniciar modo ativo de ValidationSignal com o mesmo padrão de safe mode (um signal por vez)
 
 ## O que NAO deve ser tocado agora
-- ~~Não mover decisões para o Orchestrator nesta etapa.~~ **[MUDOU]** Estamos movendo UMA SINAL para modo passivo: StopContinue
+- ~~Não mover decisões para o Orchestrator nesta etapa.~~ **[MUDOU]** StopContinue e Fallback ja estao em modo ativo com safe mode.
 - Nao mover MÚLTIPLAS decisoes simultaneamente—uma por vez apenas
 - Nao unificar estado no SessionManager nesta etapa.
 - Nao remover loops de decisao no AgentLoop nesta etapa.
@@ -241,3 +243,55 @@ const orchestratorDecision = orchestrator.decideStopContinue(sessionId);
 ### Atualizado em
 - Data: 1 de abril de 2026 (ETAPA 3.1)
 - Contexto: StopContinue recebeu segundo ajuste contextual controlado para conter insistência em falha recorrente sem modificar o AgentLoop.
+
+---
+
+## ETAPA 3.2: AUDITORIA DE DECISÃO (STOPCONTINUE) ✓ IMPLEMENTADO
+
+### Implementação realizada
+- ✓ Registro de delta entre decisão base e final
+- ✓ Log estruturado apenas quando há mudança
+- ✓ Nenhuma alteração de comportamento
+- ✓ Nenhum estado novo criado
+- ✓ Nenhum fluxo paralelo introduzido
+
+### Regra aplicada
+- Condição exata: `baseDecision.shouldStop !== finalDecision.shouldStop`
+- Escopo: auditoria de observabilidade no `decideStopContinue(sessionId)`
+- Reuso: evento de log existente `stop_continue_decision_delta` (sem sistema paralelo)
+
+### Atualizado em
+- Data: 2 de abril de 2026 (ETAPA 3.2)
+- Contexto: Auditoria explícita base vs final consolidada em ponto único após a decisão final, cobrindo qualquer ajuste contextual já existente.
+
+---
+
+## ETAPA 4: FALLBACKSIGNAL EM MODO ATIVO ✓ IMPLEMENTADO
+
+### Implementacao realizada
+- ✓ Novo metodo `decideToolFallback(sessionId)` no `CognitiveOrchestrator`
+- ✓ Reuso integral do `ToolFallbackSignal` observado (sem recalculo de fallback)
+- ✓ Safe mode preservado: sem signal retorna `undefined`
+- ✓ Auditoria de delta adicionada: `originalTool`, `fallbackTool`, `reason`
+- ✓ Integracao em `AgentController` nos dois fluxos (normal + skill)
+
+### Regra aplicada
+- Condicao exata: `fallbackSignal` observado => aplicar o proprio signal
+- Condicao de fallback seguro: sem signal => `undefined` (AgentLoop permanece decisor)
+- Restricao respeitada: Orchestrator nao escolhe ferramenta e nao cria estrategia
+
+### Garantias arquiteturais
+- ✓ Nenhum estado novo criado
+- ✓ Nenhum pipeline paralelo introduzido
+- ✓ Nenhuma heuristica do AgentLoop alterada
+- ✓ Nenhum contrato publico alterado sem necessidade
+- ✓ Sequencia de migracao preservada (um signal por vez)
+
+### Atualizado em
+- Data: 2 de abril de 2026 (ETAPA 4)
+- Contexto: FallbackSignal entrou em modo ativo no Orchestrator com aplicacao pass-through do signal e trilha de auditoria de delta.
+
+### Hardening pos-ETAPA 4
+- ✓ Contrato tipado alinhado (`recurrent_failure_detected` em `StopContinueSignal.reason`)
+- ✓ Cast local removido no `CognitiveOrchestrator`
+- ✓ Mocks de testes alinhados com contrato atual do loop (`getSignalsSnapshot`)

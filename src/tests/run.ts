@@ -417,7 +417,8 @@ async function run() {
         const fakeLoop = {
             run: async () => ({ answer: 'Confirma a instalacao? (sim/nao)', newMessages: [] }),
             getProvider: () => mockProvider,
-            getDecisionMemory: () => null
+            getDecisionMemory: () => null,
+            getSignalsSnapshot: () => ({})
         } as any;
 
         const controller = new AgentController(
@@ -502,7 +503,8 @@ async function run() {
                 return { answer: 'Executando instalacao.', newMessages: [] };
             },
             getProvider: () => ({ embed: async () => [] }),
-            getDecisionMemory: () => null
+            getDecisionMemory: () => null,
+            getSignalsSnapshot: () => ({})
         } as any;
 
         const controller = new AgentController(
@@ -778,7 +780,8 @@ async function run() {
                 return { answer: 'Audio processado com sucesso.', newMessages: [] };
             },
             getProvider: () => ({ embed: async () => [] }),
-            getDecisionMemory: () => null
+            getDecisionMemory: () => null,
+            getSignalsSnapshot: () => ({})
         } as any;
 
         const controller = new AgentController(
@@ -851,7 +854,8 @@ async function run() {
         const fakeLoop = {
             run: async () => ({ answer: 'should not reach here', newMessages: [] }),
             getProvider: () => ({ embed: async () => [] }),
-            getDecisionMemory: () => null
+            getDecisionMemory: () => null,
+            getSignalsSnapshot: () => ({})
         } as any;
 
         const controller = new AgentController(

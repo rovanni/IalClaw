@@ -665,6 +665,29 @@ Nao peca confirmacao redundante.
             } : undefined
         });
 
+        // ── ACTIVE DECISION: ToolFallback (ETAPA 4 - Safe Mode) ──────────────────
+        // O Orchestrator aplica apenas o ToolFallbackSignal observado.
+        // undefined => fallback automático ao AgentLoop (sem alteração de comportamento).
+        const orchestratorFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
+        this.logger.debug('tool_fallback_active_decision_checked', '[ACTIVE MODE] ToolFallbackSignal decisão do orquestrador recebida', {
+            sessionId,
+            hasOrchestratorDecision: !!orchestratorFallbackDecision,
+            signalFromLoop: signals.fallback ? {
+                trigger: signals.fallback.trigger,
+                fallbackRecommended: signals.fallback.fallbackRecommended,
+                originalTool: signals.fallback.originalTool,
+                fallbackTool: signals.fallback.suggestedTool,
+                reason: signals.fallback.reason
+            } : undefined,
+            orchestratorDecision: orchestratorFallbackDecision ? {
+                trigger: orchestratorFallbackDecision.trigger,
+                fallbackRecommended: orchestratorFallbackDecision.fallbackRecommended,
+                originalTool: orchestratorFallbackDecision.originalTool,
+                fallbackTool: orchestratorFallbackDecision.suggestedTool,
+                reason: orchestratorFallbackDecision.reason
+            } : undefined
+        });
+
         for (const newMessage of result.newMessages) {
             this.memory.saveMessage(
                 sessionId,
@@ -849,6 +872,27 @@ Nao peca confirmacao redundante.
             orchestratorDecision: skillStopContinueDecision ? {
                 shouldStop: skillStopContinueDecision.shouldStop,
                 reason: skillStopContinueDecision.reason
+            } : undefined
+        });
+
+        const skillFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
+        this.logger.debug('tool_fallback_active_decision_skill', '[ACTIVE MODE] ToolFallbackSignal decisão do orquestrador (skill)', {
+            sessionId,
+            skillName: skill.name,
+            hasOrchestratorDecision: !!skillFallbackDecision,
+            signalFromLoop: skillSignals.fallback ? {
+                trigger: skillSignals.fallback.trigger,
+                fallbackRecommended: skillSignals.fallback.fallbackRecommended,
+                originalTool: skillSignals.fallback.originalTool,
+                fallbackTool: skillSignals.fallback.suggestedTool,
+                reason: skillSignals.fallback.reason
+            } : undefined,
+            orchestratorDecision: skillFallbackDecision ? {
+                trigger: skillFallbackDecision.trigger,
+                fallbackRecommended: skillFallbackDecision.fallbackRecommended,
+                originalTool: skillFallbackDecision.originalTool,
+                fallbackTool: skillFallbackDecision.suggestedTool,
+                reason: skillFallbackDecision.reason
             } : undefined
         });
 

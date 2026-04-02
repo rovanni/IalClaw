@@ -13,7 +13,7 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, StopContinueSignal } from '../../engine/AgentLoop';
+import { CognitiveSignalsState, StopContinueSignal, ToolFallbackSignal } from '../../engine/AgentLoop';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -112,7 +112,9 @@ export class CognitiveOrchestrator {
                 sessionId,
                 trigger: signals.fallback.trigger,
                 fallbackRecommended: signals.fallback.fallbackRecommended,
-                originalTool: signals.fallback.originalTool
+                originalTool: signals.fallback.originalTool,
+                suggestedTool: signals.fallback.suggestedTool,
+                reason: signals.fallback.reason
             });
         }
 
@@ -187,6 +189,59 @@ export class CognitiveOrchestrator {
      */
     public getLastStopSignal(): StopContinueSignal | undefined {
         return this.observedSignals.stop;
+    }
+
+    /**
+     * Get the last observed ToolFallbackSignal (for audit/debugging).
+     * @returns The ToolFallbackSignal if available, undefined otherwise
+     */
+    public getLastFallbackSignal(): ToolFallbackSignal | undefined {
+        return this.observedSignals.fallback;
+    }
+
+    /**
+     * ACTIVE MODE: Decide tool fallback based on observed ToolFallbackSignal.
+     *
+     * Regras obrigatorias desta etapa:
+     * - Nao recalcular fallback
+     * - Nao escolher ferramenta nova
+     * - Apenas aplicar o signal ja produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (loop permanece decisor)
+     *
+     * @param sessionId Session context for audit logging
+     * @returns Applied ToolFallbackSignal decision, or undefined for fallback to AgentLoop
+     */
+    public decideToolFallback(sessionId: string): ToolFallbackSignal | undefined {
+        const fallbackSignal = this.getLastFallbackSignal();
+
+        if (!fallbackSignal) {
+            this.logger.debug('no_fallback_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum ToolFallbackSignal observado para decisão ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        const hasDelta = !!fallbackSignal.suggestedTool && fallbackSignal.originalTool !== fallbackSignal.suggestedTool;
+        if (hasDelta) {
+            this.logger.debug('tool_fallback_decision_delta', '[ORCHESTRATOR DECISION DELTA] Delta de fallback aplicado a partir do signal', {
+                sessionId,
+                originalTool: fallbackSignal.originalTool,
+                fallbackTool: fallbackSignal.suggestedTool,
+                reason: fallbackSignal.reason
+            });
+        }
+
+        this.logger.info('tool_fallback_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de fallback aplicada a partir do ToolFallbackSignal', {
+            sessionId,
+            source: 'loop_signal_applied_by_orchestrator',
+            trigger: fallbackSignal.trigger,
+            fallbackRecommended: fallbackSignal.fallbackRecommended,
+            originalTool: fallbackSignal.originalTool,
+            fallbackTool: fallbackSignal.suggestedTool,
+            reason: fallbackSignal.reason
+        });
+
+        return fallbackSignal;
     }
 
     /**
@@ -278,21 +333,27 @@ export class CognitiveOrchestrator {
             adjustedDecision = {
                 ...baseDecision,
                 shouldStop: true,
-                // Não alteramos o tipo StopContinueSignal nesta etapa; motivo é anotado via cast local controlado.
-                reason: 'recurrent_failure_detected' as StopContinueSignal['reason']
+                reason: 'recurrent_failure_detected'
             };
-
-            this.logger.debug('stop_continue_decision_delta', '[ORCHESTRATOR DECISION DELTA] Comparação explícita base vs final', {
-                sessionId,
-                baseShouldStop: baseDecision.shouldStop,
-                finalShouldStop: adjustedDecision.shouldStop,
-                reason: adjustedDecision.reason,
-                attempt: context.attempt,
-                hasReactiveFailure: context.hasReactiveFailure
-            });
         }
 
         const finalDecision = adjustedDecision ?? baseDecision;
+
+        // Auditoria explícita de delta: registra apenas quando a decisão final muda
+        // em relação ao signal base do loop (observabilidade sem alterar comportamento).
+        if (baseDecision.shouldStop !== finalDecision.shouldStop) {
+            this.logger.debug('stop_continue_decision_delta', '[ORCHESTRATOR DECISION DELTA] Comparação explícita base vs final', {
+                sessionId,
+                baseShouldStop: baseDecision.shouldStop,
+                finalShouldStop: finalDecision.shouldStop,
+                baseReason: baseDecision.reason,
+                finalReason: finalDecision.reason,
+                context: {
+                    attempt: context?.attempt,
+                    hasReactiveFailure: context?.hasReactiveFailure
+                }
+            });
+        }
 
         // ─── ACTIVE DECISION: Apply the signal directly ───────────────────
         // Base heuristics continuam no AgentLoop; o Orchestrator só aplica ajuste
