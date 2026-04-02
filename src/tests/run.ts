@@ -288,6 +288,29 @@ async function run() {
     });
     assert.match(loopResult.answer, /Nota: nao executei esses comandos aqui/i);
 
+    const fallbackSignal = await (loop as any).buildToolFallbackSignal({
+        step: {
+            id: 1,
+            description: 'buscar arquivo de configuracao no projeto',
+            tool: 'web_search',
+            completed: false,
+            failed: false
+        },
+        toolName: 'web_search',
+        trigger: 'reliability_risk'
+    });
+    assert.equal(fallbackSignal.trigger, 'reliability_risk');
+    assert.equal(fallbackSignal.fallbackRecommended, true);
+    assert.notEqual(fallbackSignal.suggestedTool, 'web_search');
+    assert.equal(fallbackSignal.reason, 'fallback_available');
+
+    const fallbackWithoutStep = await (loop as any).buildToolFallbackSignal({
+        toolName: 'web_search',
+        trigger: 'memory_block'
+    });
+    assert.equal(fallbackWithoutStep.fallbackRecommended, false);
+    assert.equal(fallbackWithoutStep.reason, 'no_step_context');
+
     let loopStep = 0;
     const loopProviderWithIrrelevantTool: LLMProvider = {
         async generate(): Promise<ProviderResponse> {

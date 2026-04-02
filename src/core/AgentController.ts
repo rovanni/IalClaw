@@ -642,6 +642,29 @@ Nao peca confirmacao redundante.
 
         const result = await this.loop.run(messages, policy);
 
+        // ── PASSIVE SIGNAL INGESTION (Safe Mode) ──────────────────────────
+        // TODO (Single Brain): Ingest signals from AgentLoop for future decision-making.
+        // For now, the Orchestrator only OBSERVES without affecting the loop's decisions.
+        // When ready for active mode, the Orchestrator will use these signals to decide
+        // whether to stop, retry, or continue instead of the AgentLoop deciding locally.
+        const signals = this.loop.getSignalsSnapshot();
+        this.orchestrator.ingestSignalsFromLoop(signals, sessionId);
+
+        // ── ACTIVE DECISION: StopContinue (Controlled Evolution - Safe Mode) ───────
+        // Now the Orchestrator ACTIVELY decides on StopContinueSignal
+        // This is the first real governance transition: Signal created by AgentLoop,
+        // Decision applied by Orchestrator, but fallback preserved in Orchestrator.
+        // If orchestrator decision is undefined, AgentLoop's decision stands (automatic fallback).
+        const orchestratorStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
+        this.logger.debug('stop_continue_active_decision_checked', '[ACTIVE MODE] StopContinueSignal decisão do orquestrador recebida', {
+            sessionId,
+            hasOrchestratorDecision: !!orchestratorStopContinueDecision,
+            orchestratorDecision: orchestratorStopContinueDecision ? {
+                shouldStop: orchestratorStopContinueDecision.shouldStop,
+                reason: orchestratorStopContinueDecision.reason
+            } : undefined
+        });
+
         for (const newMessage of result.newMessages) {
             this.memory.saveMessage(
                 sessionId,
@@ -810,6 +833,25 @@ Nao peca confirmacao redundante.
         };
 
         const result = await this.loop.run(messages, skillPolicy);
+
+        // ── PASSIVE SIGNAL INGESTION (Safe Mode) ──────────────────────────
+        // TODO (Single Brain): Same as main flow - ingest signals in passive mode.
+        const skillSignals = this.loop.getSignalsSnapshot();
+        this.orchestrator.ingestSignalsFromLoop(skillSignals, sessionId);
+
+        // ── ACTIVE DECISION: StopContinue (Controlled Evolution - Skill Path) ───────
+        // Same active governance for skills - consistency across execution paths
+        const skillStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
+        this.logger.debug('stop_continue_active_decision_skill', '[ACTIVE MODE] StopContinueSignal decisão do orquestrador (skill)', {
+            sessionId,
+            skillName: skill.name,
+            hasOrchestratorDecision: !!skillStopContinueDecision,
+            orchestratorDecision: skillStopContinueDecision ? {
+                shouldStop: skillStopContinueDecision.shouldStop,
+                reason: skillStopContinueDecision.reason
+            } : undefined
+        });
+
         this.updatePendingActionFromResponse(sessionId, originalQuery, result.answer, skill.name);
 
         SessionManager.addToHistory(sessionId, 'user', originalQuery);

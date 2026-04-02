@@ -71,6 +71,126 @@ export type StepValidation = {
     needsLlm: boolean;
 };
 
+export type StepValidationSignal = {
+    validationPassed: boolean;
+    reason: 'step_validation_passed' | 'step_validation_failed';
+    confidence: number;
+    failureReason?: string;
+    requiresLlmReview: boolean;
+};
+
+export type StepValidationResult = {
+    validation: StepValidation;
+    signal: StepValidationSignal;
+};
+
+export type ToolFallbackTrigger =
+    | 'tool_repetition'
+    | 'tool_failure_history'
+    | 'memory_block'
+    | 'reliability_risk'
+    | 'retry_refinement';
+
+export type ToolFallbackSignal = {
+    trigger: ToolFallbackTrigger;
+    fallbackRecommended: boolean;
+    originalTool: string;
+    suggestedTool?: string;
+    reason:
+    | 'fallback_available'
+    | 'no_step_context'
+    | 'no_fallback_available'
+    | 'same_tool_only'
+    | 'incompatible_fallback';
+};
+
+export type LlmRetrySignal = {
+    retryRecommended: boolean;
+    reason: 'needs_llm_validation' | 'step_succeeded' | 'failure_limit_reached';
+    consecutiveFailures: number;
+};
+
+export type ReclassificationSignal = {
+    reclassificationRecommended: boolean;
+    reason: 'failure_limit_reached' | 'low_step_confidence' | 'classification_unchanged' | 'low_classifier_confidence' | 'attempt_limit_reached' | 'missing_input';
+    suggestedTaskType: TaskType | null;
+    confidence: number;
+};
+
+export type RouteAutonomySignal = {
+    recommendedStrategy: 'DIRECT_LLM' | 'HYBRID' | 'ASK' | 'CONFIRM' | 'TOOL_LOOP';
+    reason: 'low_risk_direct_llm' | 'orchestrator_hybrid' | 'autonomy_confirm' | 'autonomy_ask' | 'tool_loop_required';
+    confidence: number;
+    requiresUserConfirmation: boolean;
+    requiresUserInput: boolean;
+    suggestedTool?: string;
+    route: ExecutionRoute;
+    autonomyDecision: AutonomyDecision;
+};
+
+export type PlanAdjustmentSignal = {
+    shouldAdjustPlan: boolean;
+    reason: 'step_failed';
+    suggestedActions: ['adjust_next_step', 'use_alternative_tool', 'change_strategy'];
+    failedStep: string;
+    failureReason: string;
+};
+
+export type PlanAdjustmentResult = {
+    messages: MessagePayload[];
+    signal: PlanAdjustmentSignal;
+};
+
+// ─── Stop/Continue Signal ────────────────────────────────────────────────────
+// Formaliza a decisão de parar ou continuar o loop de execução.
+// TODO: migrar tomada de decisão para CognitiveOrchestrator.
+export type StopContinueSignal = {
+    shouldStop: boolean;
+    reason:
+        | 'global_confidence_threshold_met'
+        | 'over_execution_detected'
+        | 'has_pending_steps_prevent_stop'
+        | 'fail_safe_prevents_stop_has_pending_steps'
+        | 'insufficient_steps'
+        | 'execution_continues'
+        | 'low_improvement_delta'
+        | 'delta_check_continues'
+        | 'insufficient_steps_for_delta'
+        | 'insufficient_validations_for_delta'
+        | 'invalid_confidence';
+    globalConfidence?: number;
+    stepCount?: number;
+};
+
+// ─── Fail-Safe Signal ────────────────────────────────────────────────────────
+// Formaliza a decisão de ativar o modo fail-safe automático.
+// TODO: migrar tomada de decisão para CognitiveOrchestrator.
+export type FailSafeActivationTrigger =
+    | 'intent_clear'
+    | 'unknown_task_type'
+    | 'generic_task_type'
+    | 'force_type_override_disabled'
+    | 'not_activated';
+
+export type FailSafeSignal = {
+    activated: boolean;
+    trigger: FailSafeActivationTrigger;
+};
+
+// ─── Aggregated Cognitive Signals State ─────────────────────────────────────
+// Consolida todos os signals ativos da iteração corrente num único ponto de
+// leitura. Nenhuma lógica de decisão vive aqui — é apenas um espelho organizado
+// do que já foi decidido localmente no AgentLoop.
+// TODO: quando o CognitiveOrchestrator assumir, ele lerá/preencherá este estado
+// em vez do AgentLoop fazer isso diretamente.
+export type CognitiveSignalsState = {
+    route?: RouteAutonomySignal;
+    fallback?: ToolFallbackSignal;
+    validation?: StepValidationSignal;
+    stop?: StopContinueSignal;
+    failSafe?: FailSafeSignal;
+};
+
 export type ExecutionMemoryEntry = {
     stepType: string;
     tool: string;
@@ -194,6 +314,11 @@ export class AgentLoop {
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
     private failSafe: boolean = false;
+
+    // Detecção de intenção incompleta
+    // Agregação de signals — espelho do estado cognitivo ativo (sem lógica de decisão).
+    // TODO: quando o CognitiveOrchestrator assumir, este estado será preenchido por ele.
+    private currentSignals: CognitiveSignalsState = {};
 
     // Detecção de intenção incompleta
     private needsUserContext: boolean = false;
@@ -320,6 +445,7 @@ export class AgentLoop {
         this.currentTaskConfidence = 0;
         this.isContinuation = false;
         this.lastStepResult = '';
+    this.currentSignals = {};
 
         // Limpar histórico da sessão se for o padrão (evita vazamento em testes)
         const session = SessionManager.getCurrentSession();
@@ -484,6 +610,78 @@ export class AgentLoop {
         this.logger.info('task_context_cleared', '[CONTEXT] Contexto operacional limpo ' + (isCriticalFailure ? '(falha crítica)' : '(execução finalizada)'));
     }
 
+    private buildRouteAutonomySignal(params: {
+        decision: { route: ExecutionRoute; confidence: number };
+        autonomyDecision: AutonomyDecision;
+        isLowRisk: boolean;
+        suggestedTool?: string;
+        orchestrationStrategy?: string;
+    }): RouteAutonomySignal {
+        const { decision, autonomyDecision, isLowRisk, suggestedTool, orchestrationStrategy } = params;
+
+        let routeSignal: RouteAutonomySignal;
+        if (decision.route === ExecutionRoute.DIRECT_LLM && isLowRisk) {
+            routeSignal = {
+                recommendedStrategy: 'DIRECT_LLM',
+                reason: 'low_risk_direct_llm',
+                confidence: decision.confidence,
+                requiresUserConfirmation: false,
+                requiresUserInput: false,
+                route: decision.route,
+                autonomyDecision
+            };
+        } else if (orchestrationStrategy === 'hybrid') {
+            routeSignal = {
+                recommendedStrategy: 'HYBRID',
+                reason: 'orchestrator_hybrid',
+                confidence: decision.confidence,
+                requiresUserConfirmation: false,
+                requiresUserInput: false,
+                suggestedTool,
+                route: decision.route,
+                autonomyDecision
+            };
+        } else if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            routeSignal = {
+                recommendedStrategy: 'CONFIRM',
+                reason: 'autonomy_confirm',
+                confidence: decision.confidence,
+                requiresUserConfirmation: true,
+                requiresUserInput: false,
+                route: decision.route,
+                autonomyDecision
+            };
+        } else if (autonomyDecision === AutonomyDecision.ASK) {
+            routeSignal = {
+                recommendedStrategy: 'ASK',
+                reason: 'autonomy_ask',
+                confidence: decision.confidence,
+                requiresUserConfirmation: false,
+                requiresUserInput: true,
+                route: decision.route,
+                autonomyDecision
+            };
+        } else {
+            routeSignal = {
+                recommendedStrategy: 'TOOL_LOOP',
+                reason: 'tool_loop_required',
+                confidence: decision.confidence,
+                requiresUserConfirmation: false,
+                requiresUserInput: false,
+                route: decision.route,
+                autonomyDecision
+            };
+        }
+
+        this.currentSignals.route = routeSignal;
+        return routeSignal;
+    }
+
+    /** Expõe um snapshot imutável do estado de signals da iteração corrente. */
+    public getSignalsSnapshot(): Readonly<CognitiveSignalsState> {
+        return { ...this.currentSignals };
+    }
+
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string; newMessages: MessagePayload[] }> {
         const session = SessionManager.getCurrentSession();
         this.chatId = session?.conversation_id || 'default';
@@ -632,8 +830,30 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // SHORT-CIRCUIT: content_generation / conversation / info (apenas se for puramente cognitivo)
         // ═══════════════════════════════════════════════════════════════════
+        const orchestration = (policy as any)?.orchestrationResult;
         const isLowRisk = this.detectRiskLevel(this.currentTaskType, userInput) === 'low';
-        if (decision.route === ExecutionRoute.DIRECT_LLM && isLowRisk) {
+        const routeAutonomySignal = this.buildRouteAutonomySignal({
+            decision,
+            autonomyDecision,
+            isLowRisk,
+            suggestedTool: orchestration?.suggestedTool,
+            orchestrationStrategy: orchestration?.strategy
+        });
+
+        this.logger.info('route_autonomy_signal_emitted', '[SIGNAL] Route/autonomy recommendation emitted', {
+            strategy: routeAutonomySignal.recommendedStrategy,
+            reason: routeAutonomySignal.reason,
+            confidence: routeAutonomySignal.confidence,
+            requires_confirmation: routeAutonomySignal.requiresUserConfirmation,
+            requires_user_input: routeAutonomySignal.requiresUserInput,
+            route: routeAutonomySignal.route,
+            autonomy: routeAutonomySignal.autonomyDecision,
+            suggested_tool: routeAutonomySignal.suggestedTool
+        });
+
+        // TODO (Single Brain): RouteAutonomySignal deve ser decidido pelo CognitiveOrchestrator.
+        // AgentLoop deve apenas executar a estrategia ja definida.
+        if (routeAutonomySignal.recommendedStrategy === 'DIRECT_LLM') {
             this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
                 mode: 'cognitive_direct',
                 bypass_loop: true,
@@ -645,9 +865,8 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // 🧠 HYBRID STRATEGY: Resposta direta + Sugestão de Tool
         // ═══════════════════════════════════════════════════════════════════
-        const orchestration = (policy as any)?.orchestrationResult;
-        if (orchestration?.strategy === 'hybrid') {
-            const suggestedTool = orchestration?.suggestedTool;
+        if (routeAutonomySignal.recommendedStrategy === 'HYBRID') {
+            const suggestedTool = routeAutonomySignal.suggestedTool;
             this.logger.info('hybrid_strategy_activated', '[HYBRID] Estratégia híbrida ativada', {
                 suggestedTool,
                 taskType: this.currentTaskType
@@ -658,7 +877,7 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // 🔴 CONFIRM: Ação destrutiva ou risco alto → confirmar
         // ═══════════════════════════════════════════════════════════════════
-        if (autonomyDecision === AutonomyDecision.CONFIRM) {
+        if (routeAutonomySignal.recommendedStrategy === 'CONFIRM') {
             this.logger.warn('autonomy_confirm_required', '[AUTONOMY] Ação requer confirmação', {
                 taskType: this.currentTaskType,
                 riskLevel: autonomyCtx.riskLevel
@@ -672,7 +891,7 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // 🟡 ASK: Falta informação → perguntar (específico por tipo)
         // ═══════════════════════════════════════════════════════════════════
-        if (autonomyDecision === AutonomyDecision.ASK) {
+        if (routeAutonomySignal.recommendedStrategy === 'ASK') {
             this.logger.info('autonomy_ask', '[AUTONOMY] Informação necessária', {
                 taskType: this.currentTaskType,
                 missing: !autonomyCtx.hasAllParams ? 'params' : 'context'
@@ -727,7 +946,7 @@ export class AgentLoop {
         }
 
         // Se a rota for TOOL_LOOP, mas o tipo for content_generation, loggar o motivo
-        if (this.currentTaskType === 'content_generation' && decision.route === ExecutionRoute.TOOL_LOOP) {
+        if (this.currentTaskType === 'content_generation' && routeAutonomySignal.recommendedStrategy === 'TOOL_LOOP' && decision.route === ExecutionRoute.TOOL_LOOP) {
             this.logger.info('bypass_short_circuit', '[ROUTER] Pulando short-circuit de content_generation: ação detectada no input', {
                 subtype: decision.subtype,
                 confidence: decision.confidence
@@ -914,13 +1133,20 @@ export class AgentLoop {
                         const fallbackStep = plan && plan.currentStepIndex < plan.steps.length
                             ? plan.steps[plan.currentStepIndex]
                             : undefined;
-                        const fallbackTool = fallbackStep?.tool
-                            ? await this.getFallbackToolForStep(fallbackStep)
-                            : undefined;
-                        if (fallbackTool && plan) {
+                        const toolFallbackSignal = await this.buildToolFallbackSignal({
+                            step: fallbackStep,
+                            toolName: fallbackStep?.tool || response.tool_call.name,
+                            trigger: 'tool_repetition'
+                        });
+
+                        this.logToolFallbackSignal(toolFallbackSignal);
+
+                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool && plan) {
                             if (fallbackStep) {
-                                fallbackStep.tool = fallbackTool;
-                                this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${fallbackTool}`);
+                                // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
+                                // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
+                                fallbackStep.tool = toolFallbackSignal.suggestedTool;
+                                this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${toolFallbackSignal.suggestedTool}`);
                             }
                         }
 
@@ -977,26 +1203,38 @@ export class AgentLoop {
                         const loopMsg: MessagePayload = { role: 'tool', content: `[LOOP] Tool ${toolName} already failed, selecting alternative` };
                         messages.push(loopMsg);
 
-                        const fallbackTool = currentStepForValidation
-                            ? await this.getFallbackToolForStep(currentStepForValidation)
-                            : undefined;
+                        const toolFallbackSignal = await this.buildToolFallbackSignal({
+                            step: currentStepForValidation,
+                            toolName,
+                            trigger: 'tool_failure_history'
+                        });
 
-                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
-                            this.logger.info('tool_fallback_loop', `[FALLBACK] ${toolName} → ${fallbackTool}`);
-                            response.tool_call.name = fallbackTool;
+                        this.logToolFallbackSignal(toolFallbackSignal);
+
+                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                            // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
+                            // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
+                            this.logger.info('tool_fallback_loop', `[FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
+                            response.tool_call.name = toolFallbackSignal.suggestedTool;
                         } else {
                             continue;
                         }
                     }
 
                     if (!this.failSafe && await this.checkMemoryBlock(toolName)) {
-                        const fallbackTool = currentStepForValidation
-                            ? await this.getFallbackToolForStep(currentStepForValidation)
-                            : undefined;
+                        const toolFallbackSignal = await this.buildToolFallbackSignal({
+                            step: currentStepForValidation,
+                            toolName,
+                            trigger: 'memory_block'
+                        });
 
-                        if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
-                            this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${fallbackTool}`);
-                            response.tool_call.name = fallbackTool;
+                        this.logToolFallbackSignal(toolFallbackSignal);
+
+                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                            // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
+                            // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
+                            this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
+                            response.tool_call.name = toolFallbackSignal.suggestedTool;
                         } else {
                             this.logger.warn('memory_block_override', `[MEMORY] Tool ${toolName} com histórico ruim, mas executando mesmo assim`);
                         }
@@ -1010,13 +1248,19 @@ export class AgentLoop {
                         if (this.failSafe) {
                             this.logger.warn('fail_safe_tool_override', `[FAIL-SAFE] Ignorando bloqueio de tool: ${toolName}`);
                         } else {
-                            const fallbackTool = currentStepForValidation
-                                ? await this.getFallbackToolForStep(currentStepForValidation)
-                                : undefined;
+                            const toolFallbackSignal = await this.buildToolFallbackSignal({
+                                step: currentStepForValidation,
+                                toolName,
+                                trigger: 'reliability_risk'
+                            });
 
-                            if (fallbackTool && fallbackTool !== toolName && this.isToolCompatible(currentStepForValidation!, fallbackTool)) {
-                                this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${fallbackTool}`);
-                                response.tool_call.name = fallbackTool;
+                            this.logToolFallbackSignal(toolFallbackSignal);
+
+                            if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                                // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
+                                // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
+                                this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
+                                response.tool_call.name = toolFallbackSignal.suggestedTool;
                             } else {
                                 this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
                             }
@@ -1120,27 +1364,59 @@ export class AgentLoop {
                     await emitProgress({ stage: 'tool_completed', iteration: i + 1, tool_name: execToolName });
 
                     if (execStep) {
-                        const validation = this.validateStepResult(execStep, result, execToolName);
+                        const validationResult = this.validateStepResult(execStep, result, execToolName);
+                        const validation = validationResult.validation;
+                        const stepValidationSignal = validationResult.signal;
+
+                        this.logger.info('step_validation_signal_emitted', '[SIGNAL] Step validation recommendation emitted', {
+                            reason: stepValidationSignal.reason,
+                            confidence: stepValidationSignal.confidence,
+                            validation_passed: stepValidationSignal.validationPassed,
+                            requires_llm_review: stepValidationSignal.requiresLlmReview,
+                            failure_reason: stepValidationSignal.failureReason
+                        });
+
                         this.logValidation(execStep, validation);
 
                         this.stepValidations.push(validation.confidence);
                         this.actionTaken = true;
 
-                        if (!validation.success) {
+                        if (!stepValidationSignal.validationPassed) {
+                            // TODO (Single Brain): StepValidationSignal deve ser decidido pelo CognitiveOrchestrator.
+                            // AgentLoop deve apenas aplicar o resultado de validacao ja definido.
                             this.markCurrentStepFailed(validation.reason);
 
-                            if (this.shouldReclassify(consecutiveToolFailures)) {
+                            const reclassificationSignal = this.shouldReclassify(consecutiveToolFailures);
+                            if (reclassificationSignal.reclassificationRecommended) {
+                                // TODO (Single Brain): ReclassificationSignal deve ser decidido pelo CognitiveOrchestrator.
+                                // AgentLoop deve apenas aplicar plano ja definido.
+                                this.logger.info('reclassification_signal_emitted', '[SIGNAL] Reclassification recommended', {
+                                    reason: reclassificationSignal.reason,
+                                    suggested_task_type: reclassificationSignal.suggestedTaskType,
+                                    confidence: reclassificationSignal.confidence
+                                });
                                 messages = this.reclassifyAndAdjustPlan(messages);
                             }
 
-                            if (this.shouldRetryWithLlm(validation, consecutiveToolFailures)) {
+                            const llmRetrySignal = this.shouldRetryWithLlm(validation, consecutiveToolFailures);
+
+                            // Ponto de integração futuro: o Orchestrator pode consumir este signal
+                            // e decidir se pede nova validação ao LLM ou se altera a estratégia.
+                            if (llmRetrySignal.retryRecommended) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
                                     content: `[VALIDAÇÃO] O step "${execStep.description}" pode ter falhado: ${validation.reason}. Verifique se o resultado está correto e ajuste a estratégia se necessário.`
                                 };
                                 messages.push(llmCheck);
                             } else if (!validation.needsLlm) {
-                                messages = this.adjustPlanAfterFailure(messages, execStep, validation);
+                                const planAdjustment = this.adjustPlanAfterFailure(messages, execStep, validation);
+                                messages = planAdjustment.messages;
+                                this.logger.info('plan_adjustment_signal_emitted', '[SIGNAL] Plan adjustment requested after step failure', {
+                                    failed_step: planAdjustment.signal.failedStep,
+                                    reason: planAdjustment.signal.reason,
+                                    failure_reason: planAdjustment.signal.failureReason,
+                                    suggested_actions: planAdjustment.signal.suggestedActions
+                                });
                             }
                         }
 
@@ -1179,6 +1455,7 @@ export class AgentLoop {
                         this.logger.info('low_confidence_action', `[ACTION] Confiança baixa=${globalConf.toFixed(2)}. Forçando tentativa alternativa.`);
                     } else if (lastSuccessful) {
                         const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
+                        this.currentSignals.stop = stopDecision;
                         if (stopDecision.shouldStop) {
                             this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                             break;
@@ -1186,6 +1463,7 @@ export class AgentLoop {
                     }
 
                     const deltaStopDecision = this.checkDeltaAndStop(stepCount);
+                    this.currentSignals.stop = deltaStopDecision;
                     if (deltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
                         this.logger.info('execution_stopped_delta', `[STOP] ${deltaStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                         break;
@@ -1506,6 +1784,71 @@ export class AgentLoop {
         return currentPlan.steps[currentPlan.currentStepIndex];
     }
 
+    private async buildToolFallbackSignal(params: {
+        step?: ExecutionStep;
+        toolName: string;
+        trigger: ToolFallbackTrigger;
+    }): Promise<ToolFallbackSignal> {
+        if (!params.step) {
+            return {
+                trigger: params.trigger,
+                fallbackRecommended: false,
+                originalTool: params.toolName,
+                reason: 'no_step_context'
+            };
+        }
+
+        const fallbackTool = await this.getFallbackToolForStep(params.step);
+
+        if (!fallbackTool) {
+            return {
+                trigger: params.trigger,
+                fallbackRecommended: false,
+                originalTool: params.toolName,
+                reason: 'no_fallback_available'
+            };
+        }
+
+        if (fallbackTool === params.toolName) {
+            return {
+                trigger: params.trigger,
+                fallbackRecommended: false,
+                originalTool: params.toolName,
+                suggestedTool: fallbackTool,
+                reason: 'same_tool_only'
+            };
+        }
+
+        if (!this.isToolCompatible(params.step, fallbackTool)) {
+            return {
+                trigger: params.trigger,
+                fallbackRecommended: false,
+                originalTool: params.toolName,
+                suggestedTool: fallbackTool,
+                reason: 'incompatible_fallback'
+            };
+        }
+
+        return {
+            trigger: params.trigger,
+            fallbackRecommended: true,
+            originalTool: params.toolName,
+            suggestedTool: fallbackTool,
+            reason: 'fallback_available'
+        };
+    }
+
+    private logToolFallbackSignal(signal: ToolFallbackSignal) {
+        this.currentSignals.fallback = signal;
+        this.logger.info('tool_fallback_signal_emitted', '[SIGNAL] Tool fallback recommendation emitted', {
+            trigger: signal.trigger,
+            original_tool: signal.originalTool,
+            suggested_tool: signal.suggestedTool,
+            fallback_recommended: signal.fallbackRecommended,
+            reason: signal.reason
+        });
+    }
+
     private async getFallbackToolForStep(step: ExecutionStep): Promise<string | undefined> {
         const lowerDesc = step.description.toLowerCase();
 
@@ -1674,12 +2017,20 @@ export class AgentLoop {
             return null;
         }
 
-        const fallbackTool = step.tool ? await this.getFallbackToolForStep(step) : undefined;
+        const toolFallbackSignal = await this.buildToolFallbackSignal({
+            step,
+            toolName: step.tool || 'unknown_tool',
+            trigger: 'retry_refinement'
+        });
 
-        if (fallbackTool && fallbackTool !== step.tool) {
-            this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${fallbackTool}`);
+        this.logToolFallbackSignal(toolFallbackSignal);
+
+        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+            // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
+            // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
+            this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${toolFallbackSignal.suggestedTool}`);
             try {
-                return await this.registry.executeTool(fallbackTool, this.adaptArgsForRetry(step, originalArgs));
+                return await this.registry.executeTool(toolFallbackSignal.suggestedTool, this.adaptArgsForRetry(step, originalArgs));
             } catch (error) {
                 this.logger.error('refinement_tool_error', error as Error, '[REFINE] Fallback tool execution failed');
                 return null;
@@ -1825,23 +2176,83 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         }
     }
 
-    private shouldReclassify(consecutiveFailures: number): boolean {
+    private shouldReclassify(consecutiveFailures: number): ReclassificationSignal {
         if (this.reclassificationAttempts >= this.MAX_RECLASSIFY_ATTEMPTS) {
-            return false;
+            return {
+                reclassificationRecommended: false,
+                reason: 'attempt_limit_reached',
+                suggestedTaskType: null,
+                confidence: 0
+            };
         }
 
         if (consecutiveFailures >= 2) {
-            return true;
+            const newClassification = classifyTask(this.originalInput);
+
+            if (newClassification.type === this.currentTaskType) {
+                return {
+                    reclassificationRecommended: false,
+                    reason: 'classification_unchanged',
+                    suggestedTaskType: newClassification.type,
+                    confidence: newClassification.confidence
+                };
+            }
+
+            if (newClassification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+                return {
+                    reclassificationRecommended: false,
+                    reason: 'low_classifier_confidence',
+                    suggestedTaskType: newClassification.type,
+                    confidence: newClassification.confidence
+                };
+            }
+
+            return {
+                reclassificationRecommended: true,
+                reason: 'failure_limit_reached',
+                suggestedTaskType: newClassification.type,
+                confidence: newClassification.confidence
+            };
         }
 
         if (this.stepValidations.length > 0) {
             const avgConfidence = this.stepValidations.reduce((a, b) => a + b, 0) / this.stepValidations.length;
             if (avgConfidence < this.STEP_CONFIDENCE_THRESHOLD && this.stepValidations.length >= 2) {
-                return true;
+                const newClassification = classifyTask(this.originalInput);
+
+                if (newClassification.type === this.currentTaskType) {
+                    return {
+                        reclassificationRecommended: false,
+                        reason: 'classification_unchanged',
+                        suggestedTaskType: newClassification.type,
+                        confidence: newClassification.confidence
+                    };
+                }
+
+                if (newClassification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+                    return {
+                        reclassificationRecommended: false,
+                        reason: 'low_classifier_confidence',
+                        suggestedTaskType: newClassification.type,
+                        confidence: newClassification.confidence
+                    };
+                }
+
+                return {
+                    reclassificationRecommended: true,
+                    reason: 'low_step_confidence',
+                    suggestedTaskType: newClassification.type,
+                    confidence: newClassification.confidence
+                };
             }
         }
 
-        return false;
+        return {
+            reclassificationRecommended: false,
+            reason: 'missing_input',
+            suggestedTaskType: null,
+            confidence: 0
+        };
     }
 
     private reclassifyAndAdjustPlan(messages: MessagePayload[]): MessagePayload[] {
@@ -1900,10 +2311,12 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         const intentClear = this.isUserIntentClear(input);
         const classification = classifyTask(input);
 
-        this.failSafe = intentClear || classification.type === 'unknown' || classification.type === 'generic_task';
+        // TODO: migrar decisão de fail-safe para CognitiveOrchestrator — o executor deve receber o FailSafeSignal já computado.
+        const failSafeSignal = this.buildFailSafeSignal(intentClear, classification.type);
+        this.failSafe = failSafeSignal.activated;
 
         if (this.failSafe) {
-            this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: intentClear=${intentClear}, type=${classification.type}`);
+            this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: trigger=${failSafeSignal.trigger}, intentClear=${intentClear}, type=${classification.type}`);
         }
 
         if (this.failSafe && (classification.type === 'unknown' || classification.confidence === 0)) {
@@ -1932,8 +2345,10 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         this.forcedTaskType = true;
         this.mode = 'EXECUTION';
         this.disableFollowUpQuestions = true;
-        this.failSafe = false;
-        this.logger.info('task_type_forced', `[FORCE] Tipo forçado: ${type} (confidence=${confidence})`);
+        // TODO: migrar decisão de fail-safe para CognitiveOrchestrator — o executor deve receber o FailSafeSignal já computado.
+        const failSafeSignal: FailSafeSignal = { activated: false, trigger: 'force_type_override_disabled' };
+        this.failSafe = failSafeSignal.activated;
+        this.logger.info('task_type_forced', `[FORCE] Tipo forçado: ${type} (confidence=${confidence}, failSafe=${this.failSafe})`);
     }
 
     private getGlobalConfidence(validations: number[]): number {
@@ -1952,16 +2367,17 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         return plan.steps.some(step => !step.completed && !step.failed);
     }
 
-    private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): { shouldStop: boolean; reason: string } {
+    // TODO: migrar lógica de shouldStopExecution para CognitiveOrchestrator — o loop deve apenas receber o StopContinueSignal e executar.
+    private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): StopContinueSignal {
         const hasPending = this.hasPendingSteps();
 
         if (hasPending && this.failSafe) {
             this.logger.info('fail_safe_prevents_stop', `[FAIL-SAFE] Impedindo parada - há steps pendentes (failSafe=true)`);
-            return { shouldStop: false, reason: 'fail_safe_prevents_stop_has_pending_steps' };
+            return { shouldStop: false, reason: 'fail_safe_prevents_stop_has_pending_steps', stepCount };
         }
 
         if (stepCount < 2) {
-            return { shouldStop: false, reason: 'insufficient_steps' };
+            return { shouldStop: false, reason: 'insufficient_steps', stepCount };
         }
 
         const globalConfidence = this.getGlobalConfidence(this.stepValidations);
@@ -1970,13 +2386,15 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             const plan = this.executionContext.currentPlan;
             const pendingCount = plan?.steps.filter((s: ExecutionStep) => !s.completed && !s.failed).length || 0;
             this.logger.info('pending_steps_prevent_stop', `[STOP-BLOCK] Ignorando confiança alta - há ${pendingCount} steps pendentes`);
-            return { shouldStop: false, reason: 'has_pending_steps_prevent_stop' };
+            return { shouldStop: false, reason: 'has_pending_steps_prevent_stop', globalConfidence, stepCount };
         }
 
         if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful && !hasPending) {
             return {
                 shouldStop: true,
-                reason: `global_confidence=${globalConfidence.toFixed(2)}_threshold=${this.GLOBAL_CONFIDENCE_THRESHOLD}`
+                reason: 'global_confidence_threshold_met',
+                globalConfidence,
+                stepCount
             };
         }
 
@@ -1987,29 +2405,32 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 if (avgRecent < 0.4) {
                     return {
                         shouldStop: true,
-                        reason: `over_execution_detected_avg_recent=${avgRecent.toFixed(2)}`
+                        reason: 'over_execution_detected',
+                        globalConfidence: avgRecent,
+                        stepCount
                     };
                 }
             }
         }
 
-        return { shouldStop: false, reason: 'execution_continues' };
+        return { shouldStop: false, reason: 'execution_continues', stepCount };
     }
 
-    private checkDeltaAndStop(stepIndex: number): { shouldStop: boolean; reason: string } {
+    // TODO: migrar lógica de checkDeltaAndStop para CognitiveOrchestrator — o loop deve apenas receber o StopContinueSignal e executar.
+    private checkDeltaAndStop(stepIndex: number): StopContinueSignal {
         if (stepIndex < 2) {
-            return { shouldStop: false, reason: 'insufficient_steps_for_delta' };
+            return { shouldStop: false, reason: 'insufficient_steps_for_delta', stepCount: stepIndex };
         }
 
         if (this.stepValidations.length < 2) {
-            return { shouldStop: false, reason: 'insufficient_validations_for_delta' };
+            return { shouldStop: false, reason: 'insufficient_validations_for_delta', stepCount: stepIndex };
         }
 
         const recent = this.stepValidations.slice(-3);
         const currentConfidence = recent.reduce((a, b) => a + b, 0) / recent.length;
 
         if (typeof currentConfidence !== 'number') {
-            return { shouldStop: false, reason: 'invalid_confidence' };
+            return { shouldStop: false, reason: 'invalid_confidence', stepCount: stepIndex };
         }
 
         if (this.previousConfidence !== null) {
@@ -2030,11 +2451,13 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             console.log(`[STOP] low improvement detected (${this.lowImprovementCount} steps)`);
             return {
                 shouldStop: true,
-                reason: `low_improvement_delta_count=${this.lowImprovementCount}`
+                reason: 'low_improvement_delta',
+                globalConfidence: currentConfidence,
+                stepCount: stepIndex
             };
         }
 
-        return { shouldStop: false, reason: 'delta_check_continues' };
+        return { shouldStop: false, reason: 'delta_check_continues', globalConfidence: currentConfidence, stepCount: stepIndex };
     }
 
     private resetDeltaDetection() {
@@ -2060,12 +2483,62 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         return [...messages, hint];
     }
 
-    private validateStepResult(step: ExecutionStep, result: string, toolName: string): StepValidation {
+    private buildStepValidationSignal(validation: StepValidation): StepValidationSignal {
+        if (validation.success) {
+            return {
+                validationPassed: true,
+                reason: 'step_validation_passed',
+                confidence: validation.confidence,
+                requiresLlmReview: validation.needsLlm
+            };
+        }
+
+        return {
+            validationPassed: false,
+            reason: 'step_validation_failed',
+            confidence: validation.confidence,
+            failureReason: validation.reason,
+            requiresLlmReview: validation.needsLlm
+        };
+    }
+
+    // TODO: migrar lógica de buildFailSafeSignal para CognitiveOrchestrator — o executor deve apenas receber o FailSafeSignal e aplicá-lo.
+    private buildFailSafeSignal(intentClear: boolean, taskType: string): FailSafeSignal {
+        if (intentClear) {
+              const s: FailSafeSignal = { activated: true, trigger: 'intent_clear' };
+              this.currentSignals.failSafe = s;
+              return s;
+        }
+        if (taskType === 'unknown') {
+              const s: FailSafeSignal = { activated: true, trigger: 'unknown_task_type' };
+              this.currentSignals.failSafe = s;
+              return s;
+        }
+        if (taskType === 'generic_task') {
+            const s: FailSafeSignal = { activated: true, trigger: 'generic_task_type' };
+            this.currentSignals.failSafe = s;
+            return s;
+        }
+        const s: FailSafeSignal = { activated: false, trigger: 'not_activated' };
+        this.currentSignals.failSafe = s;
+        return s;
+    }
+
+    private buildStepValidationResult(validation: StepValidation): StepValidationResult {
+        const result: StepValidationResult = {
+            validation,
+            signal: this.buildStepValidationSignal(validation)
+        };
+        this.currentSignals.validation = result.signal;
+        return result;
+    }
+
+    private validateStepResult(step: ExecutionStep, result: string, toolName: string): StepValidationResult {
         const lowerDesc = step.description.toLowerCase();
         const resultLower = result.toLowerCase();
 
         if (resultLower.includes('erro:') || resultLower.includes('error:') || resultLower.includes('failed')) {
-            return { success: false, confidence: 1.0, reason: `Erro na execução: ${result.slice(0, 100)}`, needsLlm: false };
+            return this.buildStepValidationResult({ success: false, confidence: 1.0, reason: `Erro na execução: ${result.slice(0, 100)}`, needsLlm: false });
         }
 
         if (lowerDesc.includes('localizar') || lowerDesc.includes('buscar arquivo') || lowerDesc.includes('procurar')) {
@@ -2073,91 +2546,91 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
                 !resultLower.includes('not found') &&
                 !resultLower.includes('não localizei') &&
                 result.length > 10;
-            return {
+            return this.buildStepValidationResult({
                 success: found,
                 confidence: found ? 0.9 : 0.95,
                 reason: found ? 'Arquivo/localizado encontrado no resultado' : 'Arquivo não encontrado no resultado',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('ler arquivo') || lowerDesc.includes('ler conteúdo')) {
             const hasContent = result.length > 0 && !resultLower.includes('erro');
-            return {
+            return this.buildStepValidationResult({
                 success: hasContent,
                 confidence: hasContent ? 0.85 : 0.95,
                 reason: hasContent ? 'Conteúdo lido com sucesso' : 'Falha ao ler conteúdo',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('salvar') || lowerDesc.includes('escrever') || lowerDesc.includes('criar arquivo')) {
             const saved = resultLower.includes('salvo') ||
                 resultLower.includes('success') ||
                 resultLower.includes('criado');
-            return {
+            return this.buildStepValidationResult({
                 success: saved,
                 confidence: saved ? 0.9 : 0.8,
                 reason: saved ? 'Arquivo salvo/criado com sucesso' : 'Não foi possível confirmar salvamento',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('criar diretório') || lowerDesc.includes('criar pasta')) {
             const created = resultLower.includes('criado') ||
                 resultLower.includes('success') ||
                 resultLower.includes('já existe');
-            return {
+            return this.buildStepValidationResult({
                 success: created,
                 confidence: created ? 0.9 : 0.8,
                 reason: created ? 'Diretório criado ou já existe' : 'Falha ao criar diretório',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('listar') || lowerDesc.includes('list directory')) {
             const hasList = result.includes('📁') || result.includes('📄') || result.length > 5;
-            return {
+            return this.buildStepValidationResult({
                 success: hasList,
                 confidence: hasList ? 0.9 : 0.8,
                 reason: hasList ? 'Lista de diretório obtida' : 'Falha ao listar diretório',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('deletar') || lowerDesc.includes('remover')) {
             const deleted = resultLower.includes('removido') ||
                 resultLower.includes('deletado') ||
                 resultLower.includes('deleted');
-            return {
+            return this.buildStepValidationResult({
                 success: deleted,
                 confidence: deleted ? 0.9 : 0.8,
                 reason: deleted ? 'Item removido com sucesso' : 'Falha ao remover item',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('buscar na web') || lowerDesc.includes('pesquisar')) {
             const hasResults = result.length > 20 && !resultLower.includes('nenhum resultado');
-            return {
+            return this.buildStepValidationResult({
                 success: hasResults,
                 confidence: hasResults ? 0.8 : 0.7,
                 reason: hasResults ? 'Resultados de busca obtidos' : 'Nenhum resultado encontrado',
                 needsLlm: false
-            };
+            });
         }
 
         if (lowerDesc.includes('converter') || lowerDesc.includes('transformar')) {
             const hasOutput = result.length > 0 && result.length < 50000;
-            return {
+            return this.buildStepValidationResult({
                 success: hasOutput,
                 confidence: 0.7,
                 reason: hasOutput ? 'Conversão realizada' : 'Falha na conversão',
                 needsLlm: true
-            };
+            });
         }
 
-        return { success: true, confidence: 0.5, reason: 'Validação padrão aplicada', needsLlm: false };
+        return this.buildStepValidationResult({ success: true, confidence: 0.5, reason: 'Validação padrão aplicada', needsLlm: false });
     }
 
     private logValidation(step: ExecutionStep, validation: StepValidation) {
@@ -2170,7 +2643,15 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         });
     }
 
-    private adjustPlanAfterFailure(messages: MessagePayload[], step: ExecutionStep, validation: StepValidation): MessagePayload[] {
+    private adjustPlanAfterFailure(messages: MessagePayload[], step: ExecutionStep, validation: StepValidation): PlanAdjustmentResult {
+        const signal: PlanAdjustmentSignal = {
+            shouldAdjustPlan: true,
+            reason: 'step_failed',
+            suggestedActions: ['adjust_next_step', 'use_alternative_tool', 'change_strategy'],
+            failedStep: step.description,
+            failureReason: validation.reason
+        };
+
         const hint: MessagePayload = {
             role: 'system',
             content: `[FALHA DETECTADA] Step "${step.description}" falhou: ${validation.reason}
@@ -2179,11 +2660,34 @@ Considere:
 2. Usar ferramenta diferente
 3. Mudar estratégia entirely`
         };
-        return [...messages, hint];
+        return {
+            messages: [...messages, hint],
+            signal
+        };
     }
 
-    private shouldRetryWithLlm(validation: StepValidation, consecutiveFailures: number): boolean {
-        return validation.needsLlm && !validation.success && consecutiveFailures < 2;
+    private shouldRetryWithLlm(validation: StepValidation, consecutiveFailures: number): LlmRetrySignal {
+        if (validation.success) {
+            return {
+                retryRecommended: false,
+                reason: 'step_succeeded',
+                consecutiveFailures
+            };
+        }
+
+        if (validation.needsLlm && consecutiveFailures < 2) {
+            return {
+                retryRecommended: true,
+                reason: 'needs_llm_validation',
+                consecutiveFailures
+            };
+        }
+
+        return {
+            retryRecommended: false,
+            reason: 'failure_limit_reached',
+            consecutiveFailures
+        };
     }
 
     private getStepType(stepDescription: string): string {
