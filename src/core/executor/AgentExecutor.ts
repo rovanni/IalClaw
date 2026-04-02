@@ -628,7 +628,18 @@ export class AgentExecutor {
                         trace_id: getTraceIdSafe()
                     });
                     attempt++;
-                    continue;
+                    const executorDecision631 = true; // executor quer continuar
+                    const orchestratorDecision631 = this.orchestrator?.decideRetryAfterFailure({
+                        sessionId: session.conversation_id,
+                        attempt,
+                        executorDecision: executorDecision631
+                    });
+                    const finalDecision631 = orchestratorDecision631 ?? executorDecision631;
+                    if (finalDecision631 === true) {
+                        continue;
+                    } else {
+                        break; // manter encerramento equivalente
+                    }
                 }
 
                 lastError = failureMessage;
@@ -694,7 +705,18 @@ export class AgentExecutor {
                     trace_id: getTraceIdSafe()
                 });
                 attempt++;
-                continue;
+                const executorDecision697 = true; // executor quer continuar
+                const orchestratorDecision697 = this.orchestrator?.decideRetryAfterFailure({
+                    sessionId: session.conversation_id,
+                    attempt,
+                    executorDecision: executorDecision697
+                });
+                const finalDecision697 = orchestratorDecision697 ?? executorDecision697;
+                if (finalDecision697 === true) {
+                    continue;
+                } else {
+                    break; // manter encerramento equivalente
+                }
             }
 
             if (!session.current_project_id) {
@@ -805,7 +827,18 @@ export class AgentExecutor {
                             trace_id: getTraceIdSafe()
                         });
                         attempt++;
-                        continue;
+                        const executorDecision808 = true; // executor quer continuar
+                        const orchestratorDecision808 = this.orchestrator?.decideRetryAfterFailure({
+                            sessionId: session.conversation_id,
+                            attempt,
+                            executorDecision: executorDecision808
+                        });
+                        const finalDecision808 = orchestratorDecision808 ?? executorDecision808;
+                        if (finalDecision808 === true) {
+                            continue;
+                        } else {
+                            break; // manter encerramento equivalente
+                        }
                     }
                 }
             }
@@ -1022,7 +1055,18 @@ export class AgentExecutor {
                     trace_id: getTraceIdSafe()
                 });
                 attempt++;
-                continue;
+                const executorDecision1025 = true; // executor quer continuar
+                const orchestratorDecision1025 = this.orchestrator?.decideRetryAfterFailure({
+                    sessionId: session.conversation_id,
+                    attempt,
+                    executorDecision: executorDecision1025
+                });
+                const finalDecision1025 = orchestratorDecision1025 ?? executorDecision1025;
+                if (finalDecision1025 === true) {
+                    continue;
+                } else {
+                    break; // manter encerramento equivalente
+                }
             }
 
             debugBus.emit('execution_success', {

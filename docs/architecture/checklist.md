@@ -88,6 +88,20 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - **4 pontos adicionais corrigidos**: Mensagens em `failureMessage` e `runtimeError` e `validationError` nos fluxos de retry após `shouldRetryWithGovernance()`.
   - **Sintaxe preservada**: condição de bloqueio permanece `(orchestratorDecision === true)` apenas, com fallback seguro para decisão do Executor quando necessário.
   - **Resultado**: Zero regressão. Nenhuma heurística alterada. Nenhum fluxo quebrado. Governança semanticamente correta.
+
+- **ETAPA 3.3 IMPLEMENTADA**: Governança da continuidade do loop no `AgentExecutor` — Orchestrator agora controla se o `while (attempt <= MAX_RETRIES)` continua ou encerra.
+  - 4 pontos de `continue` cobertos (linhas no loop principal): repair path, execution error+replan, validation error+replan, runtime error+replan.
+  - Loop de steps (`for...of plan.steps`) e loop de capabilities (`for...of capabilities`) **não tocados** — pertencem a escopos diferentes.
+  - Padrão de intervenção aplicado ANTES de cada `continue`: `executorDecisionN = true`, `orchestratorDecisionN = this.orchestrator?.decideRetryAfterFailure({...})`, `finalDecisionN = orchestratorDecisionN ?? executorDecisionN`.
+  - `continue` substituído por `if (finalDecision === true) { continue; } else { break; }`.
+  - Safe mode mantido: `orchestratorDecision ?? executorDecision` — executor continua como fallback quando Orchestrator não decide.
+  - `attempt++` **não alterado**; `MAX_RETRIES` **não alterado**; estrutura do `while` **não tocada**.
+  - Nenhuma heurística alterada. Nenhuma mensagem alterada. Nenhum replan/abort existente afetado.
+  - Corte do mini-brain principal concluído: Executor deixa de ser decisor do loop; sistema passa a Single Brain.
+  - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
+  - Nenhuma mudança de comportamento externo verificada ✓.
+  - Safe mode preservado ✓.
+  - Nenhuma regressão ✓.
   - Validação final: `npx tsc --noEmit` sem erros ✓.
 
 ## O que esta em andamento
