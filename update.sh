@@ -143,18 +143,34 @@ print_step "5" "$(t 'step.done')"
 
 if [ "$WAS_RUNNING" = true ]; then
     echo ""
-    printf "%b\n" "${STEP}[*]${RESET} ${BOLD}$(t 'step.restart')${RESET}"
-    if [ "$RUN_MODE" = "systemd" ]; then
-        echo "      $(t 'info.restart_systemd' 2>/dev/null || echo "Reiniciando via systemctl...")"
-        
-        if ! sudo -n true 2>/dev/null; then
-            echo "      ${YELLOW}[AVISO]${RESET} Sudo pode solicitar senha."
+    RESTART_PROMPT="$(t 'prompt.restart_after_update')"
+    if [ "$RESTART_PROMPT" = "prompt.restart_after_update" ]; then
+        RESTART_PROMPT="O agente estava rodando antes da atualizacao. Deseja iniciar novamente agora? (s/n) [s]: "
+    fi
+
+    read -r -p "      ${RESTART_PROMPT}" RESTART_ANSWER
+    RESTART_ANSWER="${RESTART_ANSWER,,}"
+
+    if [[ -z "$RESTART_ANSWER" || "$RESTART_ANSWER" =~ ^(s|sim|y|yes)$ ]]; then
+        printf "%b\n" "${STEP}[*]${RESET} ${BOLD}$(t 'step.restart')${RESET}"
+        if [ "$RUN_MODE" = "systemd" ]; then
+            echo "      $(t 'info.restart_systemd' 2>/dev/null || echo "Reiniciando via systemctl...")"
+
+            if ! sudo -n true 2>/dev/null; then
+                echo "      ${YELLOW}[AVISO]${RESET} Sudo pode solicitar senha."
+            fi
+
+            sudo systemctl start ialclaw
+        else
+            echo "      $(t 'info.restart_daemon' 2>/dev/null || echo "Reiniciando via daemon...")"
+            node bin/ialclaw.js start --daemon
         fi
-        
-        sudo systemctl start ialclaw
     else
-        echo "      $(t 'info.restart_daemon' 2>/dev/null || echo "Reiniciando via daemon...")"
-        node bin/ialclaw.js start --daemon
+        RESTART_SKIPPED_MSG="$(t 'info.restart_skipped')"
+        if [ "$RESTART_SKIPPED_MSG" = "info.restart_skipped" ]; then
+            RESTART_SKIPPED_MSG="Reinicio ignorado. Voce pode iniciar depois com: node bin/ialclaw.js start --daemon"
+        fi
+        print_warn "$RESTART_SKIPPED_MSG"
     fi
 fi
 

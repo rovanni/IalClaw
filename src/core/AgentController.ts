@@ -676,6 +676,7 @@ Nao peca confirmacao redundante.
             },
             taskType: session?.task_type,
             taskConfidence: session?.task_confidence,
+            intent,
             orchestrationResult: decision // Passamos a decisÃ£o para o loop
         };
 

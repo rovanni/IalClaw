@@ -50,6 +50,8 @@ set "IALCLAW_T[step.finish.success]=Seu IalClaw foi atualizado para a ultima ver
 set "IALCLAW_T[step.finish.preserved]=Seu banco de dados e suas configuracoes permanecem intactos."
 set "IALCLAW_T[step.stop]=Detectando e parando o agente para atualizacao..."
 set "IALCLAW_T[step.restart]=Reiniciando o agente..."
+set "IALCLAW_T[prompt.restart_after_update]=O agente estava rodando antes da atualizacao. Deseja iniciar novamente agora? [S/N]"
+set "IALCLAW_T[info.restart_skipped]=Reinicio ignorado. Voce pode iniciar depois com: node bin/ialclaw.js start --daemon"
 
 set "IALCLAW_T[info.start_title]=Para iniciar o IalClaw"
 set "IALCLAW_T[info.foreground]=Foreground"
@@ -101,6 +103,8 @@ set "IALCLAW_T[step.finish.success]=Your IalClaw has been updated to the latest 
 set "IALCLAW_T[step.finish.preserved]=Your database and settings remain intact."
 set "IALCLAW_T[step.stop]=Detecting and stopping the agent for update..."
 set "IALCLAW_T[step.restart]=Restarting the agent..."
+set "IALCLAW_T[prompt.restart_after_update]=The agent was running before update. Do you want to start it again now? [Y/N]"
+set "IALCLAW_T[info.restart_skipped]=Restart skipped. You can start it later with: node bin/ialclaw.js start --daemon"
 
 set "IALCLAW_T[info.start_title]=To start IalClaw"
 set "IALCLAW_T[info.foreground]=Foreground"

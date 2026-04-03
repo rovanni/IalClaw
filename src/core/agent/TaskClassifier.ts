@@ -248,7 +248,7 @@ export class TaskClassifier {
                 type: heuristicResult.type,
                 confidence: heuristicResult.confidence
             });
-            return { ...heuristicResult, source: 'heuristic' };
+            return this.enforceNoFileConversionWithoutFileSignal(input, { ...heuristicResult, source: 'heuristic' });
         }
 
         if (heuristicResult && heuristicResult.confidence >= 0.85) {
@@ -258,7 +258,7 @@ export class TaskClassifier {
                 type: heuristicResult.type,
                 confidence: heuristicResult.confidence
             });
-            return { ...heuristicResult, source: 'heuristic' };
+            return this.enforceNoFileConversionWithoutFileSignal(input, { ...heuristicResult, source: 'heuristic' });
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -271,11 +271,11 @@ export class TaskClassifier {
                 confidence: memoryResult.confidence,
                 source: memoryResult.source  // 'context' ou 'global'
             });
-            return {
+            return this.enforceNoFileConversionWithoutFileSignal(input, {
                 type: memoryResult.type as TaskType,
                 confidence: memoryResult.confidence,
                 source: 'memory'
-            };
+            });
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -301,7 +301,7 @@ export class TaskClassifier {
                     type: llmResult.type,
                     confidence: llmResult.confidence
                 });
-                return { ...llmResult, source: 'llm' };
+                return this.enforceNoFileConversionWithoutFileSignal(input, { ...llmResult, source: 'llm' });
             }
         }
 
@@ -314,7 +314,7 @@ export class TaskClassifier {
             type: fallbackResult.type,
             confidence: fallbackResult.confidence
         });
-        return { ...fallbackResult, source: 'fallback' };
+        return this.enforceNoFileConversionWithoutFileSignal(input, { ...fallbackResult, source: 'fallback' });
     }
 
     /**
@@ -335,12 +335,12 @@ export class TaskClassifier {
         // Heurística
         const heuristicResult = this.heuristicClassify(normalized);
         if (heuristicResult && heuristicResult.confidence >= 0.85) {
-            return { ...heuristicResult, source: 'heuristic' };
+            return this.enforceNoFileConversionWithoutFileSignal(input, { ...heuristicResult, source: 'heuristic' });
         }
 
         // Fallback
         const fallbackResult = this.fallbackClassify(normalized, heuristicResult);
-        return { ...fallbackResult, source: 'fallback' };
+        return this.enforceNoFileConversionWithoutFileSignal(input, { ...fallbackResult, source: 'fallback' });
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -538,6 +538,35 @@ export class TaskClassifier {
         const hasConversionWord = /\b(converter|transformar|convert)\b/i.test(normalized);
 
         return hasFilePath && hasConversionWord;
+    }
+
+    private hasFileSignal(input: string): boolean {
+        const normalized = input.toLowerCase();
+        return /\b(arquivo|caminho|path|diret[óo]rio|pasta)\b/i.test(normalized)
+            || /\.(txt|pdf|md|html|json|docx|pptx|csv|xlsx)\b/i.test(normalized)
+            || /\/[\w\-.\/]+\.[a-z0-9]+/i.test(normalized)
+            || /[a-z]:\\[^\s]+\.[a-z0-9]+/i.test(input);
+    }
+
+    private enforceNoFileConversionWithoutFileSignal(input: string, classification: TaskClassification): TaskClassification {
+        if (classification.type !== 'file_conversion') {
+            return classification;
+        }
+
+        if (this.hasFileSignal(input)) {
+            return classification;
+        }
+
+        this.logger.info('file_conversion_blocked_no_file_signal', 'Bloqueando file_conversion sem sinal de arquivo', {
+            original_type: classification.type,
+            fallback_type: 'content_generation'
+        });
+
+        return {
+            ...classification,
+            type: 'content_generation',
+            confidence: Math.max(classification.confidence, 0.85)
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════════

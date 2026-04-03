@@ -192,10 +192,20 @@ call:echo_step "5/5"
 
 if !WAS_RUNNING!==1 (
     echo.
-    set "MSG=step.restart"
-    set "MSG_FALLBACK=Reiniciando o agente..."
-    call:echo_simple_step "*" "%MSG%"
-    start /b node bin\ialclaw.js start --daemon
+    set "RESULT=!IALCLAW_T[prompt.restart_after_update]!"
+    if not defined RESULT set "RESULT=O agente estava rodando antes da atualizacao. Deseja iniciar novamente agora? [S/N]"
+    choice /C SN /N /M "      !RESULT! "
+
+    if !ERRORLEVEL!==1 (
+        set "MSG=step.restart"
+        set "MSG_FALLBACK=Reiniciando o agente..."
+        call:echo_simple_step "*" "%MSG%"
+        start /b node bin\ialclaw.js start --daemon
+    ) else (
+        set "RESULT=!IALCLAW_T[info.restart_skipped]!"
+        if not defined RESULT set "RESULT=Reinicio ignorado. Voce pode iniciar depois com: node bin/ialclaw.js start --daemon"
+        echo       %YELLOW%AVISO%RESET% !RESULT!
+    )
 )
 
 echo.

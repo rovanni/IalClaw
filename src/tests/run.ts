@@ -12,6 +12,7 @@ import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/p
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { getPendingAction, isConfirmation, setPendingAction } from '../core/agent/PendingActionTracker';
+import { classifyTask } from '../core/agent/TaskClassifier';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
 import { FlowManager } from '../core/flow/FlowManager';
@@ -533,6 +534,9 @@ async function run() {
     assert.equal(intentClassifier.classify('me ajude a desenvolver um jogo').mode, 'EXPLORATION');
     assert.equal(intentClassifier.classify('crie um jogo da cobrinha').mode, 'EXECUTION');
     assert.equal(intentClassifier.classify('converta esse arquivo').mode, 'EXECUTION');
+
+    const snakeClassification = classifyTask('crie um jogo da cobrinha em html');
+    assert.equal(snakeClassification.type, 'content_generation');
 
     await SessionManager.runWithSession('exploration-orchestrator-test', async () => {
         const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());

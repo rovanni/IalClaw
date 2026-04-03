@@ -302,6 +302,7 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
 };
 
 export type AgentMode = 'THINKING' | 'EXECUTION';
+type LoopIntentMode = 'EXPLORATION' | 'EXECUTION' | 'HYBRID' | 'UNKNOWN';
 
 export const TASK_TOOL_MAP: Record<string, string[]> = {
     'file_conversion': ['file_convert', 'read_local_file', 'list_directory', 'run_python', 'exec_command'],
@@ -372,6 +373,7 @@ export class AgentLoop {
     private planValidator = getPlanExecutionValidator();
     private decisionHandler: DecisionHandler;
     private chatId: string = 'default';
+    private currentIntentMode: LoopIntentMode | null = null;
 
     /**
      * [HYBRID] Executa uma resposta direta do LLM e adiciona uma sugestão de ferramenta.
@@ -412,6 +414,22 @@ export class AgentLoop {
         }
 
         return null;
+    }
+
+    private hasFileSignal(input: string): boolean {
+        return /\b(arquivo|caminho|path|diret[óo]rio|pasta)\b/i.test(input)
+            || /\.(txt|pdf|md|html|json|docx|pptx|csv|xlsx)\b/i.test(input)
+            || /\/[\w\-.\/]+\.[a-z0-9]+/i.test(input)
+            || /[a-z]:\\[^\s]+\.[a-z0-9]+/i.test(input);
+    }
+
+    private resolveTaskType(input: string, candidateType: TaskType): TaskType {
+        if (candidateType === 'file_conversion' && !this.hasFileSignal(input)) {
+            this.logger.info('task_type_file_conversion_blocked', '[TASK] file_conversion sem sinal de arquivo: fallback para content_generation');
+            return 'content_generation';
+        }
+
+        return candidateType;
     }
 
     /**
@@ -489,6 +507,7 @@ export class AgentLoop {
         this.isContinuation = false;
         this.lastStepResult = '';
     this.currentSignals = {};
+        this.currentIntentMode = null;
 
         // Limpar histórico da sessão se for o padrão (evita vazamento em testes)
         const session = SessionManager.getCurrentSession();
@@ -761,6 +780,7 @@ export class AgentLoop {
         }
 
         this.setOriginalInput(userInput);
+        this.currentIntentMode = policy?.intent?.mode ?? null;
 
         // ═══════════════════════════════════════════════════════════════════
         // TASK CONTEXT: Verificar continuação ANTES de classificar
@@ -795,7 +815,9 @@ export class AgentLoop {
             // Contexto válido + tarefa ativa/plano válido + última execução OK → continuação
             const previousCtx = cognitiveState.taskContext;
             this.isContinuation = true;
-            this.currentTaskType = previousCtx?.type as TaskType || null;
+            this.currentTaskType = previousCtx?.type
+                ? this.resolveTaskType(userInput, previousCtx.type as TaskType)
+                : null;
             this.currentTaskConfidence = 1.0;
 
             this.logger.info('continuation_detected', '[CONTEXT] Continuação detectada - contexto válido com tarefa ativa', {
@@ -997,6 +1019,14 @@ export class AgentLoop {
             }
 
             if (this.currentTaskType === 'file_conversion') {
+                if (!this.hasFileSignal(userInput)) {
+                    this.currentTaskType = 'content_generation';
+                    this.currentTaskConfidence = Math.max(this.currentTaskConfidence, 0.9);
+                    this.executionContext.planTaskType = this.currentTaskType;
+                    this.executionContext.currentPlan = null;
+                    this.logger.info('task_type_fallback_no_file_input', '[ASK] file_conversion sem arquivo: fallback para content_generation');
+                    return { answer: t('content.ask_for_source'), newMessages: [] };
+                }
                 return { answer: t('file.ask_for_source'), newMessages: [] };
             }
 
@@ -2396,6 +2426,15 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
     }
 
     private shouldReclassify(consecutiveFailures: number): ReclassificationSignal {
+        if (this.currentIntentMode === 'EXECUTION') {
+            return {
+                reclassificationRecommended: false,
+                reason: 'classification_unchanged',
+                suggestedTaskType: this.currentTaskType,
+                confidence: this.currentTaskConfidence
+            };
+        }
+
         if (this.reclassificationAttempts >= this.MAX_RECLASSIFY_ATTEMPTS) {
             return {
                 reclassificationRecommended: false,
@@ -2475,23 +2514,28 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
     }
 
     private reclassifyAndAdjustPlan(messages: MessagePayload[]): MessagePayload[] {
+        if (this.currentIntentMode === 'EXECUTION') {
+            return messages;
+        }
+
         if (!this.originalInput || this.reclassificationAttempts >= this.MAX_RECLASSIFY_ATTEMPTS) {
             return messages;
         }
 
         const newClassification = classifyTask(this.originalInput);
+        const resolvedType = this.resolveTaskType(this.originalInput, newClassification.type);
         const oldType = this.currentTaskType;
 
-        if (newClassification.type === oldType || newClassification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
+        if (resolvedType === oldType || newClassification.confidence < this.LOW_CONFIDENCE_THRESHOLD) {
             return messages;
         }
 
         this.reclassificationAttempts++;
-        this.currentTaskType = newClassification.type;
+        this.currentTaskType = resolvedType;
 
-        this.logger.info('task_reclassification', `[RECLASSIFY] old=${oldType} new=${newClassification.type} confidence=${newClassification.confidence.toFixed(2)}`);
+        this.logger.info('task_reclassification', `[RECLASSIFY] old=${oldType} new=${resolvedType} confidence=${newClassification.confidence.toFixed(2)}`);
 
-        const forcedPlan = getForcedPlanForTaskType(newClassification.type);
+        const forcedPlan = getForcedPlanForTaskType(resolvedType);
         if (forcedPlan && this.executionContext.currentPlan) {
             const newSteps = forcedPlan.map((desc, idx) => ({
                 id: idx + 1,
@@ -2503,7 +2547,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             this.executionContext.currentPlan.steps = newSteps;
             this.executionContext.currentStepIndex = 0;
 
-            this.logger.info('plan_adjusted', `[PLAN] Plano ajustado para: ${newClassification.type}`);
+            this.logger.info('plan_adjusted', `[PLAN] Plano ajustado para: ${resolvedType}`);
         }
 
         this.stepValidations = [];
@@ -2511,7 +2555,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
 
         const hint: MessagePayload = {
             role: 'system',
-            content: `[TAREFA RECLASSIFICADA] O tipo de tarefa foi corrigido de "${oldType}" para "${newClassification.type}". Novo plano aplicado. Continue a execução com esta nova orientação.`
+            content: `[TAREFA RECLASSIFICADA] O tipo de tarefa foi corrigido de "${oldType}" para "${resolvedType}". Novo plano aplicado. Continue a execução com esta nova orientação.`
         };
 
         return [...messages, hint];
@@ -2554,7 +2598,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             this.mode = 'EXECUTION';
             this.disableFollowUpQuestions = true;
         } else {
-            this.currentTaskType = classification.type;
+            this.currentTaskType = this.resolveTaskType(input, classification.type);
             this.currentTaskConfidence = classification.confidence;
 
             if (classification.confidence >= this.MODE_TRANSITION_CONFIDENCE && this.currentTaskType !== 'unknown' && this.currentTaskType !== 'generic_task') {
