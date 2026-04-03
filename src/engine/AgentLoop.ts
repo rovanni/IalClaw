@@ -867,27 +867,71 @@ export class AgentLoop {
             suggested_tool: routeAutonomySignal.suggestedTool
         });
 
+        // ═══════════════════════════════════════════════════════════════════
+        // GOVERNANÇA DO SHORT-CIRCUIT — Detectar intenção de execução real
+        // antes de permitir curto-circuito. Safe mode: orchestratorDecision ?? loopDecision
+        // ═══════════════════════════════════════════════════════════════════
+        const planForIntent = this.executionContext.currentPlan;
+        const planRequiresTools = planForIntent?.steps?.some(
+            step => !!this.mapStepToTool(step.description)
+        ) || false;
+        const inputMentionsSkill = /\bskill\b/i.test(userInput);
+        const hasExecutionIntent = planRequiresTools || inputMentionsSkill;
+
+        const loopDecision = !hasExecutionIntent;
+        const orchestratorDecision = this.orchestrator?.decideDirectExecution({
+            sessionId: this.chatId,
+            context: {
+                hasExecutionIntent,
+                strategy: routeAutonomySignal.recommendedStrategy,
+                taskType: this.currentTaskType
+            }
+        });
+        const finalDirectDecision = orchestratorDecision ?? loopDecision;
+
+        this.logger.info('short_circuit_governance', '[GOVERNANCE] Governança do short-circuit avaliada', {
+            hasExecutionIntent,
+            planRequiresTools,
+            inputMentionsSkill,
+            loopDecision,
+            orchestratorDecision: orchestratorDecision ?? 'undefined',
+            finalDirectDecision,
+            strategy: routeAutonomySignal.recommendedStrategy
+        });
+
         // TODO (Single Brain): RouteAutonomySignal deve ser decidido pelo CognitiveOrchestrator.
         // AgentLoop deve apenas executar a estrategia ja definida.
         if (routeAutonomySignal.recommendedStrategy === 'DIRECT_LLM') {
-            this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
-                mode: 'cognitive_direct',
-                bypass_loop: true,
+            if (finalDirectDecision) {
+                this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
+                    mode: 'cognitive_direct',
+                    bypass_loop: true,
+                    task_type: this.currentTaskType
+                });
+                return this.executeContentGenerationDirect(userInput, initialMessages);
+            }
+            this.logger.info('short_circuit_blocked', '[GOVERNANCE] Short-circuit bloqueado — intenção de execução detectada, continuando para loop', {
+                hasExecutionIntent,
                 task_type: this.currentTaskType
             });
-            return this.executeContentGenerationDirect(userInput, initialMessages);
         }
 
         // ═══════════════════════════════════════════════════════════════════
         // 🧠 HYBRID STRATEGY: Resposta direta + Sugestão de Tool
         // ═══════════════════════════════════════════════════════════════════
         if (routeAutonomySignal.recommendedStrategy === 'HYBRID') {
-            const suggestedTool = routeAutonomySignal.suggestedTool;
-            this.logger.info('hybrid_strategy_activated', '[HYBRID] Estratégia híbrida ativada', {
-                suggestedTool,
-                taskType: this.currentTaskType
+            if (finalDirectDecision) {
+                const suggestedTool = routeAutonomySignal.suggestedTool;
+                this.logger.info('hybrid_strategy_activated', '[HYBRID] Estratégia híbrida ativada', {
+                    suggestedTool,
+                    taskType: this.currentTaskType
+                });
+                return this.executeHybridStrategy(userInput, initialMessages, suggestedTool);
+            }
+            this.logger.info('hybrid_blocked', '[GOVERNANCE] Estratégia híbrida bloqueada — intenção de execução detectada, continuando para loop', {
+                hasExecutionIntent,
+                task_type: this.currentTaskType
             });
-            return this.executeHybridStrategy(userInput, initialMessages, suggestedTool);
         }
 
         // ═══════════════════════════════════════════════════════════════════

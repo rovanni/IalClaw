@@ -22,6 +22,8 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Mapeamento cirurgico do short-circuit no AgentLoop concluido e documentado em `docs/architecture/ShortCircuitMapping.md` (sem alteracao de codigo).
+- Pontos criticos registrados: gate `DIRECT_LLM`, caminho `HYBRID`, `executeContentGenerationDirect`, retorno por `final_answer` sem tool obrigatoria e fallback final sem tools.
 - Correcao cirurgica de compatibilidade de testes: `AgentController` agora injeta orchestrator com guarda defensiva (`typeof this.loop?.setOrchestrator === 'function'`) para evitar crash em mocks parciais.
 - Validacao da correcao de integracao concluida: `npx tsc --noEmit` sem erros e `npm.cmd test` com `All tests passed`.
 - **ETAPA 7 IMPLEMENTADA**: hierarquia completa de autoridade no `CognitiveOrchestrator` via `resolveSignalAuthority(context)`.
@@ -110,16 +112,29 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Safe mode preservado ✓.
   - Nenhuma regressão ✓.
   - Validação final: `npx tsc --noEmit` sem erros ✓.
+- **ETAPA CRÍTICA IMPLEMENTADA**: Governança do short-circuit no `AgentLoop` com bloqueio por intenção de execução.
+  - Short-circuit (`DIRECT_LLM`) e caminho `HYBRID` agora só executam direto quando **não** há intenção de execução real.
+  - Coerência intenção vs execução reforçada: quando há intenção de tool/skill, o fluxo continua no loop normal de execução.
+  - Safe mode aplicado: `finalDirectDecision = orchestratorDecision ?? loopDecision`.
+  - Orchestrator agora governa execução direta via `decideDirectExecution(...)` (bloqueia com `false` em `FailSafe` ativo ou `hasExecutionIntent=true`; delega com `undefined`).
+  - Nenhuma heurística existente removida, nenhum fluxo externo movido e sem alteração de mensagens de usuário.
+  - Validação obrigatória executada: `npx tsc --noEmit` sem erros ✓.
 
 ## O que esta em andamento
+- Auditoria de logs de producao para correlacionar eventos `short_circuit_activated`/`bypass_loop` com respostas de sucesso sem evidencia de tool.
+- Verificar presenca de metodos opcionais em dependencias injetadas (contratos fracos).
 - Monitoramento pos-correcao da camada de integracao do `AgentController` para garantir compatibilidade continua com mocks legados sem alterar fluxo de producao.
 - Monitoramento pós-ETAPA 6: verificar logs `[ORCHESTRATOR AUTHORITY]` de bloqueio em produção para os 3 novos call sites.
 - Verificação de divergência: quando loop quer continuar e Orchestrator bloqueia via FailSafe/StopContinue.
+- Monitorar em produção os novos eventos `short_circuit_governance`, `short_circuit_blocked` e `hybrid_blocked` para confirmar redução de "promessa sem execução".
 
 ## O que ainda falta
+- Classificar os bypass mapeados por categoria operacional (conversa simples, execucao de task, fallback, erro) com amostras reais de trace.
+- Consolidar rastreabilidade ponta a ponta do fluxo: input -> route/autonomy -> estrategia aplicada -> execucao real vs resposta direta.
 - Blindagem opcional dos testes com mocks tipados de `AgentLoop` para reduzir risco de quebras futuras por metodos de integracao ausentes.
 - Expandir `auditSignalConsistency` para incluir reclassification, llmRetry e planAdjustment
 - Testes de regressão pós-ETAPA 6: cenário de bloqueio e cenário sem sinal ativo
+- Testes de regressão da ETAPA CRÍTICA: cenários de conversa simples, execução com skill/tool e caso de áudio garantindo bloqueio de short-circuit quando houver intenção de execução.
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
 - Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
@@ -147,6 +162,8 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
 
 ## O que NAO deve ser tocado agora
+- Nao corrigir short-circuit nesta etapa; manter foco apenas em mapeamento e auditoria.
+- Nao alterar heuristicas de route/autonomy, thresholds de risco ou branches de fallback durante a fase de diagnostico.
 - Nao remover `setOrchestrator` do `AgentLoop` real; a guarda defensiva existe apenas para compatibilidade de integracao em testes.
 - `decisionGate` — nao alterar
 - `buildFailSafeSignal` no AgentLoop — nao mover nem duplicar heuristicas
@@ -190,6 +207,7 @@ Toda correcao deve atualizar este checklist vivo com:
 ## Atualizado em
 - Data: 2 de abril de 2026
 - Contexto: **ETAPA 4 INICIADA E CONCLUÍDA**. Neutralização do AgentLoop como mini-brain: signals de `reclassification`, `llmRetry` e `planAdjustment` explicitados no `CognitiveSignalsState`, armazenados em `this.currentSignals` e protegidos por safe mode (`orchestratorDecision ?? loopDecision`). AgentLoop ainda decide localmente. Orchestrator preparado para assumir via `getSignalsSnapshot()`. Compilação limpa. Nenhuma heurística alterada. Nenhuma regressão introduzida.
+- Registro adicional: diagnostico de short-circuit e bypass documentado em `docs/architecture/ShortCircuitMapping.md`.
 
 ---
 

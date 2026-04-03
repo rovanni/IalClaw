@@ -1162,6 +1162,48 @@ export class CognitiveOrchestrator {
     }
 
     /**
+     * ETAPA SHORT-CIRCUIT GOVERNANCE: Decide se o AgentLoop pode executar diretamente
+     * (sem passar pelo loop de tools). Retorna false para bloquear, undefined para delegar.
+     *
+     * Regras:
+     * - FailSafe ativado → bloqueia execução direta (false)
+     * - hasExecutionIntent === true → bloqueia (false)
+     * - Caso contrário → delega ao loop (undefined = safe mode)
+     */
+    public decideDirectExecution(context: {
+        sessionId: string;
+        context: {
+            hasExecutionIntent: boolean;
+            strategy: string;
+            taskType: TaskType | null;
+        };
+    }): boolean | undefined {
+        const { sessionId } = context;
+        const { hasExecutionIntent } = context.context;
+
+        const failSafe = this.observedSignals.failSafe;
+        if (failSafe?.activated) {
+            this.logger.info('direct_execution_blocked_by_failsafe', '[ORCHESTRATOR] Execução direta bloqueada pelo FailSafe', {
+                sessionId,
+                failSafeTrigger: failSafe.trigger,
+                strategy: context.context.strategy
+            });
+            return false;
+        }
+
+        if (hasExecutionIntent) {
+            this.logger.info('direct_execution_blocked_intent', '[ORCHESTRATOR] Execução direta bloqueada — intenção de execução real detectada', {
+                sessionId,
+                strategy: context.context.strategy,
+                taskType: context.context.taskType
+            });
+            return false;
+        }
+
+        return undefined;
+    }
+
+    /**
      * Delega a execução da decisão para o CognitiveActionExecutor.
      */
     public async executeDecision(decision: CognitiveDecision, session: SessionContext, userQuery: string): Promise<ExecutionResult> {
