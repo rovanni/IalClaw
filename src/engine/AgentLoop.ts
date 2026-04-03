@@ -177,6 +177,21 @@ export type FailSafeActivationTrigger =
 export type FailSafeSignal = {
     activated: boolean;
     trigger: FailSafeActivationTrigger;
+    failureCount?: number;
+    lastError?: string;
+    step?: string;
+    tool?: string;
+    retryAttempts?: number;
+    contextSnapshot?: {
+        mode: AgentMode;
+        taskType: TaskType | null;
+        taskConfidence: number;
+        hasPlan: boolean;
+        pendingSteps: number;
+        toolsFailed: number;
+        lowImprovementCount: number;
+        isContinuation: boolean;
+    };
 };
 
 // ─── Aggregated Cognitive Signals State ─────────────────────────────────────
@@ -2415,12 +2430,21 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         const intentClear = this.isUserIntentClear(input);
         const classification = classifyTask(input);
 
-        // TODO: migrar decisão de fail-safe para CognitiveOrchestrator — o executor deve receber o FailSafeSignal já computado.
+        // ETAPA 8.1 — detecção permanece local no AgentLoop; autoridade final vai para o Orchestrator.
+        // Safe mode obrigatório: finalDecision = orchestratorDecision ?? loopDecision.
+        // TODO (Single Brain): remover decisão local após validação completa da migração.
         const failSafeSignal = this.buildFailSafeSignal(intentClear, classification.type);
-        this.failSafe = failSafeSignal.activated;
+        failSafeSignal.contextSnapshot = this.buildFailSafeContextSnapshot();
+        const loopFailSafeDecision = failSafeSignal;
+        this.currentSignals.failSafe = loopFailSafeDecision;
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        const orchestratorFailSafeDecision = this.orchestrator?.decideFailSafe(this.chatId);
+        const finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision;
+        this.currentSignals.failSafe = finalFailSafeDecision;
+        this.failSafe = finalFailSafeDecision.activated;
 
         if (this.failSafe) {
-            this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: trigger=${failSafeSignal.trigger}, intentClear=${intentClear}, type=${classification.type}`);
+            this.logger.info('fail_safe_activated', `[FAIL-SAFE] Ativado: trigger=${finalFailSafeDecision.trigger}, intentClear=${intentClear}, type=${classification.type}`);
         }
 
         if (this.failSafe && (classification.type === 'unknown' || classification.confidence === 0)) {
@@ -2449,9 +2473,20 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         this.forcedTaskType = true;
         this.mode = 'EXECUTION';
         this.disableFollowUpQuestions = true;
-        // TODO: migrar decisão de fail-safe para CognitiveOrchestrator — o executor deve receber o FailSafeSignal já computado.
-        const failSafeSignal: FailSafeSignal = { activated: false, trigger: 'force_type_override_disabled' };
-        this.failSafe = failSafeSignal.activated;
+        // ETAPA 8.1 — ponto de fail-safe com autoridade centralizada em safe mode.
+        // TODO (Single Brain): remover fallback local quando o Orchestrator assumir 100% da decisão.
+        const failSafeSignal: FailSafeSignal = {
+            activated: false,
+            trigger: 'force_type_override_disabled',
+            contextSnapshot: this.buildFailSafeContextSnapshot()
+        };
+        const loopFailSafeDecision = failSafeSignal;
+        this.currentSignals.failSafe = loopFailSafeDecision;
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        const orchestratorFailSafeDecision = this.orchestrator?.decideFailSafe(this.chatId);
+        const finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision;
+        this.currentSignals.failSafe = finalFailSafeDecision;
+        this.failSafe = finalFailSafeDecision.activated;
         this.logger.info('task_type_forced', `[FORCE] Tipo forçado: ${type} (confidence=${confidence}, failSafe=${this.failSafe})`);
     }
 
@@ -2603,6 +2638,23 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             confidence: validation.confidence,
             failureReason: validation.reason,
             requiresLlmReview: validation.needsLlm
+        };
+    }
+
+    private buildFailSafeContextSnapshot(): FailSafeSignal['contextSnapshot'] {
+        const pendingSteps = this.executionContext.currentPlan
+            ? this.executionContext.currentPlan.steps.filter((step) => !step.completed && !step.failed).length
+            : 0;
+
+        return {
+            mode: this.mode,
+            taskType: this.currentTaskType,
+            taskConfidence: this.currentTaskConfidence,
+            hasPlan: !!this.executionContext.currentPlan,
+            pendingSteps,
+            toolsFailed: this.executionContext.toolsFailed.size,
+            lowImprovementCount: this.lowImprovementCount,
+            isContinuation: this.isContinuation
         };
     }
 

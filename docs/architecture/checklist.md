@@ -126,6 +126,12 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Sincronização incremental de snapshot adicionada também aos pontos de `RouteAutonomySignal`, `LlmRetrySignal`, `ReclassificationSignal` e `PlanAdjustmentSignal` para auditoria e rastreabilidade em tempo real.
   - `auditSignalConsistency()` expandido para conflitos reais adicionais: `llmRetry vs stopContinue`, `planAdjustment vs stopContinue` e `reclassification vs failSafe`.
   - Strings visíveis tocadas no `AgentLoop` foram movidas para i18n (`pt-BR` / `en-US`) sem alterar comportamento.
+- **ETAPA 8.1 IMPLEMENTADA**: consolidação da autoridade de `FailSafeSignal` no `CognitiveOrchestrator` com fallback local preservado no `AgentLoop`.
+  - Pontos cobertos no `AgentLoop`: `setOriginalInput(...)` e `forceTaskType(...)`.
+  - Heurística de ativação de fail-safe mantida local (`buildFailSafeSignal(...)`), sem mudança de thresholds, critérios ou fluxo externo.
+  - Contexto de detecção anexado ao `FailSafeSignal` via `contextSnapshot` (origem local preservada para auditoria).
+  - Safe mode aplicado explicitamente: `finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision`.
+  - Fallback local mantido intacto com TODO explícito para remoção futura, sem regressão comportamental intencional.
 
 ## O que esta em andamento
 - Auditoria de logs de producao para correlacionar eventos `short_circuit_activated`/`bypass_loop` com respostas de sucesso sem evidencia de tool.
