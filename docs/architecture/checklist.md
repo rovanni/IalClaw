@@ -119,6 +119,13 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Orchestrator agora governa execução direta via `decideDirectExecution(...)` (bloqueia com `false` em `FailSafe` ativo ou `hasExecutionIntent=true`; delega com `undefined`).
   - Nenhuma heurística existente removida, nenhum fluxo externo movido e sem alteração de mensagens de usuário.
   - Validação obrigatória executada: `npx tsc --noEmit` sem erros ✓.
+- **ETAPA 8 IMPLEMENTADA (parcial e estrutural)**: governança ativa de `StopContinueSignal` conectada em tempo de execução no `AgentLoop`.
+  - Antes de aplicar `stop/continue`, o loop agora sincroniza o snapshot corrente de signals com o `CognitiveOrchestrator` e consulta `decideStopContinue(this.chatId)`.
+  - Safe mode mantido nos 2 pontos críticos de parada: `finalDecision = orchestratorDecision ?? loopDecision`.
+  - Heurísticas de `shouldStopExecution()` e `checkDeltaAndStop()` permanecem intactas e locais; apenas a autoridade final foi externalizada.
+  - Sincronização incremental de snapshot adicionada também aos pontos de `RouteAutonomySignal`, `LlmRetrySignal`, `ReclassificationSignal` e `PlanAdjustmentSignal` para auditoria e rastreabilidade em tempo real.
+  - `auditSignalConsistency()` expandido para conflitos reais adicionais: `llmRetry vs stopContinue`, `planAdjustment vs stopContinue` e `reclassification vs failSafe`.
+  - Strings visíveis tocadas no `AgentLoop` foram movidas para i18n (`pt-BR` / `en-US`) sem alterar comportamento.
 
 ## O que esta em andamento
 - Auditoria de logs de producao para correlacionar eventos `short_circuit_activated`/`bypass_loop` com respostas de sucesso sem evidencia de tool.
@@ -135,6 +142,8 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Expandir `auditSignalConsistency` para incluir reclassification, llmRetry e planAdjustment
 - Testes de regressão pós-ETAPA 6: cenário de bloqueio e cenário sem sinal ativo
 - Testes de regressão da ETAPA CRÍTICA: cenários de conversa simples, execução com skill/tool e caso de áudio garantindo bloqueio de short-circuit quando houver intenção de execução.
+- Governança ativa de `ToolFallbackSignal` dentro do `AgentLoop` ainda não conectada; fallback continua aplicado localmente nos branches de execução.
+- Heurística de `FailSafeSignal` ainda nasce no `AgentLoop`; apenas observação/aplicação seguem externalizadas.
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
 - Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
@@ -180,6 +189,7 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Nao criar heuristica nova de retry no Orchestrator; apenas aplicar override de bloqueio baseado em `FailSafe` e `StopContinue`.
 - Nao transformar auditoria de conflitos em mecanismo de bloqueio automatico nesta fase.
 - Nao substituir decisoes existentes diretamente; override de autoridade permanece opcional e controlado.
+- Nao mover a heuristica de `shouldStopExecution()` ou `checkDeltaAndStop()` para o Orchestrator nesta etapa; apenas governar a decisao final.
 
 ## ETAPA: GOVERNANCA DO SELF-HEALING (SAFE MODE) ✓ IMPLEMENTADA
 

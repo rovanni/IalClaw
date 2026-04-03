@@ -126,7 +126,10 @@ export class CognitiveOrchestrator {
             hasFallback: !!signals.fallback,
             hasValidation: !!signals.validation,
             hasRoute: !!signals.route,
-            hasFailSafe: !!signals.failSafe
+            hasFailSafe: !!signals.failSafe,
+            hasLlmRetry: !!signals.llmRetry,
+            hasReclassification: !!signals.reclassification,
+            hasPlanAdjustment: !!signals.planAdjustment
         });
 
         // Store the observed signals (immutably merge new observations)
@@ -175,6 +178,35 @@ export class CognitiveOrchestrator {
                 sessionId,
                 isActivated: signals.failSafe.activated,
                 trigger: signals.failSafe.trigger
+            });
+        }
+
+        if (signals.llmRetry) {
+            this.logger.info('signal_llm_retry_observed', '[ORCHESTRATOR PASSIVE] LlmRetrySignal observado', {
+                sessionId,
+                retryRecommended: signals.llmRetry.retryRecommended,
+                reason: signals.llmRetry.reason,
+                consecutiveFailures: signals.llmRetry.consecutiveFailures
+            });
+        }
+
+        if (signals.reclassification) {
+            this.logger.info('signal_reclassification_observed', '[ORCHESTRATOR PASSIVE] ReclassificationSignal observado', {
+                sessionId,
+                reclassificationRecommended: signals.reclassification.reclassificationRecommended,
+                reason: signals.reclassification.reason,
+                suggestedTaskType: signals.reclassification.suggestedTaskType,
+                confidence: signals.reclassification.confidence
+            });
+        }
+
+        if (signals.planAdjustment) {
+            this.logger.info('signal_plan_adjustment_observed', '[ORCHESTRATOR PASSIVE] PlanAdjustmentSignal observado', {
+                sessionId,
+                shouldAdjustPlan: signals.planAdjustment.shouldAdjustPlan,
+                reason: signals.planAdjustment.reason,
+                failedStep: signals.planAdjustment.failedStep,
+                failureReason: signals.planAdjustment.failureReason
             });
         }
     }
@@ -340,6 +372,9 @@ export class CognitiveOrchestrator {
         const failSafe = signals.failSafe;
         const validation = signals.validation;
         const route = signals.route;
+        const llmRetry = signals.llmRetry;
+        const reclassification = signals.reclassification;
+        const planAdjustment = signals.planAdjustment;
 
         if (selfHealing?.activated && stopContinue?.shouldStop) {
             this._reportSignalConflict('self_healing_vs_stop_continue', sessionId, 'high', {
@@ -359,6 +394,27 @@ export class CognitiveOrchestrator {
             this._reportSignalConflict('validation_vs_self_healing', sessionId, 'medium', {
                 validation,
                 selfHealing
+            });
+        }
+
+        if (llmRetry?.retryRecommended && stopContinue?.shouldStop) {
+            this._reportSignalConflict('llm_retry_vs_stop_continue', sessionId, 'high', {
+                llmRetry,
+                stopContinue
+            });
+        }
+
+        if (planAdjustment?.shouldAdjustPlan && stopContinue?.shouldStop) {
+            this._reportSignalConflict('plan_adjustment_vs_stop_continue', sessionId, 'high', {
+                planAdjustment,
+                stopContinue
+            });
+        }
+
+        if (reclassification?.reclassificationRecommended && failSafe?.activated) {
+            this._reportSignalConflict('reclassification_vs_fail_safe', sessionId, 'medium', {
+                reclassification,
+                failSafe
             });
         }
 
@@ -414,7 +470,7 @@ export class CognitiveOrchestrator {
     }
 
     private _reportSignalConflict(
-        conflict: 'self_healing_vs_stop_continue' | 'self_healing_vs_fail_safe' | 'validation_vs_self_healing' | 'route_autonomy_vs_fail_safe',
+        conflict: 'self_healing_vs_stop_continue' | 'self_healing_vs_fail_safe' | 'validation_vs_self_healing' | 'route_autonomy_vs_fail_safe' | 'llm_retry_vs_stop_continue' | 'plan_adjustment_vs_stop_continue' | 'reclassification_vs_fail_safe',
         sessionId: string,
         severity: 'medium' | 'high' | 'critical',
         details: Record<string, unknown>

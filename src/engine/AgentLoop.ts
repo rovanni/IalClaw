@@ -867,6 +867,8 @@ export class AgentLoop {
             suggested_tool: routeAutonomySignal.suggestedTool
         });
 
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+
         // ═══════════════════════════════════════════════════════════════════
         // GOVERNANÇA DO SHORT-CIRCUIT — Detectar intenção de execução real
         // antes de permitir curto-circuito. Safe mode: orchestratorDecision ?? loopDecision
@@ -1211,7 +1213,7 @@ export class AgentLoop {
                         }
 
                         // UX FIX: Interromper loop infinito de ferramenta e pedir elaboração
-                        const loopAns = "Não consegui avançar com essa ação. Você pode esclarecer o que deseja fazer?";
+                        const loopAns = t('loop.tool_repeat_clarification');
                         const loopAnsMsg: MessagePayload = { role: 'assistant', content: loopAns };
                         newMessages.push(loopAnsMsg);
                         return { answer: loopAns, newMessages };
@@ -1451,6 +1453,7 @@ export class AgentLoop {
                             // AgentLoop ainda decide localmente (safe stage).
                             // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
                             this.currentSignals.reclassification = reclassificationSignal;
+                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
                             const loopDecisionReclassify = reclassificationSignal.reclassificationRecommended;
                             // ETAPA 5 — Orchestrator decide reclassificação (safe mode: undefined => fallback ao loop).
                             const orchestratorDecisionReclassify = this.orchestrator?.decideReclassification({
@@ -1472,6 +1475,7 @@ export class AgentLoop {
                             // AgentLoop ainda decide localmente (safe stage).
                             // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
                             this.currentSignals.llmRetry = llmRetrySignal;
+                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
                             const loopDecisionLlmRetry = llmRetrySignal.retryRecommended;
                             // ETAPA 5 — Orchestrator decide retry via LLM (safe mode: undefined => fallback ao loop).
                             const orchestratorDecisionLlmRetry = this.orchestrator?.decideRetryWithLlm({
@@ -1491,6 +1495,7 @@ export class AgentLoop {
                                 // AgentLoop aplica o ajuste localmente (safe stage).
                                 // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
                                 this.currentSignals.planAdjustment = planAdjustment.signal;
+                                this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
                                 const loopDecisionPlanAdjust = planAdjustment.signal.shouldAdjustPlan;
                                 // ETAPA 5 — Orchestrator decide ajuste de plano (safe mode: undefined => fallback ao loop).
                                 const orchestratorDecisionPlanAdjust = this.orchestrator?.decidePlanAdjustment({
@@ -1546,18 +1551,24 @@ export class AgentLoop {
                     } else if (lastSuccessful) {
                         const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
                         this.currentSignals.stop = stopDecision;
-                        if (stopDecision.shouldStop) {
-                            this.logger.info('execution_stopped', `[STOP] ${stopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
+                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        const orchestratorStopDecision = this.orchestrator?.decideStopContinue(this.chatId);
+                        const finalStopDecision = orchestratorStopDecision ?? stopDecision;
+                        if (finalStopDecision.shouldStop) {
+                            this.logger.info('execution_stopped', `[STOP] ${finalStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                             break;
                         }
                     }
 
                     const deltaStopDecision = this.checkDeltaAndStop(stepCount);
                     this.currentSignals.stop = deltaStopDecision;
-                    if (deltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
-                        this.logger.info('execution_stopped_delta', `[STOP] ${deltaStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
+                    this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                    const orchestratorDeltaStopDecision = this.orchestrator?.decideStopContinue(this.chatId);
+                    const finalDeltaStopDecision = orchestratorDeltaStopDecision ?? deltaStopDecision;
+                    if (finalDeltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
+                        this.logger.info('execution_stopped_delta', `[STOP] ${finalDeltaStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                         break;
-                    } else if (deltaStopDecision.shouldStop && this.mode === 'EXECUTION') {
+                    } else if (finalDeltaStopDecision.shouldStop && this.mode === 'EXECUTION') {
                         const forceMsg: MessagePayload = {
                             role: 'system',
                             content: `[MODO EXECUTION] Melhoria marginal detectada. Continue executando com a melhor ferramenta disponível.`
@@ -1602,7 +1613,7 @@ export class AgentLoop {
 
                     if (consecutiveToolFailures >= 2) {
                         this.logger.warn('multiple_tool_failures_detected', '[LOOP] Detecção de falhas consecutivas de ferramenta');
-                        const failureAns = "Desculpe, encontrei uma falha técnica executando essa ação e não consegui prosseguir. Como prefere continuar?";
+                        const failureAns = t('loop.multiple_tool_failures_answer');
                         const failureAnsMsg: MessagePayload = { role: 'assistant', content: failureAns };
                         newMessages.push(failureAnsMsg);
                         return { answer: failureAns, newMessages };
@@ -1687,7 +1698,10 @@ export class AgentLoop {
 
                     if (forcedResult && forcedResult.length > 0 && !forcedResult.toLowerCase().includes('erro')) {
                         this.advanceToNextStep();
-                        const directAnswer = `Executei a ação: ${currentStep.description}. Resultado: ${forcedResult.slice(0, 500)}`;
+                        const directAnswer = t('loop.fail_safe.forced_execution_result', {
+                            step: currentStep.description,
+                            result: forcedResult.slice(0, 500)
+                        });
                         const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
                         newMessages.push(finalMsg);
                         const duration = Date.now() - startedAt;
@@ -1699,7 +1713,7 @@ export class AgentLoop {
                 }
             }
 
-            const directAnswer = `Vou tentar resolver diretamente: ${userInput}`;
+            const directAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
             const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
             newMessages.push(finalMsg);
             const duration = Date.now() - startedAt;
@@ -1736,7 +1750,7 @@ export class AgentLoop {
             this.logMemoryStats();
 
             if (this.failSafe) {
-                const failSafeAnswer = `Vou tentar resolver diretamente: ${userInput}`;
+                const failSafeAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
                 const failSafeMsg: MessagePayload = { role: 'assistant', content: failSafeAnswer };
                 newMessages.push(failSafeMsg);
                 return { answer: failSafeAnswer, newMessages };
