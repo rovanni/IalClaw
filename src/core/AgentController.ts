@@ -33,6 +33,7 @@ import { FlowManager } from './flow/FlowManager';
 import { CognitiveOrchestrator, CognitiveStrategy } from './orchestrator/CognitiveOrchestrator';
 import { getActionRouter } from './autonomy/ActionRouter';
 import { FlowRegistry } from './flow/FlowRegistry';
+import { IntentClassifier } from './intent/IntentClassifier';
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -46,6 +47,7 @@ export class AgentController {
     private onboardingService?: OnboardingService;
     private flowManager: FlowManager;
     private orchestrator: CognitiveOrchestrator;
+    private intentClassifier: IntentClassifier;
     private logger = createLogger('AgentController');
 
     private emitStatus(sessionId: string, message: string, channel: 'web' | 'telegram', extra?: Record<string, any>): void {
@@ -78,6 +80,7 @@ export class AgentController {
         this.memoryLifecycle = memoryLifecycle;
         this.onboardingService = onboardingService;
         this.flowManager = new FlowManager();
+        this.intentClassifier = new IntentClassifier();
         this.orchestrator = new CognitiveOrchestrator(
             this.memory,
             this.flowManager,
@@ -531,9 +534,16 @@ export class AgentController {
 
         // â”€â”€ DECISÃƒO COGNITIVA (ORQUESTRADOR) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // O Orquestrador centraliza a precedÃªncia: Recovery > Flow > Pending > Normal
+        const intent = this.intentClassifier.classify(effectiveUserQuery);
+        logger.info('input_intent_classified', '[INTENT] Intenção classificada para contexto do orquestrador', {
+            mode: intent.mode,
+            confidence: intent.confidence
+        });
+
         const decision = await this.orchestrator.decide({
             input: effectiveUserQuery,
-            sessionId
+            sessionId,
+            intent
         });
 
         this.logger.info('orchestration_strategy_selected', '[ORCHESTRATOR] EstratÃ©gia selecionada', {

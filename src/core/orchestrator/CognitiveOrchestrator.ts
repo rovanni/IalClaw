@@ -18,6 +18,7 @@ import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { FailSafeModule } from './modules/FailSafeModule';
 import { StopContinueModule } from './modules/StopContinueModule';
+import { IntentResult } from '../intent/IntentResult';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -34,6 +35,7 @@ export enum CognitiveStrategy {
 export interface CognitiveInput {
     sessionId: string;
     input: string;
+    intent?: IntentResult;
 }
 
 export interface CognitiveDecision {
@@ -1029,6 +1031,19 @@ export class CognitiveOrchestrator {
         // --- 2.4. NORMAL (DECISION HUB) ---
         this.logger.info('precedence_normal', '[ORCHESTRATOR] Prioridade: Processamento Normal');
 
+        if (cognitiveInput.intent?.mode === 'EXPLORATION') {
+            this.logger.info('precedence_intent_exploration', '[ORCHESTRATOR] Intenção exploratória detectada', {
+                sessionId,
+                confidence: cognitiveInput.intent.confidence
+            });
+
+            return {
+                strategy: CognitiveStrategy.ASK,
+                confidence: cognitiveInput.intent.confidence,
+                reason: this.handleExploration(text)
+            };
+        }
+
         const classification = await this.taskClassifier.classify(text);
         const routeDecision = this.actionRouter.decideRoute(text, classification.type);
         const memoryHits = await this.safeMemoryQuery(text);
@@ -1124,6 +1139,19 @@ export class CognitiveOrchestrator {
 
         if (taskType === 'data_analysis') return 'crypto-tracker';
         return undefined;
+    }
+
+    private handleExploration(input: string): string {
+        const normalized = input
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/\p{Diacritic}/gu, '');
+
+        if (/\b(jogo|game|games)\b/.test(normalized)) {
+            return t('agent.orchestrator.exploration.game_response');
+        }
+
+        return t('agent.orchestrator.exploration.generic_response');
     }
 
     /**

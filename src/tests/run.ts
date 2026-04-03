@@ -14,6 +14,9 @@ import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { getPendingAction, isConfirmation, setPendingAction } from '../core/agent/PendingActionTracker';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
+import { FlowManager } from '../core/flow/FlowManager';
+import { IntentClassifier } from '../core/intent/IntentClassifier';
+import { CognitiveOrchestrator, CognitiveStrategy } from '../core/orchestrator/CognitiveOrchestrator';
 import { ExecutionPlan } from '../core/planner/types';
 import { AgentLoop } from '../engine/AgentLoop';
 import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
@@ -524,6 +527,65 @@ async function run() {
         const answer = await controller.handleWebMessage('pending-action-controller-test', 'yes, install');
 
         assert.match(answer, /tentei instalar/i);
+    });
+
+    const intentClassifier = new IntentClassifier();
+    assert.equal(intentClassifier.classify('me ajude a desenvolver um jogo').mode, 'EXPLORATION');
+    assert.equal(intentClassifier.classify('crie um jogo da cobrinha').mode, 'EXECUTION');
+    assert.equal(intentClassifier.classify('converta esse arquivo').mode, 'EXECUTION');
+
+    await SessionManager.runWithSession('exploration-orchestrator-test', async () => {
+        const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+        const decision = await orchestrator.decide({
+            sessionId: 'exploration-orchestrator-test',
+            input: 'me ajude a desenvolver um jogo',
+            intent: { mode: 'EXPLORATION', confidence: 0.92 }
+        });
+
+        assert.equal(decision.strategy, CognitiveStrategy.ASK);
+        assert.match(decision.reason, /tipo de jogo|snake|pong/i);
+    });
+
+    await SessionManager.runWithSession('exploration-controller-test', async () => {
+        let loopCalls = 0;
+
+        const fakeMemory = {
+            saveMessage: () => undefined,
+            learn: async () => undefined,
+            retrieveWithTraversal: async () => [],
+            getIdentityNodes: async () => [],
+            getProjectNodes: () => [],
+            getConversationHistory: () => [],
+            saveProjectNode: async () => undefined,
+            indexCodeNode: async () => undefined,
+            setActiveCodeFiles: () => undefined,
+            saveExecutionFix: () => undefined,
+            searchByContent: () => []
+        } as any;
+
+        const fakeLoop = {
+            run: async () => {
+                loopCalls += 1;
+                return { answer: 'LOOP_SHOULD_NOT_RUN', newMessages: [] };
+            },
+            getProvider: () => ({ embed: async () => [] }),
+            getDecisionMemory: () => null,
+            getSignalsSnapshot: () => ({})
+        } as any;
+
+        const controller = new AgentController(
+            fakeMemory,
+            { build: () => '' } as any,
+            fakeLoop,
+            {} as any,
+            {} as any
+        );
+
+        const answer = await controller.handleWebMessage('exploration-controller-test', 'me ajude a desenvolver um jogo');
+
+        assert.match(answer, /vamos desenvolver isso juntos/i);
+        assert.doesNotMatch(answer, /arquivo/i);
+        assert.equal(loopCalls, 0);
     });
 
     const directRuntime = new AgentRuntime({} as CognitiveMemory) as any;
