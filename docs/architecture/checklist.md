@@ -132,6 +132,30 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Contexto de detecção anexado ao `FailSafeSignal` via `contextSnapshot` (origem local preservada para auditoria).
   - Safe mode aplicado explicitamente: `finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision`.
   - Fallback local mantido intacto com TODO explícito para remoção futura, sem regressão comportamental intencional.
+- **ETAPA 8.2 IMPLEMENTADA**: governança ativa de `ToolFallbackSignal` conectada diretamente no `AgentLoop` (autoridade no Orchestrator, execução local preservada).
+  - Pontos cobertos no `AgentLoop`: `tool_repetition`, `tool_failure_history`, `memory_block`, `reliability_risk` e `retry_refinement`.
+  - Padrão obrigatório aplicado em todos os call sites: `ingestSignalsFromLoop(...)` + `decideToolFallback(...)` + safe mode `finalDecision = orchestratorDecision ?? loopDecision`.
+  - Fallback local mantido intacto (nenhuma heurística removida, nenhuma ordem de execução alterada, nenhum novo fallback criado).
+  - Contexto operacional anexado ao `ToolFallbackSignal` para auditoria (`toolName`, `error`, `attemptCount`, `maxAttempts`, `lastResult`, `step`, `executionContext`).
+  - Auditoria de conflitos expandida no `CognitiveOrchestrator`: `ToolFallback vs Retry`, `ToolFallback vs FailSafe`, `ToolFallback vs DirectExecution` e `ToolFallback vs Replan`.
+- **MODULARIZAÇÃO FASE 1 (MAPEAMENTO) CONCLUÍDA**: mapeamento estrutural do `CognitiveOrchestrator` documentado em `docs/architecture/OrchestratorModularizationMapPhase1.md`.
+  - Blocos cognitivos classificados por domínio, tamanho e risco.
+  - Dependências de signals e ordem segura de extração definidas.
+  - Zonas perigosas e áreas proibidas para esta fase explicitadas (sem alterações de código no orchestrator).
+- **MODULARIZAÇÃO FASE 1 (FAILSAFE MODULE) IMPLEMENTADA**: criada delegação progressiva para `FailSafeModule` com fallback local preservado.
+  - Novo módulo: `src/core/orchestrator/modules/FailSafeModule.ts` com `decide(signal)` mínimo retornando `undefined`.
+  - Integração no `CognitiveOrchestrator`: instância `failSafeModule` e ponto de delegação no início de `decideFailSafe(sessionId)`.
+  - Safe fallback mantido: se o módulo não decidir, a lógica original de `decideFailSafe` continua inalterada.
+  - Nenhuma heurística movida nesta fase. Nenhuma alteração de fluxo ou decisão final.
+- **MODULARIZAÇÃO FASE 1.1 (MICRO-EXTRAÇÃO) IMPLEMENTADA**: primeiro bloco real movido para `FailSafeModule`.
+  - Regra extraída: quando `signal.activated === false`, o módulo retorna o próprio `FailSafeSignal`.
+  - Delegação mantida em `decideFailSafe(sessionId)` com fallback local intacto para os demais cenários.
+  - Sem mover conflitos com `RouteAutonomy`, sem tocar heurísticas de ativação e sem alterar precedência.
+- **MODULARIZAÇÃO FASE 1.2 (MICRO-BLOCO COESO) IMPLEMENTADA**: extração acelerada segura no domínio FailSafe.
+  - Bloco extraído para o módulo: pass-through do caso `signal.activated === true` (decisão final local de retorno do próprio signal).
+  - Método novo no módulo: `decideActivatedPassThrough(signal)` em `src/core/orchestrator/modules/FailSafeModule.ts`.
+  - `decideFailSafe(sessionId)` passou a delegar esse bloco após a auditoria de conflito, preservando ordem e comportamento.
+  - Limite seguro reafirmado: conflitos `FailSafe vs Route`, `resolveSignalAuthority` e `auditSignalConsistency` permanecem no Orchestrator.
 
 ## O que esta em andamento
 - Auditoria de logs de producao para correlacionar eventos `short_circuit_activated`/`bypass_loop` com respostas de sucesso sem evidencia de tool.
@@ -148,7 +172,6 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Expandir `auditSignalConsistency` para incluir reclassification, llmRetry e planAdjustment
 - Testes de regressão pós-ETAPA 6: cenário de bloqueio e cenário sem sinal ativo
 - Testes de regressão da ETAPA CRÍTICA: cenários de conversa simples, execução com skill/tool e caso de áudio garantindo bloqueio de short-circuit quando houver intenção de execução.
-- Governança ativa de `ToolFallbackSignal` dentro do `AgentLoop` ainda não conectada; fallback continua aplicado localmente nos branches de execução.
 - Heurística de `FailSafeSignal` ainda nasce no `AgentLoop`; apenas observação/aplicação seguem externalizadas.
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito

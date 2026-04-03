@@ -97,6 +97,23 @@ export type ToolFallbackSignal = {
     fallbackRecommended: boolean;
     originalTool: string;
     suggestedTool?: string;
+    context?: {
+        toolName: string;
+        error?: string;
+        attemptCount: number;
+        maxAttempts: number;
+        lastResult: string | null;
+        step?: {
+            id: number;
+            description: string;
+            tool?: string;
+        };
+        executionContext: {
+            hasPlan: boolean;
+            currentStepIndex: number;
+            failedToolsCount: number;
+        };
+    };
     reason:
     | 'fallback_available'
     | 'no_step_context'
@@ -1213,17 +1230,27 @@ export class AgentLoop {
                         const toolFallbackSignal = await this.buildToolFallbackSignal({
                             step: fallbackStep,
                             toolName: fallbackStep?.tool || response.tool_call.name,
-                            trigger: 'tool_repetition'
+                            trigger: 'tool_repetition',
+                            context: this.buildToolFallbackContext({
+                                toolName: fallbackStep?.tool || response.tool_call.name,
+                                attemptCount: toolRepeatCount,
+                                maxAttempts: 2,
+                                lastResult: this.lastStepResult ?? this.executionContext.lastToolResult,
+                                step: fallbackStep
+                            })
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
+                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
+                        const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
-                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool && plan) {
+                        if (finalFallbackDecision.fallbackRecommended && finalFallbackDecision.suggestedTool && plan) {
                             if (fallbackStep) {
                                 // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
                                 // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
-                                fallbackStep.tool = toolFallbackSignal.suggestedTool;
-                                this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${toolFallbackSignal.suggestedTool}`);
+                                fallbackStep.tool = finalFallbackDecision.suggestedTool;
+                                this.logger.info('forced_tool_change', `[LOOP] Forçando ferramenta alternativa: ${finalFallbackDecision.suggestedTool}`);
                             }
                         }
 
@@ -1283,16 +1310,26 @@ export class AgentLoop {
                         const toolFallbackSignal = await this.buildToolFallbackSignal({
                             step: currentStepForValidation,
                             toolName,
-                            trigger: 'tool_failure_history'
+                            trigger: 'tool_failure_history',
+                            context: this.buildToolFallbackContext({
+                                toolName,
+                                attemptCount: this.executionContext.toolsFailed.get(toolName) || 0,
+                                maxAttempts: maxTools,
+                                lastResult: this.lastStepResult ?? this.executionContext.lastToolResult,
+                                step: currentStepForValidation
+                            })
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
+                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
+                        const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
-                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                        if (finalFallbackDecision.fallbackRecommended && finalFallbackDecision.suggestedTool) {
                             // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
                             // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
-                            this.logger.info('tool_fallback_loop', `[FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
-                            response.tool_call.name = toolFallbackSignal.suggestedTool;
+                            this.logger.info('tool_fallback_loop', `[FALLBACK] ${toolName} → ${finalFallbackDecision.suggestedTool}`);
+                            response.tool_call.name = finalFallbackDecision.suggestedTool;
                         } else {
                             continue;
                         }
@@ -1302,16 +1339,26 @@ export class AgentLoop {
                         const toolFallbackSignal = await this.buildToolFallbackSignal({
                             step: currentStepForValidation,
                             toolName,
-                            trigger: 'memory_block'
+                            trigger: 'memory_block',
+                            context: this.buildToolFallbackContext({
+                                toolName,
+                                attemptCount: this.executionContext.toolsFailed.get(toolName) || 0,
+                                maxAttempts: maxTools,
+                                lastResult: this.lastStepResult ?? this.executionContext.lastToolResult,
+                                step: currentStepForValidation
+                            })
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
+                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
+                        const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
-                        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                        if (finalFallbackDecision.fallbackRecommended && finalFallbackDecision.suggestedTool) {
                             // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
                             // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
-                            this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
-                            response.tool_call.name = toolFallbackSignal.suggestedTool;
+                            this.logger.info('memory_fallback', `[MEMORY FALLBACK] ${toolName} → ${finalFallbackDecision.suggestedTool}`);
+                            response.tool_call.name = finalFallbackDecision.suggestedTool;
                         } else {
                             this.logger.warn('memory_block_override', `[MEMORY] Tool ${toolName} com histórico ruim, mas executando mesmo assim`);
                         }
@@ -1328,16 +1375,26 @@ export class AgentLoop {
                             const toolFallbackSignal = await this.buildToolFallbackSignal({
                                 step: currentStepForValidation,
                                 toolName,
-                                trigger: 'reliability_risk'
+                                trigger: 'reliability_risk',
+                                context: this.buildToolFallbackContext({
+                                    toolName,
+                                    attemptCount: this.executionContext.toolsFailed.get(toolName) || 0,
+                                    maxAttempts: maxTools,
+                                    lastResult: this.lastStepResult ?? this.executionContext.lastToolResult,
+                                    step: currentStepForValidation
+                                })
                             });
 
                             this.logToolFallbackSignal(toolFallbackSignal);
+                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                            const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
+                            const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
-                            if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+                            if (finalFallbackDecision.fallbackRecommended && finalFallbackDecision.suggestedTool) {
                                 // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
                                 // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
-                                this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${toolFallbackSignal.suggestedTool}`);
-                                response.tool_call.name = toolFallbackSignal.suggestedTool;
+                                this.logger.info('tool_fallback', `[FALLBACK] ${toolName} → ${finalFallbackDecision.suggestedTool}`);
+                                response.tool_call.name = finalFallbackDecision.suggestedTool;
                             } else {
                                 this.logger.warn('fallback_override', `[RELIABILITY] Tool ${toolName} com problemas, mas executando mesmo assim - sem fallback válido`);
                             }
@@ -1907,12 +1964,14 @@ export class AgentLoop {
         step?: ExecutionStep;
         toolName: string;
         trigger: ToolFallbackTrigger;
+        context?: ToolFallbackSignal['context'];
     }): Promise<ToolFallbackSignal> {
         if (!params.step) {
             return {
                 trigger: params.trigger,
                 fallbackRecommended: false,
                 originalTool: params.toolName,
+                context: params.context,
                 reason: 'no_step_context'
             };
         }
@@ -1924,6 +1983,7 @@ export class AgentLoop {
                 trigger: params.trigger,
                 fallbackRecommended: false,
                 originalTool: params.toolName,
+                context: params.context,
                 reason: 'no_fallback_available'
             };
         }
@@ -1934,6 +1994,7 @@ export class AgentLoop {
                 fallbackRecommended: false,
                 originalTool: params.toolName,
                 suggestedTool: fallbackTool,
+                context: params.context,
                 reason: 'same_tool_only'
             };
         }
@@ -1944,6 +2005,7 @@ export class AgentLoop {
                 fallbackRecommended: false,
                 originalTool: params.toolName,
                 suggestedTool: fallbackTool,
+                context: params.context,
                 reason: 'incompatible_fallback'
             };
         }
@@ -1953,7 +2015,35 @@ export class AgentLoop {
             fallbackRecommended: true,
             originalTool: params.toolName,
             suggestedTool: fallbackTool,
+            context: params.context,
             reason: 'fallback_available'
+        };
+    }
+
+    private buildToolFallbackContext(params: {
+        toolName: string;
+        error?: string;
+        attemptCount: number;
+        maxAttempts: number;
+        lastResult: string | null;
+        step?: ExecutionStep;
+    }): NonNullable<ToolFallbackSignal['context']> {
+        return {
+            toolName: params.toolName,
+            error: params.error,
+            attemptCount: params.attemptCount,
+            maxAttempts: params.maxAttempts,
+            lastResult: params.lastResult,
+            step: params.step ? {
+                id: params.step.id,
+                description: params.step.description,
+                tool: params.step.tool
+            } : undefined,
+            executionContext: {
+                hasPlan: !!this.executionContext.currentPlan,
+                currentStepIndex: this.executionContext.currentPlan?.currentStepIndex ?? this.executionContext.currentStepIndex ?? 0,
+                failedToolsCount: this.executionContext.toolsFailed.size
+            }
         };
     }
 
@@ -2139,17 +2229,27 @@ export class AgentLoop {
         const toolFallbackSignal = await this.buildToolFallbackSignal({
             step,
             toolName: step.tool || 'unknown_tool',
-            trigger: 'retry_refinement'
+            trigger: 'retry_refinement',
+            context: this.buildToolFallbackContext({
+                toolName: step.tool || 'unknown_tool',
+                attemptCount: (this.executionContext.toolsFailed.get(step.tool || 'unknown_tool') || 0) + 1,
+                maxAttempts: 3,
+                lastResult: this.lastStepResult ?? this.executionContext.lastToolResult,
+                step
+            })
         });
 
         this.logToolFallbackSignal(toolFallbackSignal);
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
+        const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
-        if (toolFallbackSignal.fallbackRecommended && toolFallbackSignal.suggestedTool) {
+        if (finalFallbackDecision.fallbackRecommended && finalFallbackDecision.suggestedTool) {
             // TODO (Single Brain): ToolFallbackSignal deve ser decidido pelo CognitiveOrchestrator.
             // AgentLoop deve apenas aplicar a ferramenta alternativa ja recomendada.
-            this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${toolFallbackSignal.suggestedTool}`);
+            this.logger.info('refinement_tool_switch', `[REFINE] ${step.tool} → ${finalFallbackDecision.suggestedTool}`);
             try {
-                return await this.registry.executeTool(toolFallbackSignal.suggestedTool, this.adaptArgsForRetry(step, originalArgs));
+                return await this.registry.executeTool(finalFallbackDecision.suggestedTool, this.adaptArgsForRetry(step, originalArgs));
             } catch (error) {
                 this.logger.error('refinement_tool_error', error as Error, '[REFINE] Fallback tool execution failed');
                 return null;

@@ -16,6 +16,8 @@ import { t } from '../../i18n';
 import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal } from '../../engine/AgentLoop';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
+import { FailSafeModule } from './modules/FailSafeModule';
+import { StopContinueModule } from './modules/StopContinueModule';
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -83,6 +85,8 @@ export class CognitiveOrchestrator {
     private actionRouter = new ActionRouter();
     private taskClassifier = new TaskClassifier();
     private actionExecutor: CognitiveActionExecutor;
+    private failSafeModule = new FailSafeModule();
+    private stopContinueModule = new StopContinueModule();
 
     // ─── Cognitive Signals State (Passive Observation) ───────────────────
     // Armazena os signals observados do AgentLoop em modo passivo.
@@ -372,6 +376,7 @@ export class CognitiveOrchestrator {
         const failSafe = signals.failSafe;
         const validation = signals.validation;
         const route = signals.route;
+        const fallback = signals.fallback;
         const llmRetry = signals.llmRetry;
         const reclassification = signals.reclassification;
         const planAdjustment = signals.planAdjustment;
@@ -418,10 +423,39 @@ export class CognitiveOrchestrator {
             });
         }
 
+        if (fallback?.fallbackRecommended && failSafe?.activated) {
+            this._reportSignalConflict('tool_fallback_vs_fail_safe', sessionId, 'high', {
+                fallback,
+                failSafe
+            });
+        }
+
+        if (fallback?.fallbackRecommended && llmRetry?.retryRecommended) {
+            this._reportSignalConflict('tool_fallback_vs_retry', sessionId, 'medium', {
+                fallback,
+                llmRetry
+            });
+        }
+
+        if (fallback?.fallbackRecommended && planAdjustment?.shouldAdjustPlan) {
+            this._reportSignalConflict('tool_fallback_vs_replan', sessionId, 'medium', {
+                fallback,
+                planAdjustment
+            });
+        }
+
         const routeWantsExecution = !!route && (
             route.route === ExecutionRoute.DIRECT_LLM ||
             route.route === ExecutionRoute.TOOL_LOOP
         );
+
+        if (fallback?.fallbackRecommended && route?.route === ExecutionRoute.DIRECT_LLM) {
+            this._reportSignalConflict('tool_fallback_vs_direct_execution', sessionId, 'high', {
+                fallback,
+                route
+            });
+        }
+
         if (failSafe?.activated && route && routeWantsExecution && !this.routeVsFailSafeConflictLoggedInCycle) {
             this._reportSignalConflict('route_autonomy_vs_fail_safe', sessionId, 'high', {
                 route,
@@ -470,7 +504,7 @@ export class CognitiveOrchestrator {
     }
 
     private _reportSignalConflict(
-        conflict: 'self_healing_vs_stop_continue' | 'self_healing_vs_fail_safe' | 'validation_vs_self_healing' | 'route_autonomy_vs_fail_safe' | 'llm_retry_vs_stop_continue' | 'plan_adjustment_vs_stop_continue' | 'reclassification_vs_fail_safe',
+        conflict: 'self_healing_vs_stop_continue' | 'self_healing_vs_fail_safe' | 'validation_vs_self_healing' | 'route_autonomy_vs_fail_safe' | 'llm_retry_vs_stop_continue' | 'plan_adjustment_vs_stop_continue' | 'reclassification_vs_fail_safe' | 'tool_fallback_vs_fail_safe' | 'tool_fallback_vs_retry' | 'tool_fallback_vs_direct_execution' | 'tool_fallback_vs_replan',
         sessionId: string,
         severity: 'medium' | 'high' | 'critical',
         details: Record<string, unknown>
@@ -613,6 +647,12 @@ export class CognitiveOrchestrator {
             context: (signal as any).context
         });
 
+        const moduleDecision = this.failSafeModule.decide(signal);
+        if (moduleDecision !== undefined) {
+            this._orchestratorAppliedDecisions.failSafe = moduleDecision;
+            return moduleDecision;
+        }
+
         // ─── Auditoria de coerência de autoridade: FailSafe vs Route ─────────
         // FailSafe SEMPRE tem prioridade sobre Route.
         // Aqui apenas AUDITAMOS o conflito — nenhum override é aplicado ainda.
@@ -643,9 +683,10 @@ export class CognitiveOrchestrator {
             }
         }
 
-        this._orchestratorAppliedDecisions.failSafe = signal;
+        const postAuditDecision = this.failSafeModule.resolvePostAuditDecision(signal);
+        this._orchestratorAppliedDecisions.failSafe = postAuditDecision;
 
-        return signal ?? undefined;
+        return postAuditDecision;
     }
 
     /**
@@ -775,24 +816,21 @@ export class CognitiveOrchestrator {
         const currentSession = SessionManager.getSession(sessionId);
         const context = currentSession ? SessionManager.getCognitiveState(currentSession) : undefined;
 
+        const moduleDecision = this.stopContinueModule.decide(baseDecision);
         let adjustedDecision: StopContinueSignal | undefined;
 
         // Refinamento contextual leve e reversível:
         // se o loop decidiu parar por baixa melhora/sobre-execução, mas ainda existe
         // recuperação ativa com ação pendente nas primeiras tentativas, continua.
         if (
+            moduleDecision === undefined &&
             context &&
-            baseDecision.shouldStop &&
+            this.stopContinueModule.isRecoveryContinuationEligible(baseDecision) &&
             context.isInRecovery &&
             context.hasPendingAction &&
-            context.attempt <= 1 &&
-            (baseDecision.reason === 'low_improvement_delta' || baseDecision.reason === 'over_execution_detected')
+            context.attempt <= 1
         ) {
-            adjustedDecision = {
-                ...baseDecision,
-                shouldStop: false,
-                reason: 'execution_continues'
-            };
+            adjustedDecision = this.stopContinueModule.createRecoveryContinuationDecision(baseDecision);
 
             this.logger.info('stop_continue_contextual_adjustment_applied', '[ORCHESTRATOR CONTEXTUAL] Ajuste leve aplicado para preservar recuperação ativa', {
                 sessionId,
@@ -808,7 +846,8 @@ export class CognitiveOrchestrator {
         // Regra única: se o loop decidiu continuar, mas há falha reativa recorrente,
         // o Orchestrator força parada para evitar insistência excessiva.
         if (
-            baseDecision.shouldStop === false &&
+            moduleDecision === undefined &&
+            this.stopContinueModule.isRecurrentFailureEscalationEligible(baseDecision) &&
             context?.hasReactiveFailure &&
             context?.attempt >= 2
         ) {
@@ -819,14 +858,10 @@ export class CognitiveOrchestrator {
                 baseReason: baseDecision.reason
             });
 
-            adjustedDecision = {
-                ...baseDecision,
-                shouldStop: true,
-                reason: 'recurrent_failure_detected'
-            };
+            adjustedDecision = this.stopContinueModule.createRecurrentFailureStopDecision(baseDecision);
         }
 
-        const finalDecision = adjustedDecision ?? baseDecision;
+        const finalDecision = adjustedDecision ?? moduleDecision ?? baseDecision;
 
         const authorityDecision = this.resolveSignalAuthority({
             sessionId,
