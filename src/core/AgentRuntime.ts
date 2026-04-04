@@ -11,18 +11,21 @@ import { ExecutionPlan, PlannerOutput } from './planner/types';
 import { workspaceService } from '../services/WorkspaceService';
 import { ExecutionPolicy } from './ExecutionPolicy';
 import { t } from '../i18n';
-import { FlowManager } from './flow/FlowManager';
 import { CognitiveOrchestrator } from './orchestrator/CognitiveOrchestrator';
 
 export class AgentRuntime {
     private planner: AgentPlanner;
     private executor: AgentExecutor;
-    private orchestrator: CognitiveOrchestrator;
+    private orchestrator?: CognitiveOrchestrator;
 
     constructor(memory: CognitiveMemory) {
         this.planner = new AgentPlanner(memory);
-        this.orchestrator = new CognitiveOrchestrator(memory, new FlowManager());
         this.executor = new AgentExecutor(memory, this.orchestrator);
+    }
+
+    public setOrchestrator(orchestrator: CognitiveOrchestrator): void {
+        this.orchestrator = orchestrator;
+        this.executor.setOrchestrator(orchestrator);
     }
 
     async execute(userInput: string, mode: 'react' | 'planner' = 'planner', policy?: ExecutionPolicy): Promise<string> {
@@ -108,7 +111,7 @@ export class AgentRuntime {
 
                 const selfHealingSignal = this.executor.getSelfHealingSignal();
                 if (selfHealingSignal) {
-                    this.orchestrator.ingestSelfHealingSignal(selfHealingSignal, session.conversation_id);
+                    this.orchestrator?.ingestSelfHealingSignal(selfHealingSignal, session.conversation_id);
                 }
 
                 if (!result.success) {

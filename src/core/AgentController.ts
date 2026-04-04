@@ -30,10 +30,20 @@ import {
     shouldDropPendingActionOnTopicShift
 } from './agent/PendingActionTracker';
 import { FlowManager } from './flow/FlowManager';
-import { CognitiveOrchestrator, CognitiveStrategy } from './orchestrator/CognitiveOrchestrator';
+import { ActiveDecisionsResult, CognitiveOrchestrator, CognitiveStrategy } from './orchestrator/CognitiveOrchestrator';
 import { getActionRouter } from './autonomy/ActionRouter';
 import { FlowRegistry } from './flow/FlowRegistry';
 import { IntentClassifier } from './intent/IntentClassifier';
+
+type ConversationContext = {
+    contextStr: string;
+    languageDirective: string;
+    projectInfo: string;
+    skillsBlock: string;
+    history: ReturnType<CognitiveMemory['getConversationHistory']>;
+    assistantName: string;
+    memoryNodes: any[];
+};
 
 export class AgentController {
     private memory: CognitiveMemory;
@@ -367,6 +377,86 @@ export class AgentController {
         }
     }
 
+    private async buildConversationContext(
+        sessionId: string,
+        effectiveUserQuery: string,
+        userQuery: string,
+        session: NonNullable<ReturnType<typeof SessionManager.getCurrentSession>>
+    ): Promise<ConversationContext> {
+        // TODO KB-022: mover para ContextBuildingSignal no Orchestrator
+        const provider = this.loop.getProvider();
+        const queryEmbedding = await provider.embed(effectiveUserQuery);
+
+        await this.indexProjectsInMemory();
+
+        const memoryNodes = await this.memory.retrieveWithTraversal(effectiveUserQuery, queryEmbedding);
+        const identity = await this.memory.getIdentityNodes();
+        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {}, chatId: sessionId });
+
+        const userName = this.getUserName();
+        if (userName) {
+            contextStr += `\nO nome do usuario Ã© ${userName}. Use isso para personalizar a resposta.`;
+        }
+
+        const projectNodes = this.memory.getProjectNodes(5);
+        if (projectNodes.length) {
+            const projectLines = projectNodes.map((n: any) => {
+                const projectId = n.id.replace(/^project:/, '');
+                return `- ${n.name} (id: ${projectId})`;
+            }).join('\n');
+            contextStr += `\n\nProjetos conhecidos:\n${projectLines}`;
+        }
+
+        let skillsBlock = '';
+        if (this.skillResolver) {
+            const skills = this.skillResolver.listWithDescriptions();
+            if (skills.length) {
+                skillsBlock = '\n\nCAPACIDADES DO AGENTE (skills instaladas):\n';
+                for (const s of skills) {
+                    skillsBlock += `- ${s.name}: ${s.description || 'sem descricao'}\n`;
+                }
+                skillsBlock += '\nSe uma tarefa puder ser resolvida com uma dessas skills, considere que voce TEM essa capacidade.\n';
+                skillsBlock += 'Nunca diga que nao possui ferramentas sem considerar essas skills.\n';
+                skillsBlock += 'Se nenhuma skill instalada resolver a tarefa, voce pode sugerir buscar ou instalar uma nova skill.\n';
+                skillsBlock += 'Use /install-skill ou /find-skill para buscar novas skills. Nao instale sem confirmacao do usuario.';
+            }
+        }
+
+        const history = this.memory.getConversationHistory(sessionId, 10);
+        const projectInfo = session.current_project_id
+            ? `\nProjeto ativo: ${session.current_project_id}. Use tools para executar acoes reais nesse projeto.`
+            : '';
+        const assistantName = this.getAssistantName(sessionId);
+
+        const langResolution = resolveLanguage(userQuery, session, 'user');
+        const languageDirective = buildLanguageDirective(langResolution.lang);
+        this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt', {
+            lang: langResolution.lang,
+            detected_from_input: langResolution.detectedFromInput,
+            confidence: langResolution.confidence.toFixed(2)
+        });
+
+        return {
+            contextStr,
+            languageDirective,
+            projectInfo,
+            skillsBlock,
+            history,
+            assistantName,
+            memoryNodes
+        };
+    }
+
+    private buildSystemPrompt(context: ConversationContext): MessagePayload[] {
+        // TODO KB-022: SystemPrompt deve vir como output de signal do Orchestrator
+        return [
+            {
+                role: 'system',
+                content: `Voce e o ${context.assistantName}, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:\nQuando voce apresentar uma lista numerada de opcoes (ex: 1. Fazer X, 2. Fazer Y), mantenha explicitamente o contexto da acao.\nSe o usuario responder apenas com um numero ("1", "2") ou repetir o nome de uma opcao, trate isso como a escolha correspondente a SUA ultima pergunta.\nAPENAS se nao houver nenhuma lista ativa ou contexto recente, informe educadamente que nao entendeu a selecao.\nNao peca confirmacao redundante.\n\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${context.languageDirective}${context.projectInfo}${context.skillsBlock}\n\nContexto relevante:\n${context.contextStr}`
+            }
+        ];
+    }
+
     private async runConversation(
         sessionId: string,
         userQuery: string,
@@ -575,36 +665,11 @@ export class AgentController {
             has_project: Boolean(session?.current_project_id)
         });
 
-        // MemÃ³ria: embedding â†’ retrieval â†’ identidade â†’ contexto
-        const provider = this.loop.getProvider();
-        const queryEmbedding = await provider.embed(effectiveUserQuery);
-
-        // â”€â”€ Indexar projetos do workspace na memÃ³ria cognitiva â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        await this.indexProjectsInMemory();
-
-        const memoryNodes = await this.memory.retrieveWithTraversal(effectiveUserQuery, queryEmbedding);
-        const identity = await this.memory.getIdentityNodes();
-        let contextStr = this.contextBuilder.build({ identity, memory: memoryNodes, policy: {}, chatId: sessionId });
-
-        // â”€â”€ Injetar nome do usuÃ¡rio no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        const userName = this.getUserName();
-        if (userName) {
-            contextStr += `\nO nome do usuario Ã© ${userName}. Use isso para personalizar a resposta.`;
-        }
-
-        // â”€â”€ Injetar projetos conhecidos no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        const projectNodes = this.memory.getProjectNodes(5);
-        if (projectNodes.length) {
-            const projectLines = projectNodes.map((n: any) => {
-                const projectId = n.id.replace(/^project:/, '');
-                return `- ${n.name} (id: ${projectId})`;
-            }).join('\n');
-            contextStr += `\n\nProjetos conhecidos:\n${projectLines}`;
-        }
+        const conversationContext = await this.buildConversationContext(sessionId, effectiveUserQuery, userQuery, session);
 
         // â”€â”€ Auto-resolver projeto ativo a partir da memÃ³ria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (!session?.current_project_id) {
-            const projectFromMemory = memoryNodes.find(n => n.subtype === 'project');
+            const projectFromMemory = conversationContext.memoryNodes.find(n => n.subtype === 'project');
             if (projectFromMemory && session) {
                 const resolvedId = projectFromMemory.id.replace(/^project:/, '');
                 if (workspaceService.projectExists(resolvedId)) {
@@ -613,50 +678,8 @@ export class AgentController {
                 }
             }
         }
-
-        // â”€â”€ Injetar consciÃªncia de skills no contexto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        let skillsBlock = '';
-        if (this.skillResolver) {
-            const skills = this.skillResolver.listWithDescriptions();
-            if (skills.length) {
-                skillsBlock = '\n\nCAPACIDADES DO AGENTE (skills instaladas):\n';
-                for (const s of skills) {
-                    skillsBlock += `- ${s.name}: ${s.description || 'sem descricao'}\n`;
-                }
-                skillsBlock += '\nSe uma tarefa puder ser resolvida com uma dessas skills, considere que voce TEM essa capacidade.\n';
-                skillsBlock += 'Nunca diga que nao possui ferramentas sem considerar essas skills.\n';
-                skillsBlock += 'Se nenhuma skill instalada resolver a tarefa, voce pode sugerir buscar ou instalar uma nova skill.\n';
-                skillsBlock += 'Use /install-skill ou /find-skill para buscar novas skills. Nao instale sem confirmacao do usuario.';
-            }
-        }
-
-        const history = this.memory.getConversationHistory(sessionId, 10);
-        const projectInfo = session?.current_project_id
-            ? `\nProjeto ativo: ${session.current_project_id}. Use tools para executar acoes reais nesse projeto.`
-            : '';
-        const assistantName = this.getAssistantName(sessionId);
-
-        // â”€â”€ LANGUAGE CONTROL LAYER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        const langResolution = resolveLanguage(userQuery, session, 'user');
-        const languageDirective = buildLanguageDirective(langResolution.lang);
-        this.logger.info('language_directive_injected', '[LCL] Diretiva de idioma injetada no prompt', {
-            lang: langResolution.lang,
-            detected_from_input: langResolution.detectedFromInput,
-            confidence: langResolution.confidence.toFixed(2)
-        });
-
-        const messages: MessagePayload[] = [
-            {
-                role: 'system',
-                content: `Voce e o ${assistantName}, um agente cognitivo 100% local.\nVoce tem acesso a tools para executar acoes reais.\nUse tools quando necessario.\nSe for pergunta simples, responda direto.\nNao invente execucao.\nNao alucine fatos.\n\nAntes de usar uma tool, avalie se a acao e realmente executavel com as ferramentas disponiveis.\nSe nao for possivel executar com seguranca ou confianca, NAO tente usar tool.\nEm vez disso, responda explicando como o usuario pode realizar a tarefa.\nNunca entre em loop tentando executar algo que nao esta ao seu alcance.\nSe voce ja tentou usar tools e falhou, responda diretamente sem tentar novamente.\nPrefira ser util explicando do que falhar tentando executar.\n\nSELECAO DE OPCOES:
-Quando voce apresentar uma lista numerada de opcoes (ex: 1. Fazer X, 2. Fazer Y), mantenha explicitamente o contexto da acao.
-Se o usuario responder apenas com um numero ("1", "2") ou repetir o nome de uma opcao, trate isso como a escolha correspondente a SUA ultima pergunta.
-APENAS se nao houver nenhuma lista ativa ou contexto recente, informe educadamente que nao entendeu a selecao.
-Nao peca confirmacao redundante.
-\n\nGIT E GITHUB:\nNao gere mensagens automaticas pedindo commit, push, PR ou publicacao de branch.\nSo fale sobre commit/push/PR se o usuario pedir isso explicitamente.\nSe o usuario nao pediu GitHub, mantenha foco apenas na tarefa atual.\n\nSe voce nao possui uma skill adequada para resolver a tarefa do usuario, considere que novas skills podem existir.\nAntes de dizer que nao consegue, pense: existe uma skill publica que resolve isso?\nSe fizer sentido, sugira ao usuario buscar ou instalar uma skill apropriada.\nNao instale skills automaticamente sem confirmacao do usuario.\n\nVoce possui memoria persistente baseada em grafo.\nVoce aprende automaticamente informacoes importantes do usuario durante a conversa.\nQuando o usuario compartilha algo relevante (nome, profissao, preferencias), assuma que isso sera armazenado automaticamente.\nVoce PODE afirmar naturalmente que lembra dessas informacoes e que podera usa-las em interacoes futuras.\nNUNCA diga que nao possui memoria, que nao pode salvar informacoes, ou que nao tem essa capacidade.${languageDirective}${projectInfo}${skillsBlock}\n\nContexto relevante:\n${contextStr}`
-            }
-        ];
-        for (const msg of history) {
+        const messages = this.buildSystemPrompt(conversationContext);
+        for (const msg of conversationContext.history) {
             if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') {
                 messages.push({ role: msg.role, content: msg.content });
             }
@@ -689,13 +712,14 @@ Nao peca confirmacao redundante.
         // whether to stop, retry, or continue instead of the AgentLoop deciding locally.
         const signals = this.loop.getSignalsSnapshot();
         this.orchestrator.ingestSignalsFromLoop(signals, sessionId);
+        const activeDecisions: ActiveDecisionsResult = this.orchestrator.applyActiveDecisions(sessionId);
 
         // â”€â”€ ACTIVE DECISION: StopContinue (Controlled Evolution - Safe Mode) â”€â”€â”€â”€â”€â”€â”€
         // Now the Orchestrator ACTIVELY decides on StopContinueSignal
         // This is the first real governance transition: Signal created by AgentLoop,
         // Decision applied by Orchestrator, but fallback preserved in Orchestrator.
         // If orchestrator decision is undefined, AgentLoop's decision stands (automatic fallback).
-        const orchestratorStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
+        const orchestratorStopContinueDecision = activeDecisions.orchestrator.stop;
         this.logger.debug('stop_continue_active_decision_checked', '[ACTIVE MODE] StopContinueSignal decisÃ£o do orquestrador recebida', {
             sessionId,
             hasOrchestratorDecision: !!orchestratorStopContinueDecision,
@@ -708,16 +732,16 @@ Nao peca confirmacao redundante.
         // â”€â”€ ACTIVE DECISION: ToolFallback (ETAPA 4 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // O Orchestrator aplica apenas o ToolFallbackSignal observado.
         // undefined => fallback automÃ¡tico ao AgentLoop (sem alteraÃ§Ã£o de comportamento).
-        const orchestratorFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
+        const orchestratorFallbackDecision = activeDecisions.orchestrator.fallback;
         this.logger.debug('tool_fallback_active_decision_checked', '[ACTIVE MODE] ToolFallbackSignal decisÃ£o do orquestrador recebida', {
             sessionId,
             hasOrchestratorDecision: !!orchestratorFallbackDecision,
-            signalFromLoop: signals.fallback ? {
-                trigger: signals.fallback.trigger,
-                fallbackRecommended: signals.fallback.fallbackRecommended,
-                originalTool: signals.fallback.originalTool,
-                fallbackTool: signals.fallback.suggestedTool,
-                reason: signals.fallback.reason
+            signalFromLoop: activeDecisions.loop.fallback ? {
+                trigger: activeDecisions.loop.fallback.trigger,
+                fallbackRecommended: activeDecisions.loop.fallback.fallbackRecommended,
+                originalTool: activeDecisions.loop.fallback.originalTool,
+                fallbackTool: activeDecisions.loop.fallback.suggestedTool,
+                reason: activeDecisions.loop.fallback.reason
             } : undefined,
             orchestratorDecision: orchestratorFallbackDecision ? {
                 trigger: orchestratorFallbackDecision.trigger,
@@ -731,17 +755,17 @@ Nao peca confirmacao redundante.
         // â”€â”€ ACTIVE DECISION: StepValidation (ETAPA 5 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // O Orchestrator aplica apenas o StepValidationSignal observado.
         // undefined => fallback automÃ¡tico ao validation jÃ¡ calculado no loop.
-        const orchestratorValidationDecision = this.orchestrator.decideStepValidation(sessionId);
-        const finalValidationDecision = orchestratorValidationDecision ?? signals.validation;
+        const orchestratorValidationDecision = activeDecisions.orchestrator.validation;
+        const finalValidationDecision = activeDecisions.applied.validation;
         this.logger.debug('step_validation_active_decision_checked', '[ACTIVE MODE] StepValidationSignal decisÃ£o do orquestrador recebida', {
             sessionId,
             hasOrchestratorDecision: !!orchestratorValidationDecision,
-            loopValidation: signals.validation ? {
-                success: signals.validation.validationPassed,
-                errors: signals.validation.failureReason,
-                confidence: signals.validation.confidence,
-                reason: signals.validation.reason,
-                requiresLlmReview: signals.validation.requiresLlmReview
+            loopValidation: activeDecisions.loop.validation ? {
+                success: activeDecisions.loop.validation.validationPassed,
+                errors: activeDecisions.loop.validation.failureReason,
+                confidence: activeDecisions.loop.validation.confidence,
+                reason: activeDecisions.loop.validation.reason,
+                requiresLlmReview: activeDecisions.loop.validation.requiresLlmReview
             } : undefined,
             orchestratorDecision: orchestratorValidationDecision ? {
                 success: orchestratorValidationDecision.validationPassed,
@@ -757,30 +781,30 @@ Nao peca confirmacao redundante.
                 reason: finalValidationDecision.reason,
                 requiresLlmReview: finalValidationDecision.requiresLlmReview
             } : undefined,
-            safeModeFallbackApplied: !orchestratorValidationDecision && !!signals.validation
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.validation
         });
 
-        const routeDecision = this.orchestrator.decideRouteAutonomy(sessionId);
-        const finalRoute = routeDecision ?? signals.route;
+        const routeDecision = activeDecisions.orchestrator.route;
+        const finalRoute = activeDecisions.applied.route;
         this.logger.debug('route_autonomy_active_decision_checked', '[ACTIVE MODE] RouteAutonomySignal decisÃ£o do orquestrador recebida', {
             sessionId,
-            loopDecision: this.mapRouteSignalToAuditDecision(signals.route),
+            loopDecision: this.mapRouteSignalToAuditDecision(activeDecisions.loop.route),
             orchestratorDecision: this.mapRouteSignalToAuditDecision(routeDecision),
             appliedDecision: this.mapRouteSignalToAuditDecision(finalRoute),
-            safeModeFallbackApplied: !routeDecision && !!signals.route
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.route
         });
 
         // â”€â”€ ACTIVE DECISION: FailSafe (ETAPA 7 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // O Orchestrator aplica o FailSafeSignal observado.
         // undefined => fallback automÃ¡tico ao valor gerado pelo loop (sem alteraÃ§Ã£o de comportamento).
         // FailSafe tem PRIORIDADE sobre Route â€” conflito apenas auditado nesta etapa.
-        const failSafeDecision = this.orchestrator.decideFailSafe(sessionId);
-        const finalFailSafe = failSafeDecision ?? signals.failSafe;
+        const failSafeDecision = activeDecisions.orchestrator.failSafe;
+        const finalFailSafe = activeDecisions.applied.failSafe;
         this.logger.debug('failsafe_active_decision_checked', '[ACTIVE MODE] FailSafeSignal decisÃ£o do orquestrador recebida', {
             sessionId,
-            loopDecision: signals.failSafe ? {
-                activated: signals.failSafe.activated,
-                trigger: signals.failSafe.trigger
+            loopDecision: activeDecisions.loop.failSafe ? {
+                activated: activeDecisions.loop.failSafe.activated,
+                trigger: activeDecisions.loop.failSafe.trigger
             } : undefined,
             orchestratorDecision: failSafeDecision ? {
                 activated: failSafeDecision.activated,
@@ -790,7 +814,7 @@ Nao peca confirmacao redundante.
                 activated: finalFailSafe.activated,
                 trigger: finalFailSafe.trigger
             } : undefined,
-            safeModeFallbackApplied: !failSafeDecision && !!signals.failSafe
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.failSafe
         });
 
         this.orchestrator.auditSignalConsistency(sessionId);
@@ -836,7 +860,7 @@ Nao peca confirmacao redundante.
 
         await this.memory.learn({
             query: effectiveUserQuery,
-            nodes_used: memoryNodes,
+            nodes_used: conversationContext.memoryNodes,
             success: true,
             response: result.answer
         });

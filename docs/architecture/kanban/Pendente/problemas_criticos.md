@@ -42,13 +42,6 @@ Legenda de status:
   - Evidência curta: SessionManager possui flow_state, mas FlowManager ainda guarda estado interno paralelo.
   - Criterio de pronto: fluxo guiado persistido e visível no CognitiveState
 
-- [ ] KB-022 - Remover split-brain de AgentController e AgentRuntime
-  - Origem: AntiPatterns + ProposedChanges (src/core)
-  - Risco: Crítico
-  - Status atual: Parcialmente mitigado
-  - Evidência curta: ambos ainda inicializam/operam com orquestração própria em caminhos paralelos.
-  - Criterio de pronto: controller vira gateway e runtime deixa de competir com o Orchestrator
-
 - [ ] KB-023 - Externalizar heurísticas táticas remanescentes do AgentLoop
   - Origem: AntiPatterns (src/engine)
   - Risco: Crítico

@@ -97,6 +97,37 @@ type RetryAfterFailureContext = {
     executorDecision?: boolean;
 };
 
+export type ActiveDecisionsResult = {
+    loop: {
+        stop?: StopContinueSignal;
+        fallback?: ToolFallbackSignal;
+        validation?: StepValidationSignal;
+        route?: RouteAutonomySignal;
+        failSafe?: FailSafeSignal;
+    };
+    orchestrator: {
+        stop?: StopContinueSignal;
+        fallback?: ToolFallbackSignal;
+        validation?: StepValidationSignal;
+        route?: RouteAutonomySignal;
+        failSafe?: FailSafeSignal;
+    };
+    applied: {
+        stop?: StopContinueSignal;
+        fallback?: ToolFallbackSignal;
+        validation?: StepValidationSignal;
+        route?: RouteAutonomySignal;
+        failSafe?: FailSafeSignal;
+    };
+    safeModeFallbackApplied: {
+        stop: boolean;
+        fallback: boolean;
+        validation: boolean;
+        route: boolean;
+        failSafe: boolean;
+    };
+};
+
 /**
  * CognitiveOrchestrator: Centraliza a tomada de decisão do agente.
  * Coordena entre fluxos guiados, execução de ferramentas e resposta direta via LLM.
@@ -931,6 +962,45 @@ export class CognitiveOrchestrator {
         }
 
         return this.applyStopContinueGovernance(sessionId, baseDecision);
+    }
+
+    public applyActiveDecisions(sessionId: string): ActiveDecisionsResult {
+        const loop = {
+            stop: this.observedSignals.stop,
+            fallback: this.observedSignals.fallback,
+            validation: this.observedSignals.validation,
+            route: this.observedSignals.route,
+            failSafe: this.observedSignals.failSafe
+        };
+
+        const orchestrator = {
+            stop: this.decideStopContinue(sessionId),
+            fallback: this.decideToolFallback(sessionId),
+            validation: this.decideStepValidation(sessionId),
+            route: this.decideRouteAutonomy(sessionId),
+            failSafe: this.decideFailSafe(sessionId)
+        };
+
+        const applied = {
+            stop: orchestrator.stop ?? loop.stop,
+            fallback: orchestrator.fallback ?? loop.fallback,
+            validation: orchestrator.validation ?? loop.validation,
+            route: orchestrator.route ?? loop.route,
+            failSafe: orchestrator.failSafe ?? loop.failSafe
+        };
+
+        return {
+            loop,
+            orchestrator,
+            applied,
+            safeModeFallbackApplied: {
+                stop: !orchestrator.stop && !!loop.stop,
+                fallback: !orchestrator.fallback && !!loop.fallback,
+                validation: !orchestrator.validation && !!loop.validation,
+                route: !orchestrator.route && !!loop.route,
+                failSafe: !orchestrator.failSafe && !!loop.failSafe
+            }
+        };
     }
 
     /**

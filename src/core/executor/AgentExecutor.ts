@@ -97,6 +97,10 @@ export class AgentExecutor {
         this.llm = ProviderFactory.getProvider();
     }
 
+    public setOrchestrator(orchestrator: CognitiveOrchestrator): void {
+        this.orchestrator = orchestrator;
+    }
+
     private shouldRetryWithGovernance(session: Session, attempt: number, executorDecision: boolean): boolean {
         if (this.lastSelfHealingSignal) {
             this.orchestrator?.ingestSelfHealingSignal(this.lastSelfHealingSignal, session.conversation_id);

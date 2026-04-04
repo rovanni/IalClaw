@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-022 - Remover split-brain de AgentController e AgentRuntime
+  - Data: 2026-04-04
+  - Evidência: AgentRuntime não instancia mais CognitiveOrchestrator local; AgentController extraiu context building/system prompt e consolidou ACTIVE DECISIONs via applyActiveDecisions no Orchestrator
+
 - [x] KB-003 - Simplificar AgentLoop para executor linear
   - Data: 2026-04-04
   - Evidência: heurísticas de stop/delta migradas para o StopContinueModule no Orchestrator; AgentLoop agora envia contexto e aplica decisão governada

@@ -12,8 +12,8 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 
 ## Radar de críticos (snapshot 2026-04-04)
 - Persistem: KB-002, KB-003, KB-027
-- Parcialmente mitigados: KB-001, KB-017, KB-020, KB-021, KB-022, KB-023, KB-024
-- Resolvidos: nenhum
+- Parcialmente mitigados: KB-001, KB-017, KB-020, KB-021, KB-023, KB-024
+- Resolvidos: KB-022
 
 Observação:
 - O padrão dominante atual e governaça parcial com fallback local (safe mode), especialmente em executor e loop.
@@ -76,10 +76,10 @@ Observação:
 
 ### src/core (AgentController / AgentRuntime)
 - Colunas e prioridades no quadro:
-  - Crítico: KB-022
+  - Concluído: KB-022
 - Problemas mapeados:
-  - AgentController retém orquestração pesada e fluxos paralelos
-  - AgentRuntime decide Replan/Repair/Direct em paralelo ao Orchestrator
+  - Split-brain neutralizado: AgentRuntime não instancia orquestrador próprio
+  - Controller agora usa extrações de contexto/prompt e consolidação de decisões ativas no Orchestrator
 - Cards relacionados:
   - KB-022
 

@@ -25,6 +25,7 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Abril/2026: KB-022 concluído. Split-brain entre AgentController e AgentRuntime removido: AgentRuntime deixou de instanciar CognitiveOrchestrator local e passou a aceitar injeção externa; AgentController isolou context building/system prompt e consolidou ACTIVE DECISIONs no Orchestrator via applyActiveDecisions.
 - Abril/2026: heuristicas de stop/continue por confianca e delta foram migradas do AgentLoop para avaliacao contextual no Orchestrator (StopContinueModule), mantendo governanca central e aplicacao tecnica no loop.
 - Abril/2026: reality-check de claims de execucao no AgentLoop foi extraido para `RealityCheckSignal` e passou a ter autoridade final do Orchestrator em safe mode (`orchestratorDecision ?? loopDecision`), sem mudanca funcional do fallback.
 - Abril/2026: correção de falso positivo em governança operacional no AgentLoop; `requiresRealWorldAction` deixou de depender apenas de `route=TOOL_LOOP` e passou a considerar somente `taskType` operacional, evitando bloqueio indevido de cenários conversacionais com tool opcional.
