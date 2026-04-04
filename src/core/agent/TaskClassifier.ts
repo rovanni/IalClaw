@@ -51,7 +51,19 @@ export interface DeterministicExecutionStep {
 
 export type PlanSource = 'deterministic_builder' | 'legacy_forced_plan';
 
+const TASK_CAPABILITY_REQUIREMENTS: Partial<Record<TaskType, string[]>> = {
+    filesystem: ['fs_access'],
+    file_search: ['fs_access'],
+    file_conversion: ['fs_access'],
+    system_operation: ['node_execution'],
+    skill_installation: ['fs_access', 'node_execution']
+};
+
 ExecutionPlanRegistry.register('filesystem', buildFilesystemPlan);
+
+export function getRequiredCapabilitiesForTaskType(taskType: TaskType): string[] {
+    return [...(TASK_CAPABILITY_REQUIREMENTS[taskType] || [])];
+}
 
 // ── Detecção de Continuidade ─────────────────────────────────────────────
 

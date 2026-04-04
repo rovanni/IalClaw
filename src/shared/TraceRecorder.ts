@@ -127,7 +127,12 @@ export function startTraceRecorder(): boolean {
         'skill_auto_install_result',
         'skill_auto_install_failed',
         'signal_conflict',
-        'signal_authority_resolution'
+        'signal_authority_resolution',
+        'capability_gap_detected',
+        'capability_vs_route_conflict',
+        'planning_strategy_selected',
+        'final_decision_recommended',
+        'final_decision_applied'
     ];
 
     for (const eventName of tracedEvents) {

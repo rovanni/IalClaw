@@ -4,7 +4,7 @@ import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
 import { CognitiveActionExecutor, ExecutionResult } from './CognitiveActionExecutor';
 import { IntentionResolver } from '../agent/IntentionResolver';
-import { TaskClassifier, TaskType } from '../agent/TaskClassifier';
+import { getRequiredCapabilitiesForTaskType, TaskClassifier, TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { DecisionMemory } from '../../memory/DecisionMemory';
@@ -54,7 +54,28 @@ export interface CognitiveDecision {
     memoryHits?: any[];
     capabilityGap?: ResolutionProposal;
     aggregatedConfidence?: AggregatedConfidence;
+    capabilityAwarePlan?: CapabilityAwarePlan;
 }
+
+export type CapabilityAwarePlan = {
+    steps?: Array<{
+        tool?: string;
+        description?: string;
+    }>;
+    requiredCapabilities: string[];
+    missingCapabilities: string[];
+    isExecutable: boolean;
+    fallbackStrategy?: 'graceful_response' | 'request_install' | 'defer';
+    // Fonte da recomendação cognitiva de planejamento (não representa aplicação final).
+    finalDecisionSource: 'orchestrator' | 'loop_safe_fallback';
+};
+
+type PlanningStrategyContext = {
+    sessionId: string;
+    taskType: TaskType;
+    route: ExecutionRoute;
+    capabilityGap: ResolutionProposal;
+};
 
 type SignalAuthorityDecision = {
     override?: boolean;
@@ -97,6 +118,7 @@ export class CognitiveOrchestrator {
     private observedSignals: Partial<CognitiveSignalsState> = {};
     private observedSelfHealingSignal?: SelfHealingSignal;
     private routeVsFailSafeConflictLoggedInCycle = false;
+    private lastCapabilityAwarePlanBySession = new Map<string, CapabilityAwarePlan>();
 
         // ─── Orchestrator Applied Decisions (para auditSignalConsistency) ─────────
         // Rastreia o que cada decide*() retornou no ciclo atual para permitir
@@ -110,6 +132,89 @@ export class CognitiveOrchestrator {
         private decisionMemory?: DecisionMemory | null
     ) {
         this.actionExecutor = new CognitiveActionExecutor(this.memoryService, this.flowManager);
+    }
+
+    /**
+     * FASE 3.1: planejamento capability-aware em modo passivo.
+     * Não altera a decisão final do fluxo atual; apenas estrutura e audita.
+     */
+    public decidePlanningStrategy(context: PlanningStrategyContext): CapabilityAwarePlan {
+        const { sessionId, taskType, route, capabilityGap } = context;
+        const requiredCapabilities = getRequiredCapabilitiesForTaskType(taskType);
+        const missingFromGap = capabilityGap.gap?.missing || [];
+        const primaryMissing = capabilityGap.gap?.resource ? [capabilityGap.gap.resource] : [];
+        const missingCapabilities = Array.from(new Set([...missingFromGap, ...primaryMissing]));
+
+        const hasGap = capabilityGap.hasGap || missingCapabilities.length > 0;
+        const isExecutable = !hasGap;
+        const fallbackStrategy: CapabilityAwarePlan['fallbackStrategy'] = hasGap
+            ? (capabilityGap.solution?.requiresConfirmation ? 'request_install' : 'defer')
+            : undefined;
+
+        const planningDecision: CapabilityAwarePlan = {
+            requiredCapabilities,
+            missingCapabilities,
+            isExecutable,
+            fallbackStrategy,
+            finalDecisionSource: 'orchestrator'
+        };
+
+        this.lastCapabilityAwarePlanBySession.set(sessionId, planningDecision);
+
+        if (hasGap) {
+            emitDebug('capability_gap_detected', {
+                type: 'capability_gap_detected',
+                sessionId,
+                taskType,
+                missingCapabilities,
+                requiredCapabilities,
+                route,
+                severity: capabilityGap.gap?.severity
+            });
+        }
+
+        if (route === ExecutionRoute.TOOL_LOOP && hasGap) {
+            emitDebug('capability_vs_route_conflict', {
+                type: 'capability_vs_route_conflict',
+                sessionId,
+                route,
+                taskType,
+                missingCapabilities
+            });
+        }
+
+        emitDebug('planning_strategy_selected', {
+            type: 'planning_strategy_selected',
+            sessionId,
+            taskType,
+            route,
+            requiredCapabilities,
+            missingCapabilities,
+            isExecutable,
+            fallbackStrategy,
+            finalDecisionSource: planningDecision.finalDecisionSource
+        });
+
+        return planningDecision;
+    }
+
+    public getLastCapabilityAwarePlan(sessionId: string): CapabilityAwarePlan | undefined {
+        return this.lastCapabilityAwarePlanBySession.get(sessionId);
+    }
+
+    private emitFinalDecisionRecommended(params: {
+        sessionId: string;
+        strategy: CognitiveStrategy;
+        reason: string;
+        capabilityAwarePlan: CapabilityAwarePlan;
+    }): void {
+        emitDebug('final_decision_recommended', {
+            type: 'final_decision_recommended',
+            sessionId: params.sessionId,
+            strategy: params.strategy,
+            reason: params.reason,
+            source: params.capabilityAwarePlan.finalDecisionSource
+        });
     }
 
     /**
@@ -1049,6 +1154,12 @@ export class CognitiveOrchestrator {
         const memoryHits = await this.safeMemoryQuery(text);
 
         const capabilityGap = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
+        const capabilityAwarePlan = this.decidePlanningStrategy({
+            sessionId,
+            taskType: classification.type,
+            route: routeDecision.route,
+            capabilityGap
+        });
 
         const aggregatedConfidence = this.confidenceScorer.calculate({
             classifierConfidence: classification.confidence,
@@ -1076,43 +1187,79 @@ export class CognitiveOrchestrator {
         // ── 3. MAPEAMENTO FINAL DE ESTRATÉGIA ───────────────────────────────
 
         if (autonomyDecision === AutonomyDecision.ASK) {
+            this.emitFinalDecisionRecommended({
+                sessionId,
+                strategy: CognitiveStrategy.ASK,
+                reason: 'low_confidence_fallback',
+                capabilityAwarePlan
+            });
             return {
                 strategy: CognitiveStrategy.ASK,
                 confidence: aggregatedConfidence.score,
-                reason: t('agent.orchestrator.ask.low_confidence_fallback')
+                reason: t('agent.orchestrator.ask.low_confidence_fallback'),
+                capabilityAwarePlan
             };
         }
 
         if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            this.emitFinalDecisionRecommended({
+                sessionId,
+                strategy: CognitiveStrategy.CONFIRM,
+                reason: capabilityGap.hasGap ? 'capability_gap_detected' : 'high_risk_confirmation',
+                capabilityAwarePlan
+            });
             return {
                 strategy: CognitiveStrategy.CONFIRM,
                 confidence: aggregatedConfidence.score,
                 reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
-                capabilityGap
+                capabilityGap,
+                capabilityAwarePlan
             };
         }
 
         if (routeDecision.nature === TaskNature.HYBRID) {
+            this.emitFinalDecisionRecommended({
+                sessionId,
+                strategy: CognitiveStrategy.HYBRID,
+                reason: 'hybrid_informative_executable',
+                capabilityAwarePlan
+            });
             return {
                 strategy: CognitiveStrategy.HYBRID,
                 confidence: 0.9,
                 reason: "hybrid_informative_executable",
-                toolProposal: this.suggestHybridTool(text, classification.type)
+                toolProposal: this.suggestHybridTool(text, classification.type),
+                capabilityAwarePlan
             };
         }
 
         if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
+            this.emitFinalDecisionRecommended({
+                sessionId,
+                strategy: CognitiveStrategy.TOOL,
+                reason: 'tool_execution',
+                capabilityAwarePlan
+            });
             return {
                 strategy: CognitiveStrategy.TOOL,
                 confidence: routeDecision.confidence,
-                reason: "tool_execution"
+                reason: "tool_execution",
+                capabilityAwarePlan
             };
         }
+
+        this.emitFinalDecisionRecommended({
+            sessionId,
+            strategy: CognitiveStrategy.LLM,
+            reason: 'direct_response',
+            capabilityAwarePlan
+        });
 
         return {
             strategy: CognitiveStrategy.LLM,
             confidence: routeDecision.confidence,
-            reason: "direct_response"
+            reason: "direct_response",
+            capabilityAwarePlan
         };
     }
 

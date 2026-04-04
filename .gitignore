@@ -19,3 +19,7 @@ logs/
 
 # Diretórios não utilizados pelo projeto
 .opencode/
+
+# Artefatos temporários de execução/testes locais
+.tmp_*.log
+.tmp_*.exit

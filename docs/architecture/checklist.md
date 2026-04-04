@@ -22,6 +22,13 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- **FASE 3.1.1 IMPLEMENTADA (Auditoria deterministica)**: conflito semântico removido entre recomendação e aplicação final; `CognitiveOrchestrator` passou a emitir `final_decision_recommended` (recomendação), enquanto `final_decision_applied` permaneceu canônico no ponto de aplicação (`AgentLoop`).
+- Persistência de observabilidade fortalecida no `TraceRecorder`: eventos `capability_gap_detected`, `capability_vs_route_conflict`, `planning_strategy_selected`, `final_decision_recommended` e `final_decision_applied` adicionados na lista de `tracedEvents` para evitar conflitos silenciosos não registrados.
+- Contrato `CapabilityAwarePlan.finalDecisionSource` explicitado como fonte de recomendação cognitiva (não aplicação final), mantendo compatibilidade e sem alteração de comportamento.
+- **FASE 3.1 IMPLEMENTADA (Capability-Aware Planning passivo, zero risco)**: contrato `CapabilityAwarePlan` adicionado no `CognitiveOrchestrator` com método `decidePlanningStrategy(context)` em modo observável, sem alterar decisão final do runtime.
+- Eventos obrigatórios de auditoria adicionados sem mudança funcional: `capability_gap_detected`, `capability_vs_route_conflict`, `planning_strategy_selected` e `final_decision_applied`.
+- Requisitos de capability por `TaskType` centralizados no `TaskClassifier` via `getRequiredCapabilitiesForTaskType(...)`, reduzindo duplicação para fases seguintes.
+- Integração passiva no `AgentLoop`: decisão final continua em safe mode (`orchestratorDecision ?? loopDecision`) com telemetria explícita de fonte (`orchestrator` | `loop_safe_fallback`).
 - **FASE 2.2 IMPLEMENTADA (ExecutionPlanRegistry + builder separado de filesystem)**: criado `ExecutionPlanRegistry` em `src/core/planner/ExecutionPlanRegistry.ts` com contrato simples de registro/consulta por `taskType`.
 - Extração estrutural concluída do builder de filesystem para `src/core/planner/builders/filesystemBuilder.ts`, reaproveitando a lógica existente de extração de paths sem alterar comportamento.
 - Integração incremental aplicada no `TaskClassifier`: `buildExecutionPlan(taskType, userInput)` agora resolve builder via registry (`ExecutionPlanRegistry.get(taskType)`) e mantém fallback legado inalterado em `getForcedExecutablePlanForTaskType(...)`.

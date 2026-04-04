@@ -995,6 +995,24 @@ export class AgentLoop {
             }
         });
         const finalDirectDecision = orchestratorDecision ?? loopDecision;
+        const observedCapabilityAwarePlan = this.orchestrator?.getLastCapabilityAwarePlan(this.chatId);
+        const finalDecisionSource = orchestratorDecision === undefined
+            ? 'loop_safe_fallback'
+            : 'orchestrator';
+
+        emitDebug('final_decision_applied', {
+            type: 'final_decision_applied',
+            sessionId: this.chatId,
+            decisionPoint: 'direct_execution_short_circuit',
+            loopDecision,
+            orchestratorDecision,
+            finalDecision: finalDirectDecision,
+            finalDecisionSource,
+            executionMode,
+            strategy: routeAutonomySignal.recommendedStrategy,
+            requiredCapabilities: observedCapabilityAwarePlan?.requiredCapabilities || [],
+            missingCapabilities: observedCapabilityAwarePlan?.missingCapabilities || []
+        });
 
         this.logger.info('short_circuit_governance', '[GOVERNANCE] Governança do short-circuit avaliada', {
             requiresRealWorldAction,
