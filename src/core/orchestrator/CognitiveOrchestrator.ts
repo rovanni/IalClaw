@@ -13,11 +13,11 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal } from '../../engine/AgentLoop';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal } from '../../engine/AgentLoop';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { FailSafeModule } from './modules/FailSafeModule';
-import { StopContinueModule } from './modules/StopContinueModule';
+import { StopContinueDeltaContext, StopContinueDeltaEvaluationResult, StopContinueExecutionContext, StopContinueModule } from './modules/StopContinueModule';
 import { IntentResult } from '../intent/IntentResult';
 
 export enum CognitiveStrategy {
@@ -240,7 +240,8 @@ export class CognitiveOrchestrator {
             hasFailSafe: !!signals.failSafe,
             hasLlmRetry: !!signals.llmRetry,
             hasReclassification: !!signals.reclassification,
-            hasPlanAdjustment: !!signals.planAdjustment
+            hasPlanAdjustment: !!signals.planAdjustment,
+            hasRealityCheck: !!signals.realityCheck
         });
 
         // Store the observed signals (immutably merge new observations)
@@ -318,6 +319,16 @@ export class CognitiveOrchestrator {
                 reason: signals.planAdjustment.reason,
                 failedStep: signals.planAdjustment.failedStep,
                 failureReason: signals.planAdjustment.failureReason
+            });
+        }
+
+        if (signals.realityCheck) {
+            this.logger.info('signal_reality_check_observed', '[ORCHESTRATOR PASSIVE] RealityCheckSignal observado', {
+                sessionId,
+                shouldInject: signals.realityCheck.shouldInject,
+                reason: signals.realityCheck.reason,
+                toolCallsCount: signals.realityCheck.toolCallsCount,
+                hasGroundingEvidence: signals.realityCheck.hasGroundingEvidence
             });
         }
     }
@@ -919,6 +930,42 @@ export class CognitiveOrchestrator {
             return undefined;
         }
 
+        return this.applyStopContinueGovernance(sessionId, baseDecision);
+    }
+
+    /**
+     * Active stop/continue evaluation where the loop sends only execution context
+     * and the Orchestrator computes the stop decision.
+     */
+    public decideStopContinueFromExecutionContext(context: {
+        sessionId: string;
+        data: StopContinueExecutionContext;
+    }): StopContinueSignal {
+        const baseDecision = this.stopContinueModule.evaluateExecutionStop(context.data);
+        this.observedSignals.stop = baseDecision;
+        return this.applyStopContinueGovernance(context.sessionId, baseDecision);
+    }
+
+    /**
+     * Active delta-stop evaluation where the loop sends only confidence history
+     * and receives both decision and next delta state.
+     */
+    public decideStopContinueFromDeltaContext(context: {
+        sessionId: string;
+        data: StopContinueDeltaContext;
+    }): StopContinueDeltaEvaluationResult {
+        const baseResult = this.stopContinueModule.evaluateDeltaStop(context.data);
+        this.observedSignals.stop = baseResult.decision;
+        const governedDecision = this.applyStopContinueGovernance(context.sessionId, baseResult.decision);
+        return {
+            decision: governedDecision,
+            nextPreviousConfidence: baseResult.nextPreviousConfidence,
+            nextLowImprovementCount: baseResult.nextLowImprovementCount
+        };
+    }
+
+    private applyStopContinueGovernance(sessionId: string, baseDecision: StopContinueSignal): StopContinueSignal {
+
         // Reuso obrigatório do estado cognitivo centralizado (sem state paralelo).
         const currentSession = SessionManager.getSession(sessionId);
         const context = currentSession ? SessionManager.getCognitiveState(currentSession) : undefined;
@@ -1425,6 +1472,34 @@ export class CognitiveOrchestrator {
 
         // Sem bloqueio — delegar ao loop (safe mode).
         return undefined;
+    }
+
+    /**
+     * ACTIVE MODE: Decide se deve injetar reality-check com base no RealityCheckSignal observado.
+     *
+     * Regras obrigatórias:
+     * - Não recalcular heurística de grounding/trust
+     * - Apenas aplicar o signal já produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (AgentLoop permanece decisor)
+     */
+    public decideRealityCheck(context: { sessionId: string; signal: RealityCheckSignal }): boolean | undefined {
+        const { sessionId, signal } = context;
+
+        if (!signal) {
+            return undefined;
+        }
+
+        this.logger.info('reality_check_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de reality-check aplicada', {
+            sessionId,
+            shouldInject: signal.shouldInject,
+            reason: signal.reason,
+            toolCallsCount: signal.toolCallsCount,
+            hasGroundingEvidence: signal.hasGroundingEvidence,
+            source: 'loop_signal_applied_by_orchestrator'
+        });
+
+        this._orchestratorAppliedDecisions.realityCheck = signal;
+        return signal.shouldInject;
     }
 
     /**

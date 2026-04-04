@@ -75,7 +75,7 @@ O comportamento do sistema deve permanecer exatamente igual.
 Arquivo:
 
 ```
-D:\IA\IalClaw\docs\architecture\checklist.md
+D:\IA\IalClaw\docs\architecture\kanban\historico\checklist_vivo.md
 ```
 
 Após qualquer alteração, atualizar:

@@ -14,14 +14,21 @@ IalClaw/
 |  \- ialclaw.js
 |- docs/
 |  |- architecture/
-|  |  |- AntiPatterns.md
-|  |  |- checklist.md
-|  |  |- CognitiveArchitectureMap.md
-|  |  |- OrchestratorModularizationMapPhase1.md
-|  |  |- prompt_template.md
-|  |  |- ProposedChanges.md
-|  |  |- ShortCircuitMapping.md
-|  |  \- Walkthrough.md
+|  |  |- README.md
+|  |  |- KANBAN.md
+|  |  |- kanban/
+|  |  |- diagnostics/
+|  |  |  \- AntiPatterns.md
+|  |  |- maps/
+|  |  |  |- CognitiveArchitectureMap.md
+|  |  |  |- ShortCircuitMapping.md
+|  |  |  |- SystemTree.md
+|  |  |  \- Walkthrough.md
+|  |  |- plans/
+|  |  |  |- OrchestratorModularizationMapPhase1.md
+|  |  |  \- ProposedChanges.md
+|  |  \- templates/
+|  |     \- prompt_template.md
 |  |- assets/
 |  \- system/
 |     \- sudo-setup.md

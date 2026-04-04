@@ -1,5 +1,8 @@
 # Proposed Changes: Capabilities Refactoring
 
+Acompanhamento de execucao em Kanban:
+- docs/architecture/kanban/README.md
+
 Este plano visa unificar a lógica de capacidades ao modelo **Single Brain**, eliminando mini-cérebros e centralizando o estado.
 
 ## 🎯 Objetivos

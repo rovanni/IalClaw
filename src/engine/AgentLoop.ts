@@ -162,6 +162,13 @@ export type PlanAdjustmentResult = {
     signal: PlanAdjustmentSignal;
 };
 
+export type RealityCheckSignal = {
+    shouldInject: boolean;
+    reason: 'no_execution_claim' | 'grounded_by_tool_evidence' | 'no_tool_call' | 'missing_grounding_evidence';
+    toolCallsCount: number;
+    hasGroundingEvidence: boolean;
+};
+
 // ─── Stop/Continue Signal ────────────────────────────────────────────────────
 // Formaliza a decisão de parar ou continuar o loop de execução.
 // TODO: migrar tomada de decisão para CognitiveOrchestrator.
@@ -231,6 +238,7 @@ export type CognitiveSignalsState = {
     reclassification?: ReclassificationSignal;
     llmRetry?: LlmRetrySignal;
     planAdjustment?: PlanAdjustmentSignal;
+    realityCheck?: RealityCheckSignal;
 };
 
 export type ExecutionMemoryEntry = {
@@ -1733,22 +1741,51 @@ export class AgentLoop {
                         messages.push(fallbackHint);
                         this.logger.info('low_confidence_action', `[ACTION] Confiança baixa=${globalConf.toFixed(2)}. Forçando tentativa alternativa.`);
                     } else if (lastSuccessful) {
-                        const stopDecision = this.shouldStopExecution(lastSuccessful, stepCount);
-                        this.currentSignals.stop = stopDecision;
-                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
-                        const orchestratorStopDecision = this.orchestrator?.decideStopContinue(this.chatId);
-                        const finalStopDecision = orchestratorStopDecision ?? stopDecision;
+                        const defaultExecutionContinue: StopContinueSignal = { shouldStop: false, reason: 'execution_continues', stepCount };
+                        const finalStopDecision = this.orchestrator
+                            ? this.orchestrator.decideStopContinueFromExecutionContext({
+                                sessionId: this.chatId,
+                                data: {
+                                    hasPendingSteps: this.hasPendingSteps(),
+                                    failSafeActive: this.failSafe,
+                                    stepCount,
+                                    globalConfidence: globalConf,
+                                    lastStepSuccessful: lastSuccessful,
+                                    globalConfidenceThreshold: this.GLOBAL_CONFIDENCE_THRESHOLD,
+                                    maxStepsBeforeOverexecutionCheck: this.MAX_STEPS_BEFORE_OVEREXECUTION_CHECK,
+                                    stepValidations: [...this.stepValidations]
+                                }
+                            })
+                            : defaultExecutionContinue;
+                        this.currentSignals.stop = finalStopDecision;
                         if (finalStopDecision.shouldStop) {
                             this.logger.info('execution_stopped', `[STOP] ${finalStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                             break;
                         }
                     }
 
-                    const deltaStopDecision = this.checkDeltaAndStop(stepCount);
-                    this.currentSignals.stop = deltaStopDecision;
-                    this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
-                    const orchestratorDeltaStopDecision = this.orchestrator?.decideStopContinue(this.chatId);
-                    const finalDeltaStopDecision = orchestratorDeltaStopDecision ?? deltaStopDecision;
+                    const defaultDeltaContinue: StopContinueSignal = { shouldStop: false, reason: 'delta_check_continues', stepCount };
+                    const deltaEvaluation = this.orchestrator
+                        ? this.orchestrator.decideStopContinueFromDeltaContext({
+                            sessionId: this.chatId,
+                            data: {
+                                stepIndex: stepCount,
+                                stepValidations: [...this.stepValidations],
+                                previousConfidence: this.previousConfidence,
+                                lowImprovementCount: this.lowImprovementCount,
+                                minDeltaThreshold: this.MIN_DELTA_THRESHOLD,
+                                maxLowImprovements: this.MAX_LOW_IMPROVEMENTS
+                            }
+                        })
+                        : {
+                            decision: defaultDeltaContinue,
+                            nextPreviousConfidence: this.previousConfidence,
+                            nextLowImprovementCount: this.lowImprovementCount
+                        };
+                    this.previousConfidence = deltaEvaluation.nextPreviousConfidence;
+                    this.lowImprovementCount = deltaEvaluation.nextLowImprovementCount;
+                    const finalDeltaStopDecision = deltaEvaluation.decision;
+                    this.currentSignals.stop = finalDeltaStopDecision;
                     if (finalDeltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
                         this.logger.info('execution_stopped_delta', `[STOP] ${finalDeltaStopDecision.reason} global_confidence=${globalConf.toFixed(2)}`);
                         break;
@@ -1807,9 +1844,6 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
-                if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
-                    throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
-                }
                 await emitProgress({ stage: 'finalizing', iteration: i + 1 });
                 const sanitizedAnswer = this.sanitizeUserFacingAnswer(response.final_answer);
                 const safeAnswer = this.applyExecutionClaimGuard(sanitizedAnswer, toolCallsCount, toolEvidence);
@@ -1866,7 +1900,11 @@ export class AgentLoop {
         });
 
         if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
-            throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
+            this.logger.warn('real_tools_only_without_tool_calls', '[GOVERNANCE] REAL_TOOLS_ONLY sem tool call; aplicando reality-check em vez de falha dura', {
+                task_type: this.currentTaskType,
+                has_pending_steps: hasPendingFallback,
+                fail_safe: this.failSafe
+            });
         }
 
         if ((this.failSafe || hasPendingFallback) && toolCallsCount === 0) {
@@ -1942,7 +1980,10 @@ export class AgentLoop {
 
             if (this.failSafe) {
                 if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
-                    throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
+                    const blockedAnswer = this.injectRealityCheck(t('loop.fail_safe.direct_attempt', { input: userInput }));
+                    const blockedMsg: MessagePayload = { role: 'assistant', content: blockedAnswer };
+                    newMessages.push(blockedMsg);
+                    return { answer: blockedAnswer, newMessages };
                 }
                 const failSafeAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
                 const failSafeMsg: MessagePayload = { role: 'assistant', content: failSafeAnswer };
@@ -1955,11 +1996,29 @@ export class AgentLoop {
     }
 
     private applyExecutionClaimGuard(answer: string, toolCallsCount: number, toolEvidence: string[]): string {
-        if (!this.hasExecutionClaim(answer)) {
+        const hasExecutionClaim = this.hasExecutionClaim(answer);
+        const hasGroundingEvidence = toolCallsCount > 0 && this.hasGroundingEvidence(answer, toolEvidence);
+
+        const realityCheckSignal = this.buildRealityCheckSignal(hasExecutionClaim, hasGroundingEvidence, toolCallsCount);
+        this.currentSignals.realityCheck = realityCheckSignal;
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+
+        if (!hasExecutionClaim) {
             return answer;
         }
 
-        if (toolCallsCount > 0 && this.hasGroundingEvidence(answer, toolEvidence)) {
+        if (hasGroundingEvidence) {
+            return answer;
+        }
+
+        const loopDecisionRealityCheck = realityCheckSignal.shouldInject;
+        const orchestratorDecisionRealityCheck = this.orchestrator?.decideRealityCheck({
+            sessionId: this.chatId,
+            signal: realityCheckSignal
+        });
+        const finalDecisionRealityCheck = orchestratorDecisionRealityCheck ?? loopDecisionRealityCheck;
+
+        if (!finalDecisionRealityCheck) {
             return answer;
         }
 
@@ -1984,6 +2043,33 @@ export class AgentLoop {
         }
 
         return toolEvidence.length > 0;
+    }
+
+    private buildRealityCheckSignal(hasExecutionClaim: boolean, hasGroundingEvidence: boolean, toolCallsCount: number): RealityCheckSignal {
+        if (!hasExecutionClaim) {
+            return {
+                shouldInject: false,
+                reason: 'no_execution_claim',
+                toolCallsCount,
+                hasGroundingEvidence
+            };
+        }
+
+        if (hasGroundingEvidence) {
+            return {
+                shouldInject: false,
+                reason: 'grounded_by_tool_evidence',
+                toolCallsCount,
+                hasGroundingEvidence
+            };
+        }
+
+        return {
+            shouldInject: true,
+            reason: toolCallsCount > 0 ? 'missing_grounding_evidence' : 'no_tool_call',
+            toolCallsCount,
+            hasGroundingEvidence
+        };
     }
 
     private injectRealityCheck(answer: string): string {
@@ -2076,10 +2162,6 @@ export class AgentLoop {
     }
 
     private requiresRealWorldAction(taskType: TaskType | null, route: ExecutionRoute): boolean {
-        if (route === ExecutionRoute.TOOL_LOOP) {
-            return true;
-        }
-
         if (!taskType) {
             return false;
         }
@@ -2776,99 +2858,6 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         if (!plan) return false;
 
         return plan.steps.some(step => !step.completed && !step.failed);
-    }
-
-    // TODO: migrar lógica de shouldStopExecution para CognitiveOrchestrator — o loop deve apenas receber o StopContinueSignal e executar.
-    private shouldStopExecution(lastStepSuccessful: boolean, stepCount: number): StopContinueSignal {
-        const hasPending = this.hasPendingSteps();
-
-        if (hasPending && this.failSafe) {
-            this.logger.info('fail_safe_prevents_stop', `[FAIL-SAFE] Impedindo parada - há steps pendentes (failSafe=true)`);
-            return { shouldStop: false, reason: 'fail_safe_prevents_stop_has_pending_steps', stepCount };
-        }
-
-        if (stepCount < 2) {
-            return { shouldStop: false, reason: 'insufficient_steps', stepCount };
-        }
-
-        const globalConfidence = this.getGlobalConfidence(this.stepValidations);
-
-        if (hasPending && globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful) {
-            const plan = this.executionContext.currentPlan;
-            const pendingCount = plan?.steps.filter((s: ExecutionStep) => !s.completed && !s.failed).length || 0;
-            this.logger.info('pending_steps_prevent_stop', `[STOP-BLOCK] Ignorando confiança alta - há ${pendingCount} steps pendentes`);
-            return { shouldStop: false, reason: 'has_pending_steps_prevent_stop', globalConfidence, stepCount };
-        }
-
-        if (globalConfidence >= this.GLOBAL_CONFIDENCE_THRESHOLD && lastStepSuccessful && !hasPending) {
-            return {
-                shouldStop: true,
-                reason: 'global_confidence_threshold_met',
-                globalConfidence,
-                stepCount
-            };
-        }
-
-        if (stepCount >= this.MAX_STEPS_BEFORE_OVEREXECUTION_CHECK) {
-            const recentValidations = this.stepValidations.slice(-3);
-            if (recentValidations.length >= 2) {
-                const avgRecent = recentValidations.reduce((a, b) => a + b, 0) / recentValidations.length;
-                if (avgRecent < 0.4) {
-                    return {
-                        shouldStop: true,
-                        reason: 'over_execution_detected',
-                        globalConfidence: avgRecent,
-                        stepCount
-                    };
-                }
-            }
-        }
-
-        return { shouldStop: false, reason: 'execution_continues', stepCount };
-    }
-
-    // TODO: migrar lógica de checkDeltaAndStop para CognitiveOrchestrator — o loop deve apenas receber o StopContinueSignal e executar.
-    private checkDeltaAndStop(stepIndex: number): StopContinueSignal {
-        if (stepIndex < 2) {
-            return { shouldStop: false, reason: 'insufficient_steps_for_delta', stepCount: stepIndex };
-        }
-
-        if (this.stepValidations.length < 2) {
-            return { shouldStop: false, reason: 'insufficient_validations_for_delta', stepCount: stepIndex };
-        }
-
-        const recent = this.stepValidations.slice(-3);
-        const currentConfidence = recent.reduce((a, b) => a + b, 0) / recent.length;
-
-        if (typeof currentConfidence !== 'number') {
-            return { shouldStop: false, reason: 'invalid_confidence', stepCount: stepIndex };
-        }
-
-        if (this.previousConfidence !== null) {
-            const delta = currentConfidence - this.previousConfidence;
-
-            console.log(`[DELTA] avg_current=${currentConfidence.toFixed(2)} prev=${this.previousConfidence?.toFixed(2) ?? 'null'} delta=${delta.toFixed(3)}`);
-
-            if (delta < this.MIN_DELTA_THRESHOLD) {
-                this.lowImprovementCount++;
-            } else {
-                this.lowImprovementCount = 0;
-            }
-        }
-
-        this.previousConfidence = currentConfidence;
-
-        if (this.lowImprovementCount >= this.MAX_LOW_IMPROVEMENTS) {
-            console.log(`[STOP] low improvement detected (${this.lowImprovementCount} steps)`);
-            return {
-                shouldStop: true,
-                reason: 'low_improvement_delta',
-                globalConfidence: currentConfidence,
-                stepCount: stepIndex
-            };
-        }
-
-        return { shouldStop: false, reason: 'delta_check_continues', globalConfidence: currentConfidence, stepCount: stepIndex };
     }
 
     private resetDeltaDetection() {

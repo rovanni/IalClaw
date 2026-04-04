@@ -27,7 +27,7 @@ async function runTests() {
     console.log('🧪 Starting Refined Multi-step Flow Continuity Tests...\n');
 
     const flowManager = new FlowManager();
-    const orchestrator = new CognitiveOrchestrator({} as any, {} as any, flowManager);
+    const orchestrator = new CognitiveOrchestrator({} as any, flowManager, null);
 
     // Test 4: Intent Contextual Escape (Multi-step)
     console.log('Test 4: Intent Contextual Escape');

@@ -290,7 +290,7 @@ async function run() {
     const loopResult = await SessionManager.runWithSession('test-loop-1', async () => {
         return await loop.run([{ role: 'user', content: 'instale essa dependencia' }]);
     });
-    assert.match(loopResult.answer, /Nota: nao executei esses comandos aqui/i);
+    assert.match(loopResult.answer, /Nota:\s+n[aã]o executei esses comandos aqui/i);
 
     const fallbackSignal = await (loop as any).buildToolFallbackSignal({
         step: {
@@ -341,7 +341,7 @@ async function run() {
     const groundedLoopResult = await SessionManager.runWithSession('test-loop-2', async () => {
         return await loopWithIrrelevantTool.run([{ role: 'user', content: 'instale a skill elite-powerpoint-designer' }]);
     });
-    assert.match(groundedLoopResult.answer, /Nota: nao executei esses comandos aqui/i);
+    assert.match(groundedLoopResult.answer, /Nota:\s+n[aã]o executei esses comandos aqui/i);
 
     const loopProviderWithLeak: LLMProvider = {
         async generate(): Promise<ProviderResponse> {
@@ -355,7 +355,7 @@ async function run() {
     };
 
     const loopWithLeak = new AgentLoop(loopProviderWithLeak, new SkillRegistry());
-    const leakResult = await loopWithLeak.run([{ role: 'user', content: 'Quais skills voce tem instaladas?' }]);
+    const leakResult = await loopWithLeak.run([{ role: 'user', content: 'Quais funcionalidades voce tem disponíveis?' }]);
     assert.doesNotMatch(leakResult.answer, /\[Usando skill:/i);
     assert.doesNotMatch(leakResult.answer, /<\/?arg_[a-z_]+>/i);
     assert.ok(leakResult.answer.length > 0);

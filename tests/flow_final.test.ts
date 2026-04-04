@@ -27,7 +27,7 @@ async function runTests() {
     console.log('🧪 Final Cognitive Flow Integration Tests...\n');
 
     const flowManager = new FlowManager();
-    const orchestrator = new CognitiveOrchestrator({} as any, {} as any, flowManager);
+    const orchestrator = new CognitiveOrchestrator({} as any, flowManager, null);
 
     // Test 1: Persistence
     console.log('Test 1: Persistence survival');
@@ -45,7 +45,7 @@ async function runTests() {
     // Test 2: Precedence (Reactive > Flow)
     console.log('\nTest 2: Precedence (Reactive > Flow)');
     session.reactive_state = { hasFailure: true };
-    const decision = await orchestrator.decide({ input: 'test' });
+    const decision = await orchestrator.decide({ sessionId, input: 'test' });
     if (decision.strategy !== CognitiveStrategy.FLOW) {
         console.log('✅ OK: Reactive recovery inhibited FLOW strategy.');
     } else {
