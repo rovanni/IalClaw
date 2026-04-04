@@ -5,7 +5,7 @@ import { emitDebug } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
 import { CognitiveOrchestrator } from '../core/orchestrator/CognitiveOrchestrator';
 import { t } from '../i18n';
-import { classifyTask, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
+import { classifyTask, getForcedExecutablePlanForTaskType, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
 import { TaskContextSignals } from '../core/context/TaskContextSignals';
 import { getPlanExecutionValidator, PlanExecutionValidator } from '../core/validation/PlanExecutionValidator';
@@ -277,22 +277,33 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
     'localizar arquivo': ['list_directory', 'search_file', 'read_local_file'],
     'buscar arquivo': ['list_directory', 'search_file', 'read_local_file'],
     'procurar arquivo': ['list_directory', 'search_file'],
+    'verificar formato do arquivo': ['read_local_file'],
+    'converter para formato de destino': ['file_convert'],
+    'converter conteúdo': ['file_convert'],
+    'obter conteúdo fonte': ['read_local_file', 'list_directory'],
     'listar diretório': ['list_directory'],
     'ler arquivo': ['read_local_file'],
     'ler conteúdo': ['read_local_file'],
     'escrever arquivo': ['write_file'],
     'salvar arquivo': ['write_file'],
+    'salvar resultado': ['write_file', 'workspace_save_artifact'],
     'criar arquivo': ['write_file'],
     'criar diretório': ['create_directory'],
     'deletar arquivo': ['delete_file'],
     'remover arquivo': ['delete_file'],
     'mover arquivo': ['move_file'],
     'renomear arquivo': ['move_file'],
+    'verificar pré-requisitos': ['list_directory', 'exec_command'],
+    'preparar comando': ['exec_command'],
+    'executar operação': ['exec_command', 'run_python'],
+    'verificar resultado': ['exec_command', 'list_directory', 'read_local_file'],
+    'reportar status': ['list_directory'],
     'buscar na web': ['web_search'],
     'pesquisar': ['web_search'],
     'buscar URL': ['fetch_url'],
     'obter hora': ['get_system_time'],
     'instalar skill': ['write_skill_file', 'promote_skill_temp'],
+    'executar instalação': ['write_skill_file', 'promote_skill_temp'],
     'identificar nome': ['web_search'],
     'verificar se já está instalada': ['list_directory'],
     'buscar skill': ['web_search'],
@@ -632,14 +643,23 @@ export class AgentLoop {
         }
 
         // generic_task AGORA TEM PLANO ÚTIL (não é mais "processar entrada")
+        const executableForcedPlan = getForcedExecutablePlanForTaskType(this.currentTaskType);
         const forcedPlan = getForcedPlanForTaskType(this.currentTaskType);
-        if (forcedPlan) {
-            const steps = forcedPlan.map((desc, idx) => ({
-                id: idx + 1,
-                description: desc,
-                completed: false,
-                failed: false
-            }));
+        if (executableForcedPlan || forcedPlan) {
+            const steps = executableForcedPlan
+                ? executableForcedPlan.map((step, idx) => ({
+                    id: idx + 1,
+                    description: step.description,
+                    tool: step.tool,
+                    completed: false,
+                    failed: false
+                }))
+                : (forcedPlan || []).map((desc, idx) => ({
+                    id: idx + 1,
+                    description: desc,
+                    completed: false,
+                    failed: false
+                }));
 
             this.executionContext.currentPlan = {
                 goal: this.originalInput,
@@ -928,11 +948,23 @@ export class AgentLoop {
         // antes de permitir curto-circuito. Safe mode: orchestratorDecision ?? loopDecision
         // ═══════════════════════════════════════════════════════════════════
         const planForIntent = this.executionContext.currentPlan;
-        const planRequiresTools = planForIntent?.steps?.some(
-            step => !!this.mapStepToTool(step.description)
-        ) || false;
+        const requiresRealWorldAction = this.requiresRealWorldAction(this.currentTaskType, decision.route);
+        const planExecutability = this.evaluatePlanExecutability(planForIntent);
+        const planRequiresTools = requiresRealWorldAction
+            ? true
+            : planExecutability.planRequiresTools;
         const inputMentionsSkill = /\bskill\b/i.test(userInput);
-        const hasExecutionIntent = planRequiresTools || inputMentionsSkill;
+        const hasExecutionIntent = requiresRealWorldAction || planRequiresTools || inputMentionsSkill;
+        const executionMode = hasExecutionIntent ? 'REAL_TOOLS_ONLY' : 'NORMAL';
+
+        if (requiresRealWorldAction && !planExecutability.isExecutablePlan) {
+            this.logger.error('non_executable_operational_plan', new Error('non_executable_operational_plan'), '[GOVERNANCE] Plano não executável para intenção operacional', {
+                taskType: this.currentTaskType,
+                step_count: planExecutability.totalSteps,
+                executable_steps: planExecutability.executableSteps
+            });
+            throw new Error(t('error.executor.non_executable_plan_for_operational_intent'));
+        }
 
         const loopDecision = !hasExecutionIntent;
         const orchestratorDecision = this.orchestrator?.decideDirectExecution({
@@ -946,25 +978,36 @@ export class AgentLoop {
         const finalDirectDecision = orchestratorDecision ?? loopDecision;
 
         this.logger.info('short_circuit_governance', '[GOVERNANCE] Governança do short-circuit avaliada', {
+            requiresRealWorldAction,
             hasExecutionIntent,
             planRequiresTools,
+            planExecutable: planExecutability.isExecutablePlan,
             inputMentionsSkill,
             loopDecision,
             orchestratorDecision: orchestratorDecision ?? 'undefined',
             finalDirectDecision,
+            executionMode,
             strategy: routeAutonomySignal.recommendedStrategy
         });
 
         // TODO (Single Brain): RouteAutonomySignal deve ser decidido pelo CognitiveOrchestrator.
         // AgentLoop deve apenas executar a estrategia ja definida.
         if (routeAutonomySignal.recommendedStrategy === 'DIRECT_LLM') {
+            if (executionMode === 'REAL_TOOLS_ONLY') {
+                this.logger.info('short_circuit_blocked_real_tools_only', '[GOVERNANCE] DIRECT_LLM bloqueado por REAL_TOOLS_ONLY', {
+                    hasExecutionIntent,
+                    task_type: this.currentTaskType
+                });
+            }
             if (finalDirectDecision) {
                 this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
                     mode: 'cognitive_direct',
                     bypass_loop: true,
                     task_type: this.currentTaskType
                 });
-                return this.executeContentGenerationDirect(userInput, initialMessages);
+                if (executionMode !== 'REAL_TOOLS_ONLY') {
+                    return this.executeContentGenerationDirect(userInput, initialMessages);
+                }
             }
             this.logger.info('short_circuit_blocked', '[GOVERNANCE] Short-circuit bloqueado — intenção de execução detectada, continuando para loop', {
                 hasExecutionIntent,
@@ -1080,8 +1123,10 @@ export class AgentLoop {
         // ═══════════════════════════════════════════════════════════════════
         // EXPLICABILIDADE: Simular plano antes de agir
         // ═══════════════════════════════════════════════════════════════════
-        const planExplanation = await this.simulatePlan(userInput, decision.subtype);
-        this.logger.info('action_plan_simulated', '[COGNITIVE] Plano simulado para o usuário', { explanation: planExplanation });
+        if (executionMode !== 'REAL_TOOLS_ONLY') {
+            const planExplanation = await this.simulatePlan(userInput, decision.subtype);
+            this.logger.info('action_plan_simulated', '[COGNITIVE] Plano simulado para o usuário', { explanation: planExplanation });
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // FLUXO NORMAL: Outros tipos de tarefa usam loop
@@ -1725,6 +1770,9 @@ export class AgentLoop {
             }
 
             if (response.final_answer) {
+                if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
+                    throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
+                }
                 await emitProgress({ stage: 'finalizing', iteration: i + 1 });
                 const sanitizedAnswer = this.sanitizeUserFacingAnswer(response.final_answer);
                 const safeAnswer = this.applyExecutionClaimGuard(sanitizedAnswer, toolCallsCount, toolEvidence);
@@ -1779,6 +1827,10 @@ export class AgentLoop {
             fail_safe: this.failSafe,
             has_pending_steps: hasPendingFallback
         });
+
+        if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
+            throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
+        }
 
         if ((this.failSafe || hasPendingFallback) && toolCallsCount === 0) {
             this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
@@ -1852,6 +1904,9 @@ export class AgentLoop {
             this.logMemoryStats();
 
             if (this.failSafe) {
+                if (executionMode === 'REAL_TOOLS_ONLY' && toolCallsCount === 0) {
+                    throw new Error(t('error.executor.real_tools_only_no_tool_calls'));
+                }
                 const failSafeAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
                 const failSafeMsg: MessagePayload = { role: 'assistant', content: failSafeAnswer };
                 newMessages.push(failSafeMsg);
@@ -1981,6 +2036,42 @@ export class AgentLoop {
             }
         }
         return undefined;
+    }
+
+    private requiresRealWorldAction(taskType: TaskType | null, route: ExecutionRoute): boolean {
+        if (route === ExecutionRoute.TOOL_LOOP) {
+            return true;
+        }
+
+        if (!taskType) {
+            return false;
+        }
+
+        return ['filesystem', 'file_conversion', 'file_search', 'system_operation', 'skill_installation'].includes(taskType);
+    }
+
+    private evaluatePlanExecutability(plan: ExecutionPlan | null): {
+        planRequiresTools: boolean;
+        isExecutablePlan: boolean;
+        totalSteps: number;
+        executableSteps: number;
+    } {
+        if (!plan || plan.steps.length === 0) {
+            return {
+                planRequiresTools: false,
+                isExecutablePlan: false,
+                totalSteps: 0,
+                executableSteps: 0
+            };
+        }
+
+        const executableSteps = plan.steps.filter(step => !!(step.tool || this.mapStepToTool(step.description))).length;
+        return {
+            planRequiresTools: executableSteps > 0,
+            isExecutablePlan: executableSteps === plan.steps.length,
+            totalSteps: plan.steps.length,
+            executableSteps
+        };
     }
 
     private getNextStepFromLLM(messages: MessagePayload[], currentPlan: ExecutionPlan): ExecutionStep | null {

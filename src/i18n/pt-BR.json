@@ -62,6 +62,8 @@
   "error.executor.governance.input_oscillation": "Auto-recuperação bloqueada pela governança do Orquestrador: oscilação de entrada detectada",
   "error.executor.governance.missing_runtime_dependency": "Auto-recuperação bloqueada pela governança do Orquestrador: dependência de runtime ausente ({error})",
   "error.executor.governance.equivalent_error_loop": "Auto-recuperação bloqueada pela governança do Orquestrador: loop de erro equivalente ({error})",
+  "error.executor.non_executable_plan_for_operational_intent": "Plano não executável gerado para intenção operacional.",
+  "error.executor.real_tools_only_no_tool_calls": "Execução bloqueada: nenhuma tool foi acionada para intenção operacional.",
   "error.parse_llm_json.empty_response": "Resposta vazia do LLM.",
   "error.parse_llm_json.recovery_failed": "Falha ao parsear JSON do LLM após tentativas de recuperação:\n{preview}",
   "error.plan.hallucinated_tool": "Validação falhou: tool alucinada detectada no plano -> {tool}",

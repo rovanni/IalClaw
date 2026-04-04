@@ -62,6 +62,8 @@
   "error.executor.governance.input_oscillation": "Self-healing blocked by Orchestrator governance: input oscillation detected",
   "error.executor.governance.missing_runtime_dependency": "Self-healing blocked by Orchestrator governance: missing runtime dependency ({error})",
   "error.executor.governance.equivalent_error_loop": "Self-healing blocked by Orchestrator governance: equivalent error loop ({error})",
+  "error.executor.non_executable_plan_for_operational_intent": "Non-executable plan generated for an operational intent.",
+  "error.executor.real_tools_only_no_tool_calls": "Execution blocked: no tool was invoked for an operational intent.",
   "error.parse_llm_json.empty_response": "Empty LLM response.",
   "error.parse_llm_json.recovery_failed": "Failed to parse LLM JSON after recovery attempts:\n{preview}",
   "error.plan.hallucinated_tool": "Validation failed: hallucinated tool detected in plan -> {tool}",

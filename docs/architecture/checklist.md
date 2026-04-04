@@ -22,6 +22,11 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- **ETAPA ANTI-SIMULAÇÃO IMPLEMENTADA**: `AgentLoop` agora força modo `REAL_TOOLS_ONLY` para intenção operacional, bloqueia `DIRECT_LLM`/simulação nesse contexto e falha quando `tools_count === 0`.
+- Guardrail de executabilidade adicionado: para intenção operacional, o plano precisa ser executável (steps mapeáveis para tool) antes da execução; caso contrário, erro controlado i18n é lançado.
+- `TaskClassifier` passou a expor plano forçado executável estruturado (`description`, `tool`, `params`) para intenções operacionais, e o `AgentLoop.ensureMinimalPlan` reaproveita esse contrato sem reimplementar heurísticas.
+- `STEP_TOOL_MAPPING` ampliado para cobrir steps operacionais do plano forçado (`file_conversion`, `system_operation`, `skill_installation`) sem criar fluxo paralelo.
+- Catálogos i18n atualizados (`pt-BR` e `en-US`) com erros de governança de execução real: plano não executável e ausência de tool call.
 - Integracao do `IntentClassifier` centralizada em `src/core/intent/` com detectores dedicados (`ExplorationDetector`, `ExecutionDetector`, `ConversionDetector`) sem bypass de decisao.
 - `AgentController` atualizado para classificar intencao antes da decisao cognitiva e repassar `intent` ao `CognitiveOrchestrator` como contexto adicional.
 - `CognitiveOrchestrator` atualizado para receber `intent` em `decide(...)` e tratar `EXPLORATION` internamente (estrategia `ASK`) com resposta i18n, mantendo autoridade unica de decisao no Orchestrator.

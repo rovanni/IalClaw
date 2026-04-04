@@ -36,6 +36,12 @@ export interface TaskClassification {
     lastTaskType?: TaskType;      // Tipo da última tarefa (se continuação)
 }
 
+export interface ForcedExecutableStep {
+    description: string;
+    tool: string;
+    params: Record<string, unknown>;
+}
+
 // ── Detecção de Continuidade ─────────────────────────────────────────────
 
 const CONTINUATION_INDICATORS = [
@@ -910,5 +916,48 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
                 'executar ação apropriada',
                 'verificar resultado'
             ];
+    }
+}
+
+export function getForcedExecutablePlanForTaskType(type: TaskType): ForcedExecutableStep[] | null {
+    switch (type) {
+        case 'filesystem':
+            return [
+                { description: 'criar diretório', tool: 'create_directory', params: {} },
+                { description: 'criar arquivo', tool: 'write_file', params: {} },
+                { description: 'salvar arquivo', tool: 'write_file', params: {} }
+            ];
+        case 'file_search':
+            return [
+                { description: 'localizar arquivo no diretório alvo', tool: 'search_file', params: {} },
+                { description: 'listar diretório', tool: 'list_directory', params: {} },
+                { description: 'ler arquivo', tool: 'read_local_file', params: {} }
+            ];
+        case 'file_conversion':
+            return [
+                { description: 'localizar arquivo de origem', tool: 'read_local_file', params: {} },
+                { description: 'verificar formato do arquivo', tool: 'read_local_file', params: {} },
+                { description: 'converter para formato de destino', tool: 'file_convert', params: {} },
+                { description: 'salvar resultado', tool: 'write_file', params: {} },
+                { description: 'verificar conversão', tool: 'read_local_file', params: {} }
+            ];
+        case 'system_operation':
+            return [
+                { description: 'verificar pré-requisitos', tool: 'list_directory', params: {} },
+                { description: 'preparar comando', tool: 'exec_command', params: {} },
+                { description: 'executar operação', tool: 'exec_command', params: {} },
+                { description: 'verificar resultado', tool: 'exec_command', params: {} },
+                { description: 'reportar status', tool: 'list_directory', params: {} }
+            ];
+        case 'skill_installation':
+            return [
+                { description: 'identificar nome da skill', tool: 'web_search', params: {} },
+                { description: 'verificar se já está instalada', tool: 'list_directory', params: {} },
+                { description: 'buscar skill no repositório', tool: 'web_search', params: {} },
+                { description: 'executar instalação', tool: 'write_skill_file', params: {} },
+                { description: 'verificar instalação', tool: 'list_directory', params: {} }
+            ];
+        default:
+            return null;
     }
 }
