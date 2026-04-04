@@ -28,9 +28,12 @@ import { agentConfig } from './AgentConfig';
 import {
     getRequiredCapabilitiesForStep,
     requiresDOM,
-    resolveRuntimeModeForPlan,
+    extractPlanRuntimeSignals,
+    legacyResolveRuntimeModeForPlan,
+    mapLegacyToDecision,
     sanitizeStep
 } from '../../capabilities/stepCapabilities';
+
 import { cloneExecutionPlan, RepairResult, repairPlanStructure } from './repairPipeline';
 import { hashLearningInput, pushLearningRecord } from './operationalLearning';
 import { RuntimeDecision } from '../runtime/decisionGate';
@@ -848,9 +851,22 @@ export class AgentExecutor {
             }
 
             const workspaceContextForRuntime = buildWorkspaceContext(session.current_project_id);
-            const runtimeMode = resolveRuntimeModeForPlan(plan, workspaceContextForRuntime);
+            
+            // NOVO FLUXO SINGLE BRAIN (KB-002) - Centralização da autoridade
+            const signals = extractPlanRuntimeSignals(plan, workspaceContextForRuntime);
+            const orchestratorDecision = this.orchestrator?.decidePlanRuntimeMode(signals);
+            
+            // SAFE MODE: Fallback para adapter legado se o orquestrador delegar (null)
+            const runtimeDecision = orchestratorDecision ?? mapLegacyToDecision(
+                legacyResolveRuntimeModeForPlan(plan, workspaceContextForRuntime)
+            );
 
-            if (runtimeMode.requiresBrowserValidation) {
+            const skipRuntimeExecution = !runtimeDecision.shouldExecute;
+            const requiresBrowserValidation = runtimeDecision.requiresBrowser;
+            const skipReasonKey = runtimeDecision.reasonKey;
+
+            if (requiresBrowserValidation) {
+
                 debugBus.emit('browser_validation_enabled', {
                     stepId: 'runtime',
                     trace_id: getTraceIdSafe()
@@ -876,23 +892,22 @@ export class AgentExecutor {
                 }
             }
 
-            if (runtimeMode.skipRuntimeExecution) {
+            if (skipRuntimeExecution) {
                 debugBus.emit('browser_skipped', {
                     stepId: 'runtime',
-                    reason: runtimeMode.skipReason || 'runtime_skipped',
+                    reason: skipReasonKey,
                     trace_id: getTraceIdSafe()
                 });
                 debugBus.emit('thought', {
                     type: 'thought',
-                    content: runtimeMode.skipReason === 'no_runnable_entry'
-                        ? '[EXECUTOR] Projeto sem entry point executavel suportado. Pulando runtime e preservando os artefatos gerados.'
-                        : '[EXECUTOR] Projeto HTML detectado sem requiresDOM. Pulando validacao em browser.'
+                    content: `[ORCHESTRATOR] ${t(skipReasonKey)}`
                 });
                 debugBus.emit('execution_success', {
                     project_id: session.current_project_id,
                     runtime_skipped: true,
-                    reason: runtimeMode.skipReason || 'runtime_skipped'
+                    reason: skipReasonKey
                 });
+
 
                 if (session.last_error && session.last_error.length < 5000) {
                     await this.memory.saveExecutionFix({

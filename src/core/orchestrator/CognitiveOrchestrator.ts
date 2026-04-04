@@ -13,12 +13,15 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal } from '../../engine/AgentLoop';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal } from '../../engine/AgentLoopTypes';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { FailSafeModule } from './modules/FailSafeModule';
 import { StopContinueDeltaContext, StopContinueDeltaEvaluationResult, StopContinueExecutionContext, StopContinueModule } from './modules/StopContinueModule';
 import { IntentResult } from '../intent/IntentResult';
+import { PlanRuntimeSignals } from '../../capabilities/stepCapabilities';
+import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecision';
+
 
 export enum CognitiveStrategy {
     FLOW = "flow",
@@ -1054,12 +1057,13 @@ export class CognitiveOrchestrator {
             context.hasPendingAction &&
             context.attempt <= 1
         ) {
-            adjustedDecision = this.stopContinueModule.createRecoveryContinuationDecision(baseDecision);
+            const recoveryDecision = this.stopContinueModule.createRecoveryContinuationDecision(baseDecision);
+            adjustedDecision = recoveryDecision;
 
             this.logger.info('stop_continue_contextual_adjustment_applied', '[ORCHESTRATOR CONTEXTUAL] Ajuste leve aplicado para preservar recuperação ativa', {
                 sessionId,
                 baseReason: baseDecision.reason,
-                adjustedReason: adjustedDecision.reason,
+                adjustedReason: recoveryDecision.reason,
                 recoveryAttempt: context.attempt,
                 hasPendingAction: context.hasPendingAction,
                 isInRecovery: context.isInRecovery
@@ -1620,4 +1624,42 @@ export class CognitiveOrchestrator {
     public async executeDecision(decision: CognitiveDecision, session: SessionContext, userQuery: string): Promise<ExecutionResult> {
         return this.actionExecutor.execute(decision, session, userQuery);
     }
+
+    /**
+     * ACTIVE MODE: Decide o modo de runtime do plano baseado em sinais puros (fatos).
+     * Esta é a centralização da lógica que anteriormente residia em stepCapabilities.
+     * 
+     * Retorna null quando o Orquestrador delega a decisão (safe mode).
+     */
+    public decidePlanRuntimeMode(signals: PlanRuntimeSignals): PlanRuntimeDecision | null {
+        // Implementação pura e determinística seguindo o modelo Single Brain
+        if (!signals.hasHtmlEntry && !signals.hasNodeEntry) {
+            return {
+                shouldExecute: false,
+                requiresBrowser: false,
+                reasonKey: RuntimeDecisionReasons.NO_RUNNABLE_ENTRY,
+                decisionSource: "orchestrator"
+            };
+        }
+
+        const isHtmlOnlyWithNoDom = signals.hasHtmlEntry && !signals.hasNodeEntry && !signals.hasDomSteps;
+
+        if (isHtmlOnlyWithNoDom) {
+            return {
+                shouldExecute: false,
+                requiresBrowser: false,
+                reasonKey: RuntimeDecisionReasons.HTML_WITHOUT_DOM,
+                decisionSource: "orchestrator"
+            };
+        }
+
+        // Caso padrão: executável (projeto Node ou HTML com DOM)
+        return {
+            shouldExecute: true,
+            requiresBrowser: signals.hasHtmlEntry && signals.hasDomSteps,
+            reasonKey: signals.hasHtmlEntry && signals.hasDomSteps ? RuntimeDecisionReasons.BROWSER_REQUIRED : RuntimeDecisionReasons.EXECUTABLE_PROJECT,
+            decisionSource: "orchestrator"
+        };
+    }
 }
+

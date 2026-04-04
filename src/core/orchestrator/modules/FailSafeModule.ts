@@ -1,4 +1,4 @@
-import { FailSafeSignal } from '../../../engine/AgentLoop';
+import { FailSafeSignal } from '../../../engine/AgentLoopTypes';
 
 export class FailSafeModule {
     public decide(signal: FailSafeSignal): FailSafeSignal | undefined {

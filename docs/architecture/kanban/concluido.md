@@ -1,6 +1,15 @@
 # Concluído
 
+- [x] KB-038 - Modularizar validação de StepResult e corrigir imports tipados pós-extração
+  - Data: 2026-04-04
+  - Evidência: `StepResultValidator` criado e integrado; imports de tipos migrados para `AgentLoopTypes` em AgentController/CognitiveOrchestrator/FailSafeModule/StopContinueModule; correção TS18048 aplicada em CognitiveOrchestrator; suíte `npm.cmd test` validada sem regressão funcional.
+
+- [x] KB-002 - Refatorar stepCapabilities para Pure Signals (sem decisão)
+  - Data: 2026-04-04
+  - Evidência: stepCapabilities agora extrai PlanRuntimeSignals puros; CognitiveOrchestrator possui a autoridade única via decidePlanRuntimeMode; AgentExecutor opera em Safe Mode consumindo decisões centrais.
+
 - [x] KB-022 - Follow-up Skill Flow Single Brain
+
   - Data: 2026-04-04
   - Evidência: src/core/AgentController.ts (runWithSkill) migrou decisões ativas para applyActiveDecisions e passou a auditar consistência com auditSignalConsistency após ingestão/aplicação
 

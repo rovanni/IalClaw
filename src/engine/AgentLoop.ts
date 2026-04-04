@@ -16,273 +16,33 @@ import { ResultEvaluator } from './ResultEvaluator';
 import { DecisionMemory, ToolDecision } from '../memory';
 import { getActionRouter, ExecutionRoute } from '../core/autonomy/ActionRouter';
 import { getSecurityPolicy } from '../core/policy/SecurityPolicyProvider';
+import { StepResultValidator } from '../core/validation/StepResultValidator';
+import { 
+    AgentMode, 
+    LoopIntentMode,
+    AgentProgressEvent, 
+    ExecutionStep, 
+    ExecutionPlan, 
+    ExecutionContext, 
+    StepValidation, 
+    StepValidationSignal, 
+    StepValidationResult, 
+    ToolFallbackTrigger, 
+    ToolFallbackSignal, 
+    LlmRetrySignal, 
+    ReclassificationSignal, 
+    RouteAutonomySignal,
+    PlanAdjustmentSignal, 
+    PlanAdjustmentResult,
+    RealityCheckSignal,
+    StopContinueSignal,
+    FailSafeActivationTrigger,
+    FailSafeSignal,
+    CognitiveSignalsState,
+    ExecutionMemoryEntry,
+    ToolScore
+} from './AgentLoopTypes';
 
-export type AgentProgressEvent = {
-    stage:
-    | 'loop_started'
-    | 'iteration_started'
-    | 'llm_started'
-    | 'llm_completed'
-    | 'tool_started'
-    | 'tool_completed'
-    | 'tool_failed'
-    | 'finalizing'
-    | 'completed'
-    | 'stopped'
-    | 'failed'
-    | 'planning'
-    | 'executing_step';
-    iteration?: number;
-    tool_name?: string;
-    duration_ms?: number;
-};
-
-export type ExecutionStep = {
-    id: number;
-    description: string;
-    tool?: string;
-    completed: boolean;
-    failed: boolean;
-    error?: string;
-    result?: string;
-};
-
-export type ExecutionPlan = {
-    goal: string;
-    steps: ExecutionStep[];
-    meta?: {
-        source: PlanSource;
-    };
-    currentStepIndex: number;
-    createdAt: number;
-    triedPaths: string[];
-    failedTools: Map<string, number>;
-};
-
-export type ExecutionContext = {
-    currentPlan: ExecutionPlan | null;
-    pathsTried: Set<string>;
-    toolsFailed: Map<string, number>;
-    lastToolResult: string | null;
-    planTaskType: TaskType | null;
-    currentStepIndex?: number;
-};
-
-export type StepValidation = {
-    success: boolean;
-    confidence: number;
-    reason: string;
-    needsLlm: boolean;
-};
-
-export type StepValidationSignal = {
-    validationPassed: boolean;
-    reason: 'step_validation_passed' | 'step_validation_failed';
-    confidence: number;
-    failureReason?: string;
-    requiresLlmReview: boolean;
-};
-
-export type StepValidationResult = {
-    validation: StepValidation;
-    signal: StepValidationSignal;
-};
-
-export type ToolFallbackTrigger =
-    | 'tool_repetition'
-    | 'tool_failure_history'
-    | 'memory_block'
-    | 'reliability_risk'
-    | 'retry_refinement';
-
-export type ToolFallbackSignal = {
-    trigger: ToolFallbackTrigger;
-    fallbackRecommended: boolean;
-    originalTool: string;
-    suggestedTool?: string;
-    context?: {
-        toolName: string;
-        error?: string;
-        attemptCount: number;
-        maxAttempts: number;
-        lastResult: string | null;
-        step?: {
-            id: number;
-            description: string;
-            tool?: string;
-        };
-        executionContext: {
-            hasPlan: boolean;
-            currentStepIndex: number;
-            failedToolsCount: number;
-        };
-    };
-    reason:
-    | 'fallback_available'
-    | 'no_step_context'
-    | 'no_fallback_available'
-    | 'same_tool_only'
-    | 'incompatible_fallback';
-};
-
-export type LlmRetrySignal = {
-    retryRecommended: boolean;
-    reason: 'needs_llm_validation' | 'step_succeeded' | 'failure_limit_reached';
-    consecutiveFailures: number;
-};
-
-export type ReclassificationSignal = {
-    reclassificationRecommended: boolean;
-    reason: 'failure_limit_reached' | 'low_step_confidence' | 'classification_unchanged' | 'low_classifier_confidence' | 'attempt_limit_reached' | 'missing_input';
-    suggestedTaskType: TaskType | null;
-    confidence: number;
-};
-
-export type RouteAutonomySignal = {
-    recommendedStrategy: 'DIRECT_LLM' | 'HYBRID' | 'ASK' | 'CONFIRM' | 'TOOL_LOOP';
-    reason: 'low_risk_direct_llm' | 'orchestrator_hybrid' | 'autonomy_confirm' | 'autonomy_ask' | 'tool_loop_required';
-    confidence: number;
-    requiresUserConfirmation: boolean;
-    requiresUserInput: boolean;
-    suggestedTool?: string;
-    route: ExecutionRoute;
-    autonomyDecision: AutonomyDecision;
-};
-
-export type PlanAdjustmentSignal = {
-    shouldAdjustPlan: boolean;
-    reason: 'step_failed';
-    suggestedActions: ['adjust_next_step', 'use_alternative_tool', 'change_strategy'];
-    failedStep: string;
-    failureReason: string;
-};
-
-export type PlanAdjustmentResult = {
-    messages: MessagePayload[];
-    signal: PlanAdjustmentSignal;
-};
-
-export type RealityCheckSignal = {
-    shouldInject: boolean;
-    reason: 'no_execution_claim' | 'grounded_by_tool_evidence' | 'no_tool_call' | 'missing_grounding_evidence';
-    toolCallsCount: number;
-    hasGroundingEvidence: boolean;
-};
-
-// ─── Stop/Continue Signal ────────────────────────────────────────────────────
-// Formaliza a decisão de parar ou continuar o loop de execução.
-// TODO: migrar tomada de decisão para CognitiveOrchestrator.
-export type StopContinueSignal = {
-    shouldStop: boolean;
-    reason:
-        | 'global_confidence_threshold_met'
-        | 'over_execution_detected'
-        | 'has_pending_steps_prevent_stop'
-        | 'fail_safe_prevents_stop_has_pending_steps'
-        | 'insufficient_steps'
-        | 'execution_continues'
-        | 'recurrent_failure_detected'
-        | 'low_improvement_delta'
-        | 'delta_check_continues'
-        | 'insufficient_steps_for_delta'
-        | 'insufficient_validations_for_delta'
-        | 'invalid_confidence';
-    globalConfidence?: number;
-    stepCount?: number;
-};
-
-// ─── Fail-Safe Signal ────────────────────────────────────────────────────────
-// Formaliza a decisão de ativar o modo fail-safe automático.
-// TODO: migrar tomada de decisão para CognitiveOrchestrator.
-export type FailSafeActivationTrigger =
-    | 'intent_clear'
-    | 'unknown_task_type'
-    | 'generic_task_type'
-    | 'force_type_override_disabled'
-    | 'not_activated';
-
-export type FailSafeSignal = {
-    activated: boolean;
-    trigger: FailSafeActivationTrigger;
-    failureCount?: number;
-    lastError?: string;
-    step?: string;
-    tool?: string;
-    retryAttempts?: number;
-    contextSnapshot?: {
-        mode: AgentMode;
-        taskType: TaskType | null;
-        taskConfidence: number;
-        hasPlan: boolean;
-        pendingSteps: number;
-        toolsFailed: number;
-        lowImprovementCount: number;
-        isContinuation: boolean;
-    };
-};
-
-// ─── Aggregated Cognitive Signals State ─────────────────────────────────────
-// Consolida todos os signals ativos da iteração corrente num único ponto de
-// leitura. Nenhuma lógica de decisão vive aqui — é apenas um espelho organizado
-// do que já foi decidido localmente no AgentLoop.
-// TODO: quando o CognitiveOrchestrator assumir, ele lerá/preencherá este estado
-// em vez do AgentLoop fazer isso diretamente.
-export type CognitiveSignalsState = {
-    route?: RouteAutonomySignal;
-    fallback?: ToolFallbackSignal;
-    validation?: StepValidationSignal;
-    stop?: StopContinueSignal;
-    failSafe?: FailSafeSignal;
-    // ETAPA 4 — signals extraídos do mini-brain do AgentLoop
-    // AgentLoop ainda decide localmente (safe stage); Orchestrator consumirá em fase futura.
-    reclassification?: ReclassificationSignal;
-    llmRetry?: LlmRetrySignal;
-    planAdjustment?: PlanAdjustmentSignal;
-    realityCheck?: RealityCheckSignal;
-};
-
-export type ExecutionMemoryEntry = {
-    stepType: string;
-    tool: string;
-    success: boolean;
-    context: string;
-    timestamp: number;
-};
-
-export type ToolScore = {
-    tool: string;
-    score: number;
-    successes: number;
-    failures: number;
-};
-
-const EXECUTION_CLAIM_PATTERNS: RegExp[] = [
-    /\binstalled\b/i,
-    /\binstalad[oa]\b/i,
-    /\badded\s+\d+\s+packages\b/i,
-    /\bcreated\s+(file|project|artifact)\b/i,
-    /\bcriad[oa]\s+com\s+sucesso\b/i,
-    /\bexecuted\s+successfully\b/i,
-    /\bexecu(tado|cao)\s+com\s+sucesso\b/i,
-    /\bbuild\s+(successful|completed|ok)\b/i,
-    /\bdeploy\s+(successful|completed|concluido|concluida)\b/i,
-    /\b(npm\s+install|yarn\s+add|pnpm\s+add|pip\s+install)\b/i
-];
-
-const INSTALL_SUCCESS_CLAIM_PATTERNS: RegExp[] = [
-    /\bskill\s+instalad[oa]\s+com\s+sucesso\b/i,
-    /\binstalad[oa]\s+com\s+sucesso\b/i,
-    /\binstalled\s+successfully\b/i,
-    /\badded\s+\d+\s+packages\b/i
-];
-
-const INSTALL_EVIDENCE_PATTERNS: RegExp[] = [
-    /OK:\s*(SKILL\.md|skill\.json|README\.md)\s+salvo\s+em\s+skills\/public\//i,
-    /skills\/public\/[a-z0-9\-_]+\//i,
-    /auditoria\s+(aprovada|concluida\s+com\s+sucesso)/i,
-    /added\s+\d+\s+packages/i,
-    /•\s+[a-z0-9\-_]+/i
-];
 
 const STEP_TOOL_MAPPING: Record<string, string[]> = {
     'localizar arquivo': ['list_directory', 'search_file', 'read_local_file'],
@@ -322,9 +82,6 @@ const STEP_TOOL_MAPPING: Record<string, string[]> = {
     'verificar skill': ['read_audit_log'],
     'verificar instalação': ['list_directory'],
 };
-
-export type AgentMode = 'THINKING' | 'EXECUTION';
-type LoopIntentMode = 'EXPLORATION' | 'EXECUTION' | 'HYBRID' | 'UNKNOWN';
 
 export const TASK_TOOL_MAP: Record<string, string[]> = {
     'file_conversion': ['file_convert', 'read_local_file', 'list_directory', 'run_python', 'exec_command'],
@@ -1996,10 +1753,10 @@ export class AgentLoop {
     }
 
     private applyExecutionClaimGuard(answer: string, toolCallsCount: number, toolEvidence: string[]): string {
-        const hasExecutionClaim = this.hasExecutionClaim(answer);
-        const hasGroundingEvidence = toolCallsCount > 0 && this.hasGroundingEvidence(answer, toolEvidence);
+        const hasExecutionClaim = StepResultValidator.validateExecutionClaim(answer);
+        const hasGroundingEvidence = toolCallsCount > 0 && StepResultValidator.validateGroundingEvidence(answer, toolEvidence);
 
-        const realityCheckSignal = this.buildRealityCheckSignal(hasExecutionClaim, hasGroundingEvidence, toolCallsCount);
+        const realityCheckSignal = StepResultValidator.buildRealityCheckSignal(hasExecutionClaim, hasGroundingEvidence, toolCallsCount);
         this.currentSignals.realityCheck = realityCheckSignal;
         this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
 
@@ -2028,48 +1785,6 @@ export class AgentLoop {
         });
 
         return this.injectRealityCheck(answer);
-    }
-
-    private hasExecutionClaim(text: string): boolean {
-        return EXECUTION_CLAIM_PATTERNS.some(pattern => pattern.test(text));
-    }
-
-    private hasGroundingEvidence(answer: string, toolEvidence: string[]): boolean {
-        const evidenceBlob = toolEvidence.join('\n');
-
-        const claimsInstallSuccess = INSTALL_SUCCESS_CLAIM_PATTERNS.some(pattern => pattern.test(answer));
-        if (claimsInstallSuccess) {
-            return INSTALL_EVIDENCE_PATTERNS.some(pattern => pattern.test(evidenceBlob));
-        }
-
-        return toolEvidence.length > 0;
-    }
-
-    private buildRealityCheckSignal(hasExecutionClaim: boolean, hasGroundingEvidence: boolean, toolCallsCount: number): RealityCheckSignal {
-        if (!hasExecutionClaim) {
-            return {
-                shouldInject: false,
-                reason: 'no_execution_claim',
-                toolCallsCount,
-                hasGroundingEvidence
-            };
-        }
-
-        if (hasGroundingEvidence) {
-            return {
-                shouldInject: false,
-                reason: 'grounded_by_tool_evidence',
-                toolCallsCount,
-                hasGroundingEvidence
-            };
-        }
-
-        return {
-            shouldInject: true,
-            reason: toolCallsCount > 0 ? 'missing_grounding_evidence' : 'no_tool_call',
-            toolCallsCount,
-            hasGroundingEvidence
-        };
     }
 
     private injectRealityCheck(answer: string): string {

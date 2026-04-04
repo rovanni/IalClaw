@@ -25,6 +25,7 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Abril/2026: KB-038 concluído. Validação heurística de resultado de step extraída para `StepResultValidator` (paridade 1:1 de padrões/fluxo), com suíte dedicada + parity check; imports tipados pós-extração migrados para `AgentLoopTypes` em AgentController/CognitiveOrchestrator/FailSafeModule/StopContinueModule; ajuste de tipagem TS18048 no Orchestrator e suíte principal estabilizada.
 - Abril/2026: KB-022 follow-up (skill flow) aplicado em `runWithSkill`: removidas chamadas manuais de decide* no controller e consolidacao via `applyActiveDecisions(sessionId)`; auditoria `auditSignalConsistency(sessionId)` restaurada no mesmo estagio logico do fluxo principal, preservando safe mode e sem alteracao funcional.
 - Abril/2026: KB-022 concluído. Split-brain entre AgentController e AgentRuntime removido: AgentRuntime deixou de instanciar CognitiveOrchestrator local e passou a aceitar injeção externa; AgentController isolou context building/system prompt e consolidou ACTIVE DECISIONs no Orchestrator via applyActiveDecisions.
 - Abril/2026: heuristicas de stop/continue por confianca e delta foram migradas do AgentLoop para avaliacao contextual no Orchestrator (StopContinueModule), mantendo governanca central e aplicacao tecnica no loop.

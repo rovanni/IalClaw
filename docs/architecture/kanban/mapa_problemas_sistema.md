@@ -11,9 +11,10 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 - Histórico técnico: docs/architecture/kanban/historico/checklist_vivo.md
 
 ## Radar de críticos (snapshot 2026-04-04)
-- Persistem: KB-002, KB-003, KB-027
+- Persistem: KB-003, KB-027
 - Parcialmente mitigados: KB-001, KB-017, KB-020, KB-021, KB-023, KB-024
-- Resolvidos: KB-022
+- Resolvidos: KB-002, KB-022
+
 
 Observação:
 - O padrão dominante atual e governaça parcial com fallback local (safe mode), especialmente em executor e loop.

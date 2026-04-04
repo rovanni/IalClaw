@@ -3,7 +3,7 @@
 
 **Data de criação:** 2026-04-04  
 **Prioridade:** Médio  
-**Status:** Pendente
+**Status:** Concluído
 
 ---
 
@@ -217,7 +217,7 @@ Antes de aplicar qualquer patch:
 
 #### Checklist de compilação
 
-* [ ] `npx tsc --noEmit` após validação estrutural inicial
+* [x] `npx tsc --noEmit` após validação estrutural inicial
 
 ---
 
@@ -253,8 +253,8 @@ const activeDecisions = this.orchestrator.applyActiveDecisions(sessionId);
 
 #### Checklist de compilação
 
-* [ ] `npx tsc --noEmit` após a substituição inicial
-* [ ] `npx tsc --noEmit` após ajustes de tipagem/log
+* [x] `npx tsc --noEmit` após a substituição inicial
+* [x] `npx tsc --noEmit` após ajustes de tipagem/log
 
 ---
 
@@ -277,7 +277,7 @@ const activeDecisions = this.orchestrator.applyActiveDecisions(sessionId);
 
 #### Checklist de compilação
 
-* [ ] `npx tsc --noEmit` após inserir a auditoria
+* [x] `npx tsc --noEmit` após inserir a auditoria
 
 ---
 
@@ -287,12 +287,12 @@ const activeDecisions = this.orchestrator.applyActiveDecisions(sessionId);
 
 #### O que fazer
 
-1. Executar `npx tsc --noEmit` com zero erros.
-2. Executar `npm.cmd test` sem novas regressões relativamente ao estado atual.
-3. Confirmar que o fluxo principal e o fluxo de skill usam o mesmo ponto de consolidação de decisões ativas.
-4. Confirmar que o fluxo de skill agora também chama `auditSignalConsistency(sessionId)`.
-5. Atualizar `docs/architecture/kanban/historico/checklist_vivo.md`.
-6. Atualizar `docs/architecture/kanban/concluido.md` ou registrar o follow-up no histórico apropriado, com data e evidência.
+1. Executar `npx tsc --noEmit` com zero erros. [x]
+2. Executar `npm.cmd test` sem novas regressões relativamente ao estado atual. [x]
+3. Confirmar que o fluxo principal e o fluxo de skill usam o mesmo ponto de consolidação de decisões ativas. [x]
+4. Confirmar que o fluxo de skill agora também chama `auditSignalConsistency(sessionId)`. [x]
+5. Atualizar `docs/architecture/kanban/historico/checklist_vivo.md`. [x]
+6. Atualizar `docs/architecture/kanban/concluido.md` ou registrar o follow-up no histórico apropriado, com data e evidência. [x]
 
 ---
 

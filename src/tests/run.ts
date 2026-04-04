@@ -6,7 +6,7 @@ import { agentConfig, getExecutionModeSnapshot } from '../core/executor/AgentCon
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
 import { clearLearningBuffer, getLearningBuffer, hashLearningInput, pushLearningRecord } from '../core/executor/operationalLearning';
 import { normalizeExecutionPlan, repairPlanStructure } from '../core/executor/repairPipeline';
-import { requiresDOM, resolveRuntimeModeForPlan, sanitizeStep } from '../capabilities/stepCapabilities';
+import { requiresDOM, extractPlanRuntimeSignals, legacyResolveRuntimeModeForPlan, sanitizeStep } from '../capabilities/stepCapabilities';
 import { computeConfidence, evaluateSessionConsistency } from '../core/planner/plannerDiagnostics';
 import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/planner/templates/planTemplates';
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
@@ -30,6 +30,7 @@ import { getTraceId, runWithTrace } from '../shared/TraceContext';
 import { workspaceService } from '../services/WorkspaceService';
 import { TelegramOutputHandler } from '../telegram/TelegramOutputHandler';
 import { parseLlmJsonWithRecovery } from '../utils/parseLlmJson';
+import { runStepResultValidatorTests } from '../core/validation/StepResultValidator.test';
 
 class FakeProvider implements LLMProvider {
     async generate(_messages: MessagePayload[], _tools?: any[]): Promise<ProviderResponse> {
@@ -44,6 +45,8 @@ class FakeProvider implements LLMProvider {
 }
 
 async function run() {
+    runStepResultValidatorTests();
+
     assert.deepEqual(getExecutionModeSnapshot('balanced'), {
         executionMode: 'balanced',
         safeMode: true,
@@ -120,7 +123,7 @@ async function run() {
         ]
     };
 
-    const htmlRuntimeMode = resolveRuntimeModeForPlan(htmlPlan, [
+    const htmlRuntimeMode = legacyResolveRuntimeModeForPlan(htmlPlan, [
         { name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>' }
     ]);
 
@@ -141,14 +144,14 @@ async function run() {
         ]
     };
 
-    const domRuntimeMode = resolveRuntimeModeForPlan(domPlan, [
+    const domRuntimeMode = legacyResolveRuntimeModeForPlan(domPlan, [
         { name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>' }
     ]);
 
     assert.equal(domRuntimeMode.requiresBrowserValidation, true);
     assert.equal(domRuntimeMode.skipRuntimeExecution, false);
 
-    const markdownRuntimeMode = resolveRuntimeModeForPlan({
+    const markdownRuntimeMode = legacyResolveRuntimeModeForPlan({
         goal: 'registrar tarefa em markdown',
         steps: [
             {
@@ -924,6 +927,10 @@ async function run() {
             getIdentityNodes: async () => [],
             getProjectNodes: () => [],
             getConversationHistory: () => [],
+            saveProjectNode: async () => undefined,
+            indexCodeNode: async () => undefined,
+            setActiveCodeFiles: () => undefined,
+            saveExecutionFix: () => undefined,
             searchByContent: () => []
         } as any;
 
@@ -955,7 +962,48 @@ async function run() {
         assert.equal(session.retry_count, 0, 'Retry count should be reset after limit');
     });
 
+    // ── Test: KB-002 Golden Master (Runtime Governance parity) ──
+
+    await SessionManager.runWithSession('kb-002-golden-master', async () => {
+        const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+        
+        const testCases = [
+            {
+                name: 'HTML without Node and without requiresDOM',
+                plan: htmlPlan,
+                context: [{ name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>', isDir: false } as any]
+            },
+            {
+                name: 'HTML with DOM validation',
+                plan: domPlan,
+                context: [{ name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>', isDir: false } as any]
+            },
+            {
+                name: 'Pure Markdown (no runnable entry)',
+                plan: { goal: 'test', steps: [{ id: 1, type: 'tool', tool: 'workspace_save_artifact', input: {} }] } as ExecutionPlan,
+                context: [{ name: 'README.md', relative_path: 'README.md', size: 100, preview: '# test', isDir: false } as any]
+            },
+            {
+                name: 'Node project',
+                plan: { goal: 'test node', steps: [{ id: 1, type: 'tool', tool: 'workspace_save_artifact', input: {} }] } as ExecutionPlan,
+                context: [{ name: 'index.js', relative_path: 'index.js', size: 100, preview: 'console.log("hi")', isDir: false } as any]
+            }
+        ];
+
+        for (const tc of testCases) {
+            const legacy = legacyResolveRuntimeModeForPlan(tc.plan, tc.context);
+            const signals = extractPlanRuntimeSignals(tc.plan, tc.context);
+            const orchestrated = orchestrator.decidePlanRuntimeMode(signals);
+
+            assert.ok(orchestrated, `Orchestrator should decide for ${tc.name}`);
+            assert.equal(orchestrated.shouldExecute, !legacy.skipRuntimeExecution, `Parity failure (shouldExecute) in ${tc.name}`);
+            assert.equal(orchestrated.requiresBrowser, legacy.requiresBrowserValidation, `Parity failure (requiresBrowser) in ${tc.name}`);
+            assert.equal(orchestrated.decisionSource, "orchestrator");
+        }
+    });
+
     console.log('All tests passed.');
+
 }
 
 run().catch(error => {

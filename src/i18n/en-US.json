@@ -124,7 +124,10 @@
   "runtime.success.slides.title": "Slides generated successfully.",
   "runtime.success.steps": "Executed steps: {steps}",
   "runtime.success.title": "Execution completed successfully.",
+  "runtime.browser_validation_enabled": "Browser validation enabled for the project.",
+  "runtime.legacy_fallback": "Runtime decision delegated to Safe Mode (legacy).",
   "skill.status.not_audited": "not audited",
+
   "skill.status.with_value": "status \"{status}\"",
   "telegram.input.document_received_reply": "Document received. IalClaw will index it in semantic memory soon.",
   "telegram.input.process_document": "Process please document: {filename}",
@@ -138,7 +141,9 @@
   "tool.run.html_failed": "HTML execution failed",
   "tool.run.html_success": "HTML executed successfully",
   "tool.run.no_runnable_entry": "No runnable entry point found",
+  "tool.run.html_without_requiresDOM": "HTML project detected without requiresDOM. Skipping browser validation.",
   "tool.run.node_failed": "Node execution failed",
+
   "tool.run.node_success": "Node executed successfully",
   "tool.run.output_path_not_found": "Project output path not found",
   "tool.run.project_execution_failed": "Project execution failed",

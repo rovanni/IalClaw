@@ -1,4 +1,4 @@
-import { StopContinueSignal } from '../../../engine/AgentLoop';
+import { StopContinueSignal } from '../../../engine/AgentLoopTypes';
 
 export type StopContinueExecutionContext = {
     hasPendingSteps: boolean;
