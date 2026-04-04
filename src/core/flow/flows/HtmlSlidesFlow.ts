@@ -2,7 +2,7 @@ import { Flow, FlowStep } from '../types';
 import { createLogger } from '../../../shared/AppLogger';
 
 export class HtmlSlidesFlow implements Flow {
-    public id = 'html-slides';
+    public id = 'html_slides';
     public topic = 'slide';
     private logger = createLogger('HtmlSlidesFlow');
 

@@ -17,6 +17,7 @@ O kanban é o ponto central de rastreio. Os documentos técnicos continuam como 
   - concluido.md
 - Histórico:
   - historico/checklist_vivo.md
+  - historico/KB-XXX_*.md (documento técnico por card concluído)
   - historico/prs/
 
 ## Fluxo de centralização
@@ -28,7 +29,8 @@ O kanban é o ponto central de rastreio. Os documentos técnicos continuam como 
 ## Regras
 - Cada card deve ter um ID único no formato KB-XXX.
 - Ao iniciar, mover o card de Pendente para em_andamento.md.
-- Ao finalizar com validação, mover para concluido.md com data e evidência.
+- Ao finalizar com validação, remover o card do arquivo Pendente e mover para concluido.md com data e evidência.
 - Não iniciar card crítico novo sem fechar ou pausar explicitamente o crítico atual.
 - Todo card concluído precisa de evidência objetiva: compilação, teste ou log de validação.
 - Todo problema novo identificado deve ser registrado primeiro em mapa_problemas_sistema.md.
+- Ao concluir um card crítico, criar documento técnico em historico/KB-XXX_*.md com problema, fases, arquivos alterados, invariantes e validação.

@@ -158,6 +158,23 @@ export type RealityCheckSignal = {
     hasGroundingEvidence: boolean;
 };
 
+export type RealityCheckFacts = {
+    hasExecutionClaim: boolean;
+    hasGroundingEvidence: boolean;
+    toolCallsCount: number;
+    hasToolEvidence: boolean;
+};
+
+export type FallbackStrategySignal = {
+    shouldApplyHint: boolean;
+    trigger: 'consecutive_tool_failures' | 'max_iterations_reached' | 'fail_safe_direct_attempt';
+    reason: 'fallback_threshold_reached' | 'fallback_threshold_not_reached' | 'no_tool_call_with_pending_steps' | 'fail_safe_active_without_tool_call';
+    failedToolsCount: number;
+    threshold: number;
+    toolCallsCount?: number;
+    hasPendingSteps?: boolean;
+};
+
 export type StopContinueSignal = {
     shouldStop: boolean;
     reason:
@@ -207,12 +224,14 @@ export type FailSafeSignal = {
 export type CognitiveSignalsState = {
     route?: RouteAutonomySignal;
     fallback?: ToolFallbackSignal;
+    fallbackStrategy?: FallbackStrategySignal;
     validation?: StepValidationSignal;
     stop?: StopContinueSignal;
     failSafe?: FailSafeSignal;
     reclassification?: ReclassificationSignal;
     llmRetry?: LlmRetrySignal;
     planAdjustment?: PlanAdjustmentSignal;
+    realityCheckFacts?: RealityCheckFacts;
     realityCheck?: RealityCheckSignal;
 };
 
@@ -229,4 +248,18 @@ export type ToolScore = {
     score: number;
     successes: number;
     failures: number;
+};
+
+// KB-020 — Fase 1: signal puro de estado estrutural do repair (sem decisão)
+export type RepairStrategySignal = {
+    hasActiveProject: boolean;
+    usesWorkspace: boolean;
+    hadCreateProject: boolean;
+    createProjectPosition: number | null;
+    projectMissing: boolean;
+    repairReason:
+        | 'missing_project'
+        | 'invalid_order'
+        | 'workspace_inconsistent'
+        | 'unknown';
 };

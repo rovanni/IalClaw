@@ -47,6 +47,12 @@ export interface TaskContextData {
     fileSequence: number;
 }
 
+export interface SessionDeltaState {
+    previousConfidence: number | null;
+    lowImprovementCount: number;
+    updatedAt: number;
+}
+
 const STM_MAX_MESSAGES = 10; // 5 exchanges
 
 export interface SessionContext {
@@ -82,6 +88,7 @@ export interface SessionContext {
     reactive_state?: any; // Estado de recuperação de falhas (ReactiveState)
     flow_state?: FlowState;
     task_context?: TaskContextData; // Estado operacional contínuo da tarefa
+    delta_state?: SessionDeltaState;
 }
 
 export type Session = SessionContext;
@@ -319,6 +326,38 @@ export class SessionManager {
         }
     }
 
+    static getDeltaState(session: SessionContext): SessionDeltaState {
+        if (!session.delta_state) {
+            session.delta_state = {
+                previousConfidence: null,
+                lowImprovementCount: 0,
+                updatedAt: Date.now()
+            };
+        }
+
+        return session.delta_state;
+    }
+
+    static setDeltaState(session: SessionContext, update: {
+        previousConfidence: number | null;
+        lowImprovementCount: number;
+    }): SessionDeltaState {
+        const current = this.getDeltaState(session);
+        current.previousConfidence = update.previousConfidence;
+        current.lowImprovementCount = update.lowImprovementCount;
+        current.updatedAt = Date.now();
+        return current;
+    }
+
+    static resetDeltaState(session: SessionContext): SessionDeltaState {
+        session.delta_state = {
+            previousConfidence: null,
+            lowImprovementCount: 0,
+            updatedAt: Date.now()
+        };
+        return session.delta_state;
+    }
+
     /**
      * Cleanup de sessões antigas com lock para evitar remoção durante iteração.
      */
@@ -433,7 +472,10 @@ export class SessionManager {
             isStable: !pending && !hasReactiveFailure,
             pendingAction: pending,
             reactiveState: session.reactive_state,
-            taskContext: session.task_context
+            taskContext: session.task_context,
+            // KB-021: fluxo guiado visível no CognitiveState
+            isInGuidedFlow: Boolean(session.flow_state),
+            guidedFlowState: session.flow_state ?? undefined
         };
     }
 }

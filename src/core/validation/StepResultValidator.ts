@@ -1,4 +1,4 @@
-import { RealityCheckSignal } from '../../engine/AgentLoopTypes';
+import { RealityCheckFacts, RealityCheckSignal } from '../../engine/AgentLoopTypes';
 
 export class StepResultValidator {
     private static readonly EXECUTION_CLAIM_PATTERNS: RegExp[] = [
@@ -67,29 +67,38 @@ export class StepResultValidator {
         hasGroundingEvidence: boolean,
         toolCallsCount: number
     ): RealityCheckSignal {
-        if (!hasExecutionClaim) {
+        return this.buildRealityCheckSignalFromFacts({
+            hasExecutionClaim,
+            hasGroundingEvidence,
+            toolCallsCount,
+            hasToolEvidence: toolCallsCount > 0
+        });
+    }
+
+    public static buildRealityCheckSignalFromFacts(facts: RealityCheckFacts): RealityCheckSignal {
+        if (!facts.hasExecutionClaim) {
             return {
                 shouldInject: false,
                 reason: 'no_execution_claim',
-                toolCallsCount,
-                hasGroundingEvidence
+                toolCallsCount: facts.toolCallsCount,
+                hasGroundingEvidence: facts.hasGroundingEvidence
             };
         }
 
-        if (hasGroundingEvidence) {
+        if (facts.hasGroundingEvidence) {
             return {
                 shouldInject: false,
                 reason: 'grounded_by_tool_evidence',
-                toolCallsCount,
-                hasGroundingEvidence
+                toolCallsCount: facts.toolCallsCount,
+                hasGroundingEvidence: facts.hasGroundingEvidence
             };
         }
 
         return {
             shouldInject: true,
-            reason: toolCallsCount > 0 ? 'missing_grounding_evidence' : 'no_tool_call',
-            toolCallsCount,
-            hasGroundingEvidence
+            reason: facts.toolCallsCount > 0 ? 'missing_grounding_evidence' : 'no_tool_call',
+            toolCallsCount: facts.toolCallsCount,
+            hasGroundingEvidence: facts.hasGroundingEvidence
         };
     }
 }

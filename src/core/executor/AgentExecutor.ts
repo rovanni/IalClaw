@@ -36,6 +36,7 @@ import { cloneExecutionPlan, RepairResult, repairPlanStructure } from './repairP
 import { hashLearningInput, pushLearningRecord } from './operationalLearning';
 import { RuntimeDecision } from '../runtime/decisionGate';
 import { CognitiveOrchestrator } from '../orchestrator/CognitiveOrchestrator';
+import { RepairStrategySignal } from '../../engine/AgentLoopTypes';
 import { t } from '../../i18n';
 
 const MAX_RETRIES = 5;
@@ -262,7 +263,16 @@ export class AgentExecutor {
             plan_size: plan.steps.length
         });
 
-        if (!repairResult.success || !repairResult.repairedPlan) {
+        // KB-020 Fase 3 — Hard Handoff: Orchestrator decide abort/continue com resultado real
+        const localDecision = !repairResult.success || !repairResult.repairedPlan ? 'abort' : 'continue';
+        this.orchestrator?.ingestRepairResult(
+            { success: repairResult.success, hasRepairedPlan: !!repairResult.repairedPlan },
+            session.conversation_id
+        );
+        const orchestratorDecision = this.orchestrator?.decideRepairStrategy(session.conversation_id);
+        const finalRepairDecision = orchestratorDecision ?? localDecision;
+
+        if (finalRepairDecision === 'abort') {
             const failure = {
                 success: false,
                 error: repairResult.error || 'Repair pipeline falhou.',
@@ -287,7 +297,7 @@ export class AgentExecutor {
         }
 
         return this.executeWithTrace({
-            plan: repairResult.repairedPlan,
+            plan: repairResult.repairedPlan!,
             session,
             input,
             decision: 'REPAIR_AND_EXECUTE',
@@ -1616,6 +1626,35 @@ Se quiser autorizar, responda:
     }
 
     private runRepairPipeline(plan: ExecutionPlan, session: Session): RepairResult {
+        // KB-020 Fase 1: extrair signal de estado estrutural (passivo — sem alterar comportamento)
+        const hasActiveProject = Boolean(session.current_project_id);
+        const usesWorkspace = plan.steps.some(step => step.tool?.startsWith('workspace_'));
+        const hadCreateProject = plan.steps.some(step => step.tool === 'workspace_create_project');
+        const createProjectPosition = hadCreateProject
+            ? plan.steps.findIndex(step => step.tool === 'workspace_create_project')
+            : null;
+        const projectMissing = !hasActiveProject && usesWorkspace && !hadCreateProject;
+
+        let repairReason: RepairStrategySignal['repairReason'] = 'unknown';
+        if (hasActiveProject && hadCreateProject) {
+            repairReason = 'workspace_inconsistent';
+        } else if (!hasActiveProject && usesWorkspace && hadCreateProject && createProjectPosition !== 0) {
+            repairReason = 'invalid_order';
+        } else if (projectMissing) {
+            repairReason = 'missing_project';
+        }
+
+        const repairSignal: RepairStrategySignal = {
+            hasActiveProject,
+            usesWorkspace,
+            hadCreateProject,
+            createProjectPosition,
+            projectMissing,
+            repairReason
+        };
+
+        this.orchestrator?.ingestRepairStrategySignal(repairSignal, session.conversation_id);
+
         return repairPlanStructure(plan, session);
     }
 

@@ -34,7 +34,9 @@ import {
     RouteAutonomySignal,
     PlanAdjustmentSignal, 
     PlanAdjustmentResult,
+    RealityCheckFacts,
     RealityCheckSignal,
+    FallbackStrategySignal,
     StopContinueSignal,
     FailSafeActivationTrigger,
     FailSafeSignal,
@@ -127,8 +129,6 @@ export class AgentLoop {
     private readonly MODE_TRANSITION_CONFIDENCE = 0.75;
 
     // Delta detection for marginal improvement
-    private previousConfidence: number | null = null;
-    private lowImprovementCount = 0;
     private readonly MIN_DELTA_THRESHOLD = 0.05;
     private readonly MAX_LOW_IMPROVEMENTS = 2;
     private decisionMemory: DecisionMemory | null = null;
@@ -276,8 +276,7 @@ export class AgentLoop {
         this.mode = 'THINKING';
         this.disableFollowUpQuestions = false;
         this.refinementUsed = false;
-        this.previousConfidence = null;
-        this.lowImprovementCount = 0;
+        this.resetDeltaDetection();
         this.failSafe = false;
         this.needsUserContext = false;
         this.contextQuestion = undefined;
@@ -553,6 +552,49 @@ export class AgentLoop {
         return { ...this.currentSignals };
     }
 
+    private syncSignalsWithOrchestrator(): void {
+        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+    }
+
+    private resolveSafeModeBooleanDecision(loopDecision: boolean, orchestratorDecision: boolean | undefined): boolean {
+        return orchestratorDecision ?? loopDecision;
+    }
+
+    // ETAPA KB-023 P3: extração estrutural de decisão em safe mode por bloco.
+    // Mantém comportamento atual: decisão final continua orchestratorDecision ?? loopDecision.
+    private decideReclassificationWithSafeMode(signal: ReclassificationSignal): boolean {
+        this.currentSignals.reclassification = signal;
+        this.syncSignalsWithOrchestrator();
+        const loopDecision = signal.reclassificationRecommended;
+        const orchestratorDecision = this.orchestrator?.decideReclassification({
+            sessionId: this.chatId,
+            signal
+        });
+        return this.resolveSafeModeBooleanDecision(loopDecision, orchestratorDecision);
+    }
+
+    private decideRetryWithLlmSafeMode(signal: LlmRetrySignal): boolean {
+        this.currentSignals.llmRetry = signal;
+        this.syncSignalsWithOrchestrator();
+        const loopDecision = signal.retryRecommended;
+        const orchestratorDecision = this.orchestrator?.decideRetryWithLlm({
+            sessionId: this.chatId,
+            signal
+        });
+        return this.resolveSafeModeBooleanDecision(loopDecision, orchestratorDecision);
+    }
+
+    private decidePlanAdjustmentWithSafeMode(signal: PlanAdjustmentSignal): boolean {
+        this.currentSignals.planAdjustment = signal;
+        this.syncSignalsWithOrchestrator();
+        const loopDecision = signal.shouldAdjustPlan;
+        const orchestratorDecision = this.orchestrator?.decidePlanAdjustment({
+            sessionId: this.chatId,
+            signal
+        });
+        return this.resolveSafeModeBooleanDecision(loopDecision, orchestratorDecision);
+    }
+
     public async run(initialMessages: MessagePayload[], policy?: any): Promise<{ answer: string; newMessages: MessagePayload[] }> {
         const session = SessionManager.getCurrentSession();
         this.chatId = session?.conversation_id || 'default';
@@ -725,7 +767,7 @@ export class AgentLoop {
             suggested_tool: routeAutonomySignal.suggestedTool
         });
 
-        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        this.syncSignalsWithOrchestrator();
 
         // ═══════════════════════════════════════════════════════════════════
         // GOVERNANÇA DO SHORT-CIRCUIT — Detectar intenção de execução real
@@ -1118,7 +1160,7 @@ export class AgentLoop {
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
-                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        this.syncSignalsWithOrchestrator();
                         const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
                         const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
@@ -1198,7 +1240,7 @@ export class AgentLoop {
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
-                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        this.syncSignalsWithOrchestrator();
                         const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
                         const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
@@ -1227,7 +1269,7 @@ export class AgentLoop {
                         });
 
                         this.logToolFallbackSignal(toolFallbackSignal);
-                        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                        this.syncSignalsWithOrchestrator();
                         const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
                         const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
@@ -1263,7 +1305,7 @@ export class AgentLoop {
                             });
 
                             this.logToolFallbackSignal(toolFallbackSignal);
-                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+                            this.syncSignalsWithOrchestrator();
                             const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
                             const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
@@ -1401,15 +1443,7 @@ export class AgentLoop {
                             // ETAPA 4 — signal explícito de reclassificação registrado no snapshot cognitivo.
                             // AgentLoop ainda decide localmente (safe stage).
                             // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
-                            this.currentSignals.reclassification = reclassificationSignal;
-                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
-                            const loopDecisionReclassify = reclassificationSignal.reclassificationRecommended;
-                            // ETAPA 5 — Orchestrator decide reclassificação (safe mode: undefined => fallback ao loop).
-                            const orchestratorDecisionReclassify = this.orchestrator?.decideReclassification({
-                                sessionId: this.chatId,
-                                signal: reclassificationSignal
-                            });
-                            const finalDecisionReclassify = orchestratorDecisionReclassify ?? loopDecisionReclassify;
+                            const finalDecisionReclassify = this.decideReclassificationWithSafeMode(reclassificationSignal);
                             if (finalDecisionReclassify) {
                                 this.logger.info('reclassification_signal_emitted', '[SIGNAL] Reclassification recommended', {
                                     reason: reclassificationSignal.reason,
@@ -1423,15 +1457,7 @@ export class AgentLoop {
                             // ETAPA 4 — signal explícito de retry via LLM registrado no snapshot cognitivo.
                             // AgentLoop ainda decide localmente (safe stage).
                             // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
-                            this.currentSignals.llmRetry = llmRetrySignal;
-                            this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
-                            const loopDecisionLlmRetry = llmRetrySignal.retryRecommended;
-                            // ETAPA 5 — Orchestrator decide retry via LLM (safe mode: undefined => fallback ao loop).
-                            const orchestratorDecisionLlmRetry = this.orchestrator?.decideRetryWithLlm({
-                                sessionId: this.chatId,
-                                signal: llmRetrySignal
-                            });
-                            const finalDecisionLlmRetry = orchestratorDecisionLlmRetry ?? loopDecisionLlmRetry;
+                            const finalDecisionLlmRetry = this.decideRetryWithLlmSafeMode(llmRetrySignal);
                             if (finalDecisionLlmRetry) {
                                 const llmCheck: MessagePayload = {
                                     role: 'system',
@@ -1443,15 +1469,7 @@ export class AgentLoop {
                                 // ETAPA 4 — signal explícito de ajuste de plano registrado no snapshot cognitivo.
                                 // AgentLoop aplica o ajuste localmente (safe stage).
                                 // TODO (Single Brain): delegar decisão ao CognitiveOrchestrator.
-                                this.currentSignals.planAdjustment = planAdjustment.signal;
-                                this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
-                                const loopDecisionPlanAdjust = planAdjustment.signal.shouldAdjustPlan;
-                                // ETAPA 5 — Orchestrator decide ajuste de plano (safe mode: undefined => fallback ao loop).
-                                const orchestratorDecisionPlanAdjust = this.orchestrator?.decidePlanAdjustment({
-                                    sessionId: this.chatId,
-                                    signal: planAdjustment.signal
-                                });
-                                const finalDecisionPlanAdjust = orchestratorDecisionPlanAdjust ?? loopDecisionPlanAdjust;
+                                const finalDecisionPlanAdjust = this.decidePlanAdjustmentWithSafeMode(planAdjustment.signal);
                                 if (finalDecisionPlanAdjust) {
                                     messages = planAdjustment.messages;
                                     this.logger.info('plan_adjustment_signal_emitted', '[SIGNAL] Plan adjustment requested after step failure', {
@@ -1522,25 +1540,28 @@ export class AgentLoop {
                     }
 
                     const defaultDeltaContinue: StopContinueSignal = { shouldStop: false, reason: 'delta_check_continues', stepCount };
+                    const deltaState = this.getDeltaState();
                     const deltaEvaluation = this.orchestrator
                         ? this.orchestrator.decideStopContinueFromDeltaContext({
                             sessionId: this.chatId,
                             data: {
                                 stepIndex: stepCount,
                                 stepValidations: [...this.stepValidations],
-                                previousConfidence: this.previousConfidence,
-                                lowImprovementCount: this.lowImprovementCount,
+                                previousConfidence: deltaState.previousConfidence,
+                                lowImprovementCount: deltaState.lowImprovementCount,
                                 minDeltaThreshold: this.MIN_DELTA_THRESHOLD,
                                 maxLowImprovements: this.MAX_LOW_IMPROVEMENTS
                             }
                         })
                         : {
                             decision: defaultDeltaContinue,
-                            nextPreviousConfidence: this.previousConfidence,
-                            nextLowImprovementCount: this.lowImprovementCount
+                            nextPreviousConfidence: deltaState.previousConfidence,
+                            nextLowImprovementCount: deltaState.lowImprovementCount
                         };
-                    this.previousConfidence = deltaEvaluation.nextPreviousConfidence;
-                    this.lowImprovementCount = deltaEvaluation.nextLowImprovementCount;
+                    this.updateDeltaState({
+                        previousConfidence: deltaEvaluation.nextPreviousConfidence,
+                        lowImprovementCount: deltaEvaluation.nextLowImprovementCount
+                    });
                     const finalDeltaStopDecision = deltaEvaluation.decision;
                     this.currentSignals.stop = finalDeltaStopDecision;
                     if (finalDeltaStopDecision.shouldStop && this.mode !== 'EXECUTION') {
@@ -1585,7 +1606,11 @@ export class AgentLoop {
                     newMessages.push(errMsg);
                     consecutiveToolFailures++;
 
-                    if (this.shouldUseFallbackStrategy()) {
+                    if (this.shouldUseFallbackStrategy({
+                        trigger: 'consecutive_tool_failures',
+                        toolCallsCount,
+                        hasPendingSteps: this.hasPendingSteps()
+                    })) {
                         messages = this.addFallbackStrategyHint(messages);
                     }
 
@@ -1664,47 +1689,72 @@ export class AgentLoop {
             });
         }
 
-        if ((this.failSafe || hasPendingFallback) && toolCallsCount === 0) {
-            this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
-            const defaultTool = this.getDefaultToolForInput(userInput);
-            this.logger.info('fail_safe_tool_attempt', `[FAIL-SAFE] Tentando ferramenta: ${defaultTool}`);
+        this.emitFallbackStrategySignal({
+            trigger: 'max_iterations_reached',
+            toolCallsCount,
+            hasPendingSteps: hasPendingFallback,
+            loopDecisionOverride: false
+        });
 
-            if (this.executionContext.currentPlan && this.executionContext.currentPlan.currentStepIndex < this.executionContext.currentPlan.steps.length) {
-                const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex];
-                if (!currentStep.tool) {
-                    currentStep.tool = this.mapStepToTool(currentStep.description) || defaultTool;
-                }
+        const loopDecisionFallbackDirectAttempt = (this.failSafe || hasPendingFallback) && toolCallsCount === 0;
+        if (loopDecisionFallbackDirectAttempt) {
+            this.emitFallbackStrategySignal({
+                trigger: 'fail_safe_direct_attempt',
+                toolCallsCount,
+                hasPendingSteps: hasPendingFallback,
+                loopDecisionOverride: loopDecisionFallbackDirectAttempt
+            });
 
-                try {
-                    this.logger.info('fail_safe_forced_execution', `[FAIL-SAFE] Forçando execução: ${currentStep.tool} para step "${currentStep.description}"`);
-                    const forcedResult = await this.registry.executeTool(currentStep.tool, {});
-                    const toolMsg: MessagePayload = { role: 'tool', content: forcedResult };
-                    newMessages.push(toolMsg);
-                    toolCallsCount++;
+            const orchestratorFallbackStrategyDecision = this.orchestrator?.decideFallbackStrategy(this.chatId);
+            const finalFallbackDirectAttemptDecision = this.resolveSafeModeBooleanDecision(
+                loopDecisionFallbackDirectAttempt,
+                orchestratorFallbackStrategyDecision
+            );
 
-                    if (forcedResult && forcedResult.length > 0 && !forcedResult.toLowerCase().includes('erro')) {
-                        this.advanceToNextStep();
-                        const directAnswer = t('loop.fail_safe.forced_execution_result', {
-                            step: currentStep.description,
-                            result: forcedResult.slice(0, 500)
-                        });
-                        const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
-                        newMessages.push(finalMsg);
-                        const duration = Date.now() - startedAt;
-                        await emitProgress({ stage: 'completed', duration_ms: duration });
-                        return { answer: directAnswer, newMessages };
+            if (!finalFallbackDirectAttemptDecision) {
+                this.logger.info('fallback_direct_attempt_blocked', '[FALLBACK STRATEGY] Tentativa direta bloqueada por decisão ativa do Orchestrator');
+            } else {
+                this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
+                const defaultTool = this.getDefaultToolForInput(userInput);
+                this.logger.info('fail_safe_tool_attempt', `[FAIL-SAFE] Tentando ferramenta: ${defaultTool}`);
+
+                if (this.executionContext.currentPlan && this.executionContext.currentPlan.currentStepIndex < this.executionContext.currentPlan.steps.length) {
+                    const currentStep = this.executionContext.currentPlan.steps[this.executionContext.currentPlan.currentStepIndex];
+                    if (!currentStep.tool) {
+                        currentStep.tool = this.mapStepToTool(currentStep.description) || defaultTool;
                     }
-                } catch (forcedError: any) {
-                    this.logger.error('fail_safe_forced_error', forcedError as Error, '[FAIL-SAFE] Falha na execução forçada');
-                }
-            }
 
-            const directAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
-            const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
-            newMessages.push(finalMsg);
-            const duration = Date.now() - startedAt;
-            await emitProgress({ stage: 'completed', duration_ms: duration });
-            return { answer: directAnswer, newMessages };
+                    try {
+                        this.logger.info('fail_safe_forced_execution', `[FAIL-SAFE] Forçando execução: ${currentStep.tool} para step "${currentStep.description}"`);
+                        const forcedResult = await this.registry.executeTool(currentStep.tool, {});
+                        const toolMsg: MessagePayload = { role: 'tool', content: forcedResult };
+                        newMessages.push(toolMsg);
+                        toolCallsCount++;
+
+                        if (forcedResult && forcedResult.length > 0 && !forcedResult.toLowerCase().includes('erro')) {
+                            this.advanceToNextStep();
+                            const directAnswer = t('loop.fail_safe.forced_execution_result', {
+                                step: currentStep.description,
+                                result: forcedResult.slice(0, 500)
+                            });
+                            const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
+                            newMessages.push(finalMsg);
+                            const duration = Date.now() - startedAt;
+                            await emitProgress({ stage: 'completed', duration_ms: duration });
+                            return { answer: directAnswer, newMessages };
+                        }
+                    } catch (forcedError: any) {
+                        this.logger.error('fail_safe_forced_error', forcedError as Error, '[FAIL-SAFE] Falha na execução forçada');
+                    }
+                }
+
+                const directAnswer = t('loop.fail_safe.direct_attempt', { input: userInput });
+                const finalMsg: MessagePayload = { role: 'assistant', content: directAnswer };
+                newMessages.push(finalMsg);
+                const duration = Date.now() - startedAt;
+                await emitProgress({ stage: 'completed', duration_ms: duration });
+                return { answer: directAnswer, newMessages };
+            }
         }
 
         messages.push({
@@ -1753,18 +1803,18 @@ export class AgentLoop {
     }
 
     private applyExecutionClaimGuard(answer: string, toolCallsCount: number, toolEvidence: string[]): string {
-        const hasExecutionClaim = StepResultValidator.validateExecutionClaim(answer);
-        const hasGroundingEvidence = toolCallsCount > 0 && StepResultValidator.validateGroundingEvidence(answer, toolEvidence);
-
-        const realityCheckSignal = StepResultValidator.buildRealityCheckSignal(hasExecutionClaim, hasGroundingEvidence, toolCallsCount);
+        // ETAPA KB-023 P2: montagem de fatos explicitada no loop (sem decisão nova).
+        const realityCheckFacts = this.buildRealityCheckFacts(answer, toolCallsCount, toolEvidence);
+        const realityCheckSignal = StepResultValidator.buildRealityCheckSignalFromFacts(realityCheckFacts);
+        this.currentSignals.realityCheckFacts = realityCheckFacts;
         this.currentSignals.realityCheck = realityCheckSignal;
-        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        this.syncSignalsWithOrchestrator();
 
-        if (!hasExecutionClaim) {
+        if (!realityCheckFacts.hasExecutionClaim) {
             return answer;
         }
 
-        if (hasGroundingEvidence) {
+        if (realityCheckFacts.hasGroundingEvidence) {
             return answer;
         }
 
@@ -1785,6 +1835,18 @@ export class AgentLoop {
         });
 
         return this.injectRealityCheck(answer);
+    }
+
+    private buildRealityCheckFacts(answer: string, toolCallsCount: number, toolEvidence: string[]): RealityCheckFacts {
+        const hasExecutionClaim = StepResultValidator.validateExecutionClaim(answer);
+        const hasGroundingEvidence = toolCallsCount > 0 && StepResultValidator.validateGroundingEvidence(answer, toolEvidence);
+
+        return {
+            hasExecutionClaim,
+            hasGroundingEvidence,
+            toolCallsCount,
+            hasToolEvidence: toolEvidence.length > 0
+        };
     }
 
     private injectRealityCheck(answer: string): string {
@@ -2195,7 +2257,7 @@ export class AgentLoop {
         });
 
         this.logToolFallbackSignal(toolFallbackSignal);
-        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        this.syncSignalsWithOrchestrator();
         const orchestratorFallbackDecision = this.orchestrator?.decideToolFallback(this.chatId);
         const finalFallbackDecision = orchestratorFallbackDecision ?? toolFallbackSignal;
 
@@ -2506,7 +2568,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         failSafeSignal.contextSnapshot = this.buildFailSafeContextSnapshot();
         const loopFailSafeDecision = failSafeSignal;
         this.currentSignals.failSafe = loopFailSafeDecision;
-        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        this.syncSignalsWithOrchestrator();
         const orchestratorFailSafeDecision = this.orchestrator?.decideFailSafe(this.chatId);
         const finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision;
         this.currentSignals.failSafe = finalFailSafeDecision;
@@ -2551,7 +2613,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         };
         const loopFailSafeDecision = failSafeSignal;
         this.currentSignals.failSafe = loopFailSafeDecision;
-        this.orchestrator?.ingestSignalsFromLoop(this.getSignalsSnapshot(), this.chatId);
+        this.syncSignalsWithOrchestrator();
         const orchestratorFailSafeDecision = this.orchestrator?.decideFailSafe(this.chatId);
         const finalFailSafeDecision = orchestratorFailSafeDecision ?? loopFailSafeDecision;
         this.currentSignals.failSafe = finalFailSafeDecision;
@@ -2576,13 +2638,78 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
     }
 
     private resetDeltaDetection() {
-        this.previousConfidence = null;
-        this.lowImprovementCount = 0;
+        const session = SessionManager.getSession(this.chatId || 'default');
+        SessionManager.resetDeltaState(session);
     }
 
-    private shouldUseFallbackStrategy(): boolean {
+    private getDeltaState(): { previousConfidence: number | null; lowImprovementCount: number } {
+        const session = SessionManager.getSession(this.chatId || 'default');
+        const deltaState = SessionManager.getDeltaState(session);
+        return {
+            previousConfidence: deltaState.previousConfidence,
+            lowImprovementCount: deltaState.lowImprovementCount
+        };
+    }
+
+    private updateDeltaState(state: { previousConfidence: number | null; lowImprovementCount: number }): void {
+        const session = SessionManager.getSession(this.chatId || 'default');
+        SessionManager.setDeltaState(session, state);
+    }
+
+    private shouldUseFallbackStrategy(context: {
+        trigger: 'consecutive_tool_failures';
+        toolCallsCount: number;
+        hasPendingSteps: boolean;
+    }): boolean {
         const failedCount = Array.from(this.executionContext.toolsFailed.values()).reduce((a, b) => a + b, 0);
-        return failedCount >= 2;
+        const loopDecision = failedCount >= 2;
+        const fallbackStrategySignal = this.emitFallbackStrategySignal({
+            trigger: context.trigger,
+            toolCallsCount: context.toolCallsCount,
+            hasPendingSteps: context.hasPendingSteps,
+            failedToolsCount: failedCount,
+            loopDecisionOverride: loopDecision
+        });
+
+        const orchestratorDecision = this.orchestrator?.decideFallbackStrategy(this.chatId);
+        return this.resolveSafeModeBooleanDecision(loopDecision, orchestratorDecision);
+    }
+
+    // ETAPA KB-023 Fase 1: extracao estrutural de signal para fallback tatico residual.
+    // Safe mode: nenhuma decisao nova e nenhuma alteracao de comportamento local.
+    // TODO (Single Brain): migrar autoridade final deste bloco para CognitiveOrchestrator.
+    private emitFallbackStrategySignal(context: {
+        trigger: FallbackStrategySignal['trigger'];
+        toolCallsCount: number;
+        hasPendingSteps: boolean;
+        failedToolsCount?: number;
+        loopDecisionOverride?: boolean;
+    }): FallbackStrategySignal {
+        const threshold = 2;
+        const failedToolsCount = context.failedToolsCount ?? Array.from(this.executionContext.toolsFailed.values()).reduce((a, b) => a + b, 0);
+        const shouldApplyHint = context.loopDecisionOverride ?? (failedToolsCount >= threshold);
+
+        const reason: FallbackStrategySignal['reason'] = context.trigger === 'max_iterations_reached'
+            ? (context.toolCallsCount === 0 && context.hasPendingSteps
+                ? 'no_tool_call_with_pending_steps'
+                : (shouldApplyHint ? 'fallback_threshold_reached' : 'fallback_threshold_not_reached'))
+            : (context.trigger === 'fail_safe_direct_attempt'
+                ? 'fail_safe_active_without_tool_call'
+                : (shouldApplyHint ? 'fallback_threshold_reached' : 'fallback_threshold_not_reached'));
+
+        const signal: FallbackStrategySignal = {
+            shouldApplyHint,
+            trigger: context.trigger,
+            reason,
+            failedToolsCount,
+            threshold,
+            toolCallsCount: context.toolCallsCount,
+            hasPendingSteps: context.hasPendingSteps
+        };
+
+        this.currentSignals.fallbackStrategy = signal;
+        this.syncSignalsWithOrchestrator();
+        return signal;
     }
 
     private addFallbackStrategyHint(messages: MessagePayload[]): MessagePayload[] {
@@ -2629,7 +2756,7 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
             hasPlan: !!this.executionContext.currentPlan,
             pendingSteps,
             toolsFailed: this.executionContext.toolsFailed.size,
-            lowImprovementCount: this.lowImprovementCount,
+            lowImprovementCount: this.getDeltaState().lowImprovementCount,
             isContinuation: this.isContinuation
         };
     }

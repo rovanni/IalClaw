@@ -16,7 +16,10 @@ import { buildExecutionPlan, classifyTask } from '../core/agent/TaskClassifier';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
 import { FlowManager } from '../core/flow/FlowManager';
+import { FlowRegistry } from '../core/flow/FlowRegistry';
+import { Flow } from '../core/flow/types';
 import { IntentClassifier } from '../core/intent/IntentClassifier';
+import { CognitiveActionExecutor } from '../core/orchestrator/CognitiveActionExecutor';
 import { CognitiveOrchestrator, CognitiveStrategy } from '../core/orchestrator/CognitiveOrchestrator';
 import { ExecutionPlan } from '../core/planner/types';
 import { AgentLoop } from '../engine/AgentLoop';
@@ -41,6 +44,30 @@ class FakeProvider implements LLMProvider {
 
     async embed(_text: string): Promise<number[]> {
         return [];
+    }
+}
+
+class RegistryTestFlowA implements Flow {
+    public id = 'registry_test_flow_a';
+    public steps = [];
+    public async onComplete(): Promise<any> {
+        return {};
+    }
+}
+
+class RegistryTestFlowB implements Flow {
+    public id = 'registry_test_flow_b';
+    public steps = [];
+    public async onComplete(): Promise<any> {
+        return {};
+    }
+}
+
+class RegistryTestFlowC implements Flow {
+    public id = 'registry_test_flow_c';
+    public steps = [];
+    public async onComplete(): Promise<any> {
+        return {};
     }
 }
 
@@ -596,6 +623,73 @@ async function run() {
         assert.equal(decision.strategy, CognitiveStrategy.ASK);
         assert.match(decision.reason, /tipo de jogo|snake|pong/i);
     });
+
+    await SessionManager.runWithSession('kb-045-start-flow-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        const memoryStub = {
+            saveMessage: () => undefined,
+            searchByContent: () => []
+        } as any;
+        const flowManager = new FlowManager();
+        const orchestrator = new CognitiveOrchestrator(memoryStub, flowManager);
+        const executor = new CognitiveActionExecutor(memoryStub, flowManager);
+
+        const decision = await orchestrator.decide({
+            sessionId: session.conversation_id,
+            input: 'criar slides em html sobre arquitetura de software'
+        });
+
+        assert.equal(decision.strategy, CognitiveStrategy.START_FLOW);
+        assert.equal(decision.flowId, 'html_slides');
+
+        const result = await executor.execute(decision, session, 'criar slides em html sobre arquitetura de software');
+
+        assert.match(result.answer || '', /Qual conteúdo você deseja usar para os slides/i);
+        assert.equal(session.flow_state?.flowId, 'html_slides');
+        assert.ok(FlowRegistry.get(session.flow_state!.flowId));
+    });
+
+    FlowRegistry.registerDefinition({
+        id: 'registry_test_flow_a',
+        flowClass: RegistryTestFlowA,
+        tags: ['registry', 'alpha'],
+        triggers: ['registrar alpha flow'],
+        priority: 3,
+        description: 'Flow de teste alpha'
+    });
+    assert.equal(FlowRegistry.has('registry_test_flow_a'), true);
+
+    FlowRegistry.registerMany([
+        {
+            id: 'registry_test_flow_b',
+            flowClass: RegistryTestFlowB,
+            tags: ['registry', 'beta'],
+            triggers: ['registrar beta flow'],
+            priority: 2,
+            description: 'Flow de teste beta'
+        },
+        {
+            id: 'registry_test_flow_c',
+            flowClass: RegistryTestFlowC,
+            tags: ['registry', 'gamma'],
+            triggers: ['registrar gamma flow'],
+            priority: 1,
+            description: 'Flow de teste gamma'
+        }
+    ]);
+
+    assert.equal(FlowRegistry.has('registry_test_flow_b'), true);
+    assert.equal(FlowRegistry.has('registry_test_flow_c'), true);
+
+    const definitions = FlowRegistry.listDefinitions();
+    const alphaDefinition = definitions.find(def => def.id === 'registry_test_flow_a');
+    assert.ok(alphaDefinition);
+    assert.ok(alphaDefinition?.tags?.includes('alpha'));
+    assert.ok(alphaDefinition?.triggers?.includes('registrar alpha flow'));
+    assert.equal(alphaDefinition?.priority, 3);
+
+    const matched = FlowRegistry.matchByInput('pode registrar alpha flow para mim?');
+    assert.equal(matched, 'registry_test_flow_a');
 
     await SessionManager.runWithSession('exploration-controller-test', async () => {
         let loopCalls = 0;

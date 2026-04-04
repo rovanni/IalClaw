@@ -2,6 +2,7 @@ import { CognitiveDecision, CognitiveStrategy } from './CognitiveOrchestrator';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
+import { FlowRegistry } from '../flow/FlowRegistry';
 import { skillManager } from '../../capabilities';
 import { clearPendingAction, getPendingAction, setPendingAction } from '../agent/PendingActionTracker';
 import { createLogger } from '../../shared/AppLogger';
@@ -39,6 +40,9 @@ export class CognitiveActionExecutor {
         });
 
         switch (decision.strategy) {
+            case CognitiveStrategy.START_FLOW:
+                return this.executeStartFlow(decision, session, userQuery);
+
             case CognitiveStrategy.FLOW:
                 return this.executeFlow(session, userQuery);
 
@@ -56,6 +60,38 @@ export class CognitiveActionExecutor {
                 // Estratégias TOOL, LLM, HYBRID seguem para o loop unificado
                 return { shouldContinue: true };
         }
+    }
+
+    private async executeStartFlow(decision: CognitiveDecision, session: SessionContext, userQuery: string): Promise<ExecutionResult> {
+        if (!decision.flowId) {
+            return { shouldContinue: true };
+        }
+
+        const flow = FlowRegistry.get(decision.flowId);
+        if (!flow) {
+            const notFound = t('flow.start.not_found', { flowId: decision.flowId });
+            this.memory.saveMessage(session.conversation_id, 'user', userQuery);
+            this.memory.saveMessage(session.conversation_id, 'assistant', notFound);
+            SessionManager.addToHistory(session.conversation_id, 'user', userQuery);
+            SessionManager.addToHistory(session.conversation_id, 'assistant', notFound);
+            return { answer: notFound };
+        }
+
+        const flowPrompt = this.flowManager.startFlow(flow, {}, flow.id);
+        session.flow_state = this.flowManager.getState() || undefined;
+
+        this.logger.info('flow_started_by_orchestrator', t('flow.start.initiated', { flowId: decision.flowId }), {
+            sessionId: session.conversation_id,
+            flowId: decision.flowId,
+            persistedFlowId: session.flow_state?.flowId
+        });
+
+        this.memory.saveMessage(session.conversation_id, 'user', userQuery);
+        this.memory.saveMessage(session.conversation_id, 'assistant', flowPrompt);
+        SessionManager.addToHistory(session.conversation_id, 'user', userQuery);
+        SessionManager.addToHistory(session.conversation_id, 'assistant', flowPrompt);
+
+        return { answer: flowPrompt };
     }
 
     private async executeFlow(session: SessionContext, userQuery: string): Promise<ExecutionResult> {

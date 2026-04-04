@@ -2,33 +2,68 @@ import { Flow } from './types';
 import { HtmlSlidesFlow } from './flows/HtmlSlidesFlow';
 import { createLogger } from '../../shared/AppLogger';
 
+type FlowClass = new () => Flow;
+
+export type FlowRegistration = {
+    id: string;
+    flowClass: FlowClass;
+    tags?: string[];
+    triggers?: string[];
+    priority?: number;
+    description?: string;
+};
+
+const DEFAULT_FLOWS: FlowRegistration[] = [
+    {
+        id: 'html_slides',
+        flowClass: HtmlSlidesFlow,
+        tags: ['slides', 'html', 'presentation'],
+        triggers: ['criar slides', 'gerar slides', 'slides html', 'apresentacao html'],
+        priority: 10,
+        description: 'Guided flow for creating HTML slide content.'
+    }
+];
+
 export class FlowRegistry {
     private static logger = createLogger('FlowRegistry');
-    private static flows: Map<string, new () => Flow> = new Map();
+    private static flows: Map<string, FlowRegistration> = new Map();
 
     static {
-        // Register default flows
-        this.register('html_slides', HtmlSlidesFlow);
+        this.registerMany(DEFAULT_FLOWS);
     }
 
     /**
      * Registers a flow class.
      */
-    public static register(id: string, flowClass: new () => Flow): void {
-        this.flows.set(id, flowClass);
-        this.logger.info('flow_registered', `Flow ${id} registered successfully.`);
+    public static register(id: string, flowClass: FlowClass): void {
+        this.registerDefinition({ id, flowClass });
+    }
+
+    public static registerMany(registrations: ReadonlyArray<FlowRegistration>): void {
+        for (const registration of registrations) {
+            this.registerDefinition(registration);
+        }
+    }
+
+    public static registerDefinition(registration: FlowRegistration): void {
+        this.flows.set(registration.id, {
+            ...registration,
+            tags: registration.tags ? [...registration.tags] : undefined,
+            triggers: registration.triggers ? [...registration.triggers] : undefined
+        });
+        this.logger.info('flow_registered', `Flow ${registration.id} registered successfully.`);
     }
 
     /**
      * Gets a new instance of a flow by ID.
      */
     public static get(id: string): Flow | null {
-        const FlowClass = this.flows.get(id);
-        if (!FlowClass) {
+        const registration = this.flows.get(id);
+        if (!registration) {
             this.logger.warn('flow_not_found', `Flow ${id} not found in registry.`);
             return null;
         }
-        return new FlowClass();
+        return new registration.flowClass();
     }
 
     /**
@@ -36,5 +71,40 @@ export class FlowRegistry {
      */
     public static list(): string[] {
         return Array.from(this.flows.keys());
+    }
+
+    public static has(id: string): boolean {
+        return this.flows.has(id);
+    }
+
+    public static listDefinitions(): Array<Omit<FlowRegistration, 'flowClass'>> {
+        return Array.from(this.flows.values()).map((registration) => ({
+            id: registration.id,
+            tags: registration.tags ? [...registration.tags] : undefined,
+            triggers: registration.triggers ? [...registration.triggers] : undefined,
+            priority: registration.priority,
+            description: registration.description
+        }));
+    }
+
+    public static matchByInput(input: string): string | undefined {
+        const normalized = input.toLowerCase();
+        const definitions = this.listDefinitions()
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+        for (const definition of definitions) {
+            const triggerMatched = (definition.triggers || []).some((trigger) => normalized.includes(trigger.toLowerCase()));
+            if (triggerMatched) {
+                return definition.id;
+            }
+
+            const tags = (definition.tags || []).filter(tag => tag.trim().length > 0);
+            const tagScore = tags.reduce((score, tag) => score + (normalized.includes(tag.toLowerCase()) ? 1 : 0), 0);
+            if (tags.length > 0 && tagScore >= Math.min(2, tags.length)) {
+                return definition.id;
+            }
+        }
+
+        return undefined;
     }
 }

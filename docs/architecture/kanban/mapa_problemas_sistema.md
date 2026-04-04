@@ -12,13 +12,15 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 
 ## Radar de críticos (snapshot 2026-04-04)
 - Persistem: KB-003, KB-027
-- Parcialmente mitigados: KB-001, KB-017, KB-020, KB-021, KB-023, KB-024
-- Resolvidos: KB-002, KB-022
+- Parcialmente mitigados: KB-001, KB-017, KB-024
+- Resolvidos: KB-002, KB-020, KB-021, KB-022, KB-023, KB-045
 
 
 Observação:
 - O padrão dominante atual e governaça parcial com fallback local (safe mode), especialmente em executor e loop.
 - O critério de pronto dos críticos exige remoção da decisão local, não apenas encapsulamento ou consulta opcional ao Orchestrator.
+- KB-020 resolvida em 3 fases (2026-04-04): Orchestrator agora é o único decisor no path de repair. Histórico: docs/architecture/kanban/historico/KB-020_NeutralizarRepairPipeline_2026-04-04.md
+- KB-045 resolvida em 2026-04-04: início de flow agora é decidido no Orchestrator e executado pelo executor com persistência em `session.flow_state`. Histórico: docs/architecture/kanban/historico/KB-045_GovernancaInicioFlow_2026-04-04.md
 
 ## Mapeamento por componente
 
@@ -58,10 +60,11 @@ Observação:
 
 ### src/core/executor
 - Colunas e prioridades no quadro:
-  - Crítico: KB-001, KB-020
+  - Crítico: KB-001
+  - Concluído: KB-020
 - Problemas mapeados:
   - AgentExecutor mantém loop de self-healing/replan
-  - repairPipeline decide correções estruturais localmente
+  - repairPipeline decide correções estruturais localmente → resolvido em KB-020
   - executor mantém acesso cognitivo indevido ao LLM
 - Cards relacionados:
   - KB-001
@@ -69,11 +72,13 @@ Observação:
 
 ### src/core/flow
 - Colunas e prioridades no quadro:
-  - Crítico: KB-021
+  - Concluído: KB-021, KB-045
 - Problemas mapeados:
-  - FlowManager mantém estado isolado fora do SessionManager
+  - FlowManager mantém estado isolado fora do SessionManager → resolvido em KB-021
+  - startFlow() desconectado do runtime → resolvido em KB-045
 - Cards relacionados:
   - KB-021
+  - KB-045
 
 ### src/core (AgentController / AgentRuntime)
 - Colunas e prioridades no quadro:
@@ -86,10 +91,11 @@ Observação:
 
 ### src/engine
 - Colunas e prioridades no quadro:
-  - Crítico: KB-003, KB-023
+  - Crítico: KB-003
+  - Concluído: KB-023
 - Problemas mapeados:
   - AgentLoop ainda atua como mini-brain tático
-  - fallback/reclassify/retry locais
+  - fallback/reclassify/retry locais → mitigado em KB-023
   - guard de explicabilidade ainda local
 - Cards relacionados:
   - KB-003

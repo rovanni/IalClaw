@@ -78,6 +78,13 @@ Arquivo:
 D:\IA\IalClaw\docs\architecture\kanban\historico\checklist_vivo.md
 ```
 
+Fonte oficial de controle:
+
+* Kanban em `D:\IA\IalClaw\docs\architecture\kanban`
+* Checklist vivo em `D:\IA\IalClaw\docs\architecture\kanban\historico\checklist_vivo.md`
+
+⚠️ Não usar mais `D:\IA\IalClaw\docs\architecture\checklist.md` como fonte de status/controle.
+
 Após qualquer alteração, atualizar:
 
 a. O que já foi corrigido

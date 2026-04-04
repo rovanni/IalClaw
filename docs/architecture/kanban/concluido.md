@@ -1,5 +1,21 @@
 # Concluído
 
+- [x] KB-023 - Externalizar heurísticas táticas remanescentes do AgentLoop
+  - Data: 2026-04-04
+  - Evidência: trust/reality-check, fallback tático e decisões residuais do loop foram externalizados para signals/facts com decisão ativa no `CognitiveOrchestrator` e aplicação em safe mode (`orchestratorDecision ?? loopDecision`) no `AgentLoop`; estado de delta centralizado em `SessionManager.delta_state`; validação com `npx.cmd tsc --noEmit` e `npm.cmd test` sem falhas.
+
+- [x] KB-045 - Governança de iniciação de flow pelo Orchestrator
+  - Data: 2026-04-04
+  - Evidência: `CognitiveOrchestrator.decide()` agora pode retornar `CognitiveStrategy.START_FLOW` via `decideFlowStart()` reaproveitando `FlowRegistry.list()`. `CognitiveActionExecutor` ganhou `executeStartFlow()` com `FlowRegistry.get(flowId)` + `flowManager.startFlow(...)` sem heurística local, persistindo `session.flow_state` no início. `HtmlSlidesFlow.id` foi alinhado para `html_slides`, evitando estado órfão na reidratação via registry. `npm.cmd test` passou com regressão cobrindo decisão `START_FLOW`, prompt inicial e persistência de `session.flow_state`.
+
+- [x] KB-021 - Sincronizar FlowManager com SessionManager
+  - Data: 2026-04-04
+  - Evidência: `getCognitiveState()` em `SessionManager` expandido com `isInGuidedFlow` (Boolean de `session.flow_state`) e `guidedFlowState` (referência ao `FlowState` da sessão). `CognitiveOrchestrator.decide()` seção 2.2 atualizada para `(this.flowManager.isInFlow() || cognitiveState.isInGuidedFlow) && !reactiveState` com `flowState = this.flowManager.getState() ?? cognitiveState.guidedFlowState`. Session é agora a fonte de verdade; flowManager mantido como fallback em memória. Compilação limpa.
+
+- [x] KB-020 - Neutralizar repairPipeline como mini-brain estrutural (Fase 3 — Hard Handoff)
+  - Data: 2026-04-04
+  - Evidência: `ingestRepairResult` adicionado ao `CognitiveOrchestrator` (`_observedRepairResult`); `decideRepairStrategy` assume autoridade completa — retorna `continue` (repair ok + plano válido), `abort` (falha ou sem plano), `undefined` quando resultado não injetado (Safe Mode). `AgentExecutor.repairAndExecute` injeta `ingestRepairResult` antes de `decideRepairStrategy`. Orchestrator é o único decisor no path de repair. Compilação limpa.
+
 - [x] KB-038 - Modularizar validação de StepResult e corrigir imports tipados pós-extração
   - Data: 2026-04-04
   - Evidência: `StepResultValidator` criado e integrado; imports de tipos migrados para `AgentLoopTypes` em AgentController/CognitiveOrchestrator/FailSafeModule/StopContinueModule; correção TS18048 aplicada em CognitiveOrchestrator; suíte `npm.cmd test` validada sem regressão funcional.

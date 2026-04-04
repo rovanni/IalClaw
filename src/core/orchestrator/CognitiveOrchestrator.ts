@@ -2,6 +2,7 @@ import { ActionRouter, ExecutionRoute, TaskNature } from '../autonomy/ActionRout
 import { decideAutonomy, AutonomyDecision, AutonomyLevel, AutonomyContext } from '../autonomy/DecisionEngine';
 import { CognitiveMemory } from '../../memory/CognitiveMemory';
 import { FlowManager } from '../flow/FlowManager';
+import { FlowRegistry } from '../flow/FlowRegistry';
 import { CognitiveActionExecutor, ExecutionResult } from './CognitiveActionExecutor';
 import { IntentionResolver } from '../agent/IntentionResolver';
 import { getRequiredCapabilitiesForTaskType, TaskClassifier, TaskType } from '../agent/TaskClassifier';
@@ -13,7 +14,7 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal } from '../../engine/AgentLoopTypes';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FallbackStrategySignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal, RepairStrategySignal } from '../../engine/AgentLoopTypes';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { FailSafeModule } from './modules/FailSafeModule';
@@ -24,6 +25,7 @@ import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecisi
 
 
 export enum CognitiveStrategy {
+    START_FLOW = "start_flow",
     FLOW = "flow",
     TOOL = "tool",
     LLM = "llm",
@@ -45,6 +47,7 @@ export interface CognitiveDecision {
     strategy: CognitiveStrategy;
     confidence: number;
     reason: string;
+    flowId?: string;
     clearPendingAction?: boolean;
     pendingActionId?: string;
     toolProposal?: any;
@@ -151,6 +154,8 @@ export class CognitiveOrchestrator {
     // para tomar decisões reais em vez de o AgentLoop decidir localmente.
     private observedSignals: Partial<CognitiveSignalsState> = {};
     private observedSelfHealingSignal?: SelfHealingSignal;
+    private observedRepairStrategySignal?: RepairStrategySignal;
+    private _observedRepairResult?: { success: boolean; hasRepairedPlan: boolean };
     private routeVsFailSafeConflictLoggedInCycle = false;
     private lastCapabilityAwarePlanBySession = new Map<string, CapabilityAwarePlan>();
 
@@ -269,12 +274,14 @@ export class CognitiveOrchestrator {
             sessionId,
             hasStop: !!signals.stop,
             hasFallback: !!signals.fallback,
+            hasFallbackStrategy: !!signals.fallbackStrategy,
             hasValidation: !!signals.validation,
             hasRoute: !!signals.route,
             hasFailSafe: !!signals.failSafe,
             hasLlmRetry: !!signals.llmRetry,
             hasReclassification: !!signals.reclassification,
             hasPlanAdjustment: !!signals.planAdjustment,
+            hasRealityCheckFacts: !!signals.realityCheckFacts,
             hasRealityCheck: !!signals.realityCheck
         });
 
@@ -298,6 +305,19 @@ export class CognitiveOrchestrator {
                 originalTool: signals.fallback.originalTool,
                 suggestedTool: signals.fallback.suggestedTool,
                 reason: signals.fallback.reason
+            });
+        }
+
+        if (signals.fallbackStrategy) {
+            this.logger.info('signal_fallback_strategy_observed', '[ORCHESTRATOR PASSIVE] FallbackStrategySignal observado', {
+                sessionId,
+                trigger: signals.fallbackStrategy.trigger,
+                shouldApplyHint: signals.fallbackStrategy.shouldApplyHint,
+                reason: signals.fallbackStrategy.reason,
+                failedToolsCount: signals.fallbackStrategy.failedToolsCount,
+                threshold: signals.fallbackStrategy.threshold,
+                toolCallsCount: signals.fallbackStrategy.toolCallsCount,
+                hasPendingSteps: signals.fallbackStrategy.hasPendingSteps
             });
         }
 
@@ -365,6 +385,16 @@ export class CognitiveOrchestrator {
                 hasGroundingEvidence: signals.realityCheck.hasGroundingEvidence
             });
         }
+
+        if (signals.realityCheckFacts) {
+            this.logger.info('signal_reality_check_facts_observed', '[ORCHESTRATOR PASSIVE] RealityCheckFacts observado', {
+                sessionId,
+                hasExecutionClaim: signals.realityCheckFacts.hasExecutionClaim,
+                hasGroundingEvidence: signals.realityCheckFacts.hasGroundingEvidence,
+                toolCallsCount: signals.realityCheckFacts.toolCallsCount,
+                hasToolEvidence: signals.realityCheckFacts.hasToolEvidence
+            });
+        }
     }
 
     /**
@@ -384,6 +414,102 @@ export class CognitiveOrchestrator {
             stepId: signal.stepId,
             toolName: signal.toolName
         });
+    }
+
+    /**
+     * KB-020 Fase 1 — PASSIVE MODE: ingesta RepairStrategySignal do executor.
+     * Apenas observa e loga. Nenhuma decisão é tomada nesta fase.
+     */
+    public ingestRepairStrategySignal(signal: Readonly<RepairStrategySignal>, sessionId: string): void {
+        this.observedRepairStrategySignal = { ...signal };
+
+        this.logger.info('repair_strategy_signal_received', '[ORCHESTRATOR PASSIVE] RepairStrategySignal observado', {
+            sessionId,
+            hasActiveProject: signal.hasActiveProject,
+            usesWorkspace: signal.usesWorkspace,
+            hadCreateProject: signal.hadCreateProject,
+            createProjectPosition: signal.createProjectPosition,
+            projectMissing: signal.projectMissing,
+            repairReason: signal.repairReason
+        });
+    }
+
+    /**
+     * KB-020 Fase 3 — Observa resultado real da pipeline de repair (passivo).
+     * Permite que decideRepairStrategy tome decisão completa (abort/continue).
+     */
+    public ingestRepairResult(result: Readonly<{ success: boolean; hasRepairedPlan: boolean }>, sessionId: string): void {
+        this._observedRepairResult = { ...result };
+        this.logger.info('repair_result_ingested', '[ORCHESTRATOR PASSIVE] RepairResult observado', {
+            sessionId,
+            success: result.success,
+            hasRepairedPlan: result.hasRepairedPlan
+        });
+    }
+
+    /**
+     * KB-020 Fase 3 — Autoridade completa sobre repair: decide abort/continue com base no resultado real.
+     * FailSafe e StopContinue têm prioridade. Sem resultado observado: delega ao Safe Mode.
+     */
+    public decideRepairStrategy(sessionId: string): 'abort' | 'continue' | undefined {
+        const repairSignal = this.observedRepairStrategySignal;
+        const repairResult = this._observedRepairResult;
+        const failSafeSignal = this.observedSignals.failSafe;
+        const stopSignal = this.observedSignals.stop;
+
+        let orchestratorDecision: 'abort' | 'continue' | undefined;
+        let reason = 'insufficient_context';
+
+        if (failSafeSignal?.activated) {
+            orchestratorDecision = 'abort';
+            reason = 'fail_safe_activated';
+        } else if (stopSignal?.shouldStop) {
+            orchestratorDecision = 'abort';
+            reason = 'stop_continue_should_stop';
+        } else if (!repairResult) {
+            // Resultado de repair não observado — delega ao Safe Mode (localDecision)
+            orchestratorDecision = undefined;
+            reason = 'repair_result_not_observed';
+        } else if (repairResult.success && repairResult.hasRepairedPlan) {
+            orchestratorDecision = 'continue';
+            reason = 'repair_succeeded_with_plan';
+        } else {
+            orchestratorDecision = 'abort';
+            reason = 'repair_failed_or_no_plan';
+        }
+
+        emitDebug('repair_strategy_decision', {
+            type: 'repair_strategy_decision',
+            sessionId,
+            orchestratorDecision,
+            reason,
+            hasRepairSignal: !!repairSignal,
+            hasRepairResult: !!repairResult,
+            repairSuccess: repairResult?.success,
+            hasRepairedPlan: repairResult?.hasRepairedPlan,
+            failSafeActivated: failSafeSignal?.activated ?? false,
+            stopShouldStop: stopSignal?.shouldStop ?? false,
+            repairReason: repairSignal?.repairReason,
+            usesWorkspace: repairSignal?.usesWorkspace
+        });
+
+        this.logger.info('repair_strategy_active_decision', t('agent.repair.orchestrator_governed', {
+            decision: orchestratorDecision ?? 'delegated'
+        }), {
+            sessionId,
+            reason,
+            orchestratorDecision,
+            repairSuccess: repairResult?.success,
+            hasRepairedPlan: repairResult?.hasRepairedPlan,
+            failSafeActivated: failSafeSignal?.activated ?? false,
+            stopShouldStop: stopSignal?.shouldStop ?? false,
+            repairReason: repairSignal?.repairReason,
+            usesWorkspace: repairSignal?.usesWorkspace,
+            hasActiveProject: repairSignal?.hasActiveProject,
+            projectMissing: repairSignal?.projectMissing
+        });
+
+        return orchestratorDecision;
     }
 
     /**
@@ -927,6 +1053,38 @@ export class CognitiveOrchestrator {
     }
 
     /**
+     * ACTIVE MODE: Decide fallback strategy hint based on observed FallbackStrategySignal.
+     *
+     * Regras obrigatórias:
+     * - Não recalcular heurística
+     * - Apenas aplicar signal já produzido pelo AgentLoop
+     * - Safe mode: sem signal => undefined (loop permanece decisor)
+     */
+    public decideFallbackStrategy(sessionId: string): boolean | undefined {
+        const fallbackStrategySignal: FallbackStrategySignal | undefined = this.observedSignals.fallbackStrategy;
+
+        if (!fallbackStrategySignal) {
+            this.logger.debug('no_fallback_strategy_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum FallbackStrategySignal observado para decisão ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        this.logger.info('fallback_strategy_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de fallback estratégico aplicada', {
+            sessionId,
+            source: 'loop_signal_applied_by_orchestrator',
+            trigger: fallbackStrategySignal.trigger,
+            shouldApplyHint: fallbackStrategySignal.shouldApplyHint,
+            reason: fallbackStrategySignal.reason,
+            failedToolsCount: fallbackStrategySignal.failedToolsCount,
+            threshold: fallbackStrategySignal.threshold
+        });
+
+        this._orchestratorAppliedDecisions.fallbackStrategy = fallbackStrategySignal;
+        return fallbackStrategySignal.shouldApplyHint;
+    }
+
+    /**
      * ACTIVE MODE: Decide whether execution should stop based on observed signals.
      *
      * This is the first REAL decision migration from AgentLoop to CognitiveOrchestrator.
@@ -1211,8 +1369,9 @@ export class CognitiveOrchestrator {
         }
 
         // --- 2.2. FLOW (GUIADO) ---
-        if (this.flowManager.isInFlow() && !reactiveState) {
-            const flowState = this.flowManager.getState();
+        // KB-021: usa cognitiveState (sessão) como fonte de verdade; flowManager como fallback em memória
+        if ((this.flowManager.isInFlow() || cognitiveState.isInGuidedFlow) && !reactiveState) {
+            const flowState = this.flowManager.getState() ?? cognitiveState.guidedFlowState;
             const topic = flowState?.topic;
 
             const isRelated = IntentionResolver.isIntentRelatedToTopic(text, topic || undefined);
@@ -1233,6 +1392,20 @@ export class CognitiveOrchestrator {
                 strategy: CognitiveStrategy.FLOW,
                 confidence: Math.max(0.85, flowState?.confidence || 0.9),
                 reason: "active_flow_continuity"
+            };
+        }
+
+        const flowIdToStart = !reactiveState ? this.decideFlowStart(sessionId, text) : undefined;
+        if (flowIdToStart) {
+            this.logger.info('precedence_flow_start', '[ORCHESTRATOR] Prioridade: Início de Flow', {
+                sessionId,
+                flowId: flowIdToStart
+            });
+            return {
+                strategy: CognitiveStrategy.START_FLOW,
+                confidence: 0.9,
+                reason: 'flow_start_requested',
+                flowId: flowIdToStart
             };
         }
 
@@ -1384,6 +1557,20 @@ export class CognitiveOrchestrator {
         };
     }
 
+    public decideFlowStart(sessionId: string, text: string): string | undefined {
+        // TODO(KB-045): migrar a deteccao de inicio de flow para decisao explicita do Orchestrator sem heuristica local no executor.
+        const definitions = FlowRegistry.listDefinitions();
+        const matchedFlowId = FlowRegistry.matchByInput(text);
+
+        this.logger.info('flow_start_evaluation', '[ORCHESTRATOR] Avaliando início de flow', {
+            sessionId,
+            availableFlows: definitions.map((definition) => definition.id),
+            matchedFlowId
+        });
+
+        return matchedFlowId;
+    }
+
     private async safeMemoryQuery(input: string) {
         try {
             return this.memoryService?.searchByContent(input, 5) || [];
@@ -1433,6 +1620,10 @@ export class CognitiveOrchestrator {
     public decideRetryWithLlm(context: { sessionId: string; signal: LlmRetrySignal }): boolean | undefined {
         const { sessionId, signal } = context;
 
+        if (!signal) {
+            return undefined;
+        }
+
         const authority = this.resolveSignalAuthority({
             sessionId,
             type: 'retry'
@@ -1460,8 +1651,20 @@ export class CognitiveOrchestrator {
             return authority.override;
         }
 
-        // Sem bloqueio — delegar ao loop (safe mode).
-        return undefined;
+        // FASE 2 KB-023: Orchestrator aplica ativamente a decisão do signal
+        // já produzido no loop, sem recalcular heurística.
+        const appliedDecision = signal.retryRecommended;
+
+        this.logger.info('llm_retry_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de retry LLM aplicada', {
+            sessionId,
+            retryRecommended: appliedDecision,
+            reason: signal.reason,
+            consecutiveFailures: signal.consecutiveFailures,
+            source: 'loop_signal_applied_by_orchestrator'
+        });
+
+        this._orchestratorAppliedDecisions.llmRetry = signal;
+        return appliedDecision;
     }
 
     /**
@@ -1474,6 +1677,10 @@ export class CognitiveOrchestrator {
      */
     public decideReclassification(context: { sessionId: string; signal: ReclassificationSignal }): boolean | undefined {
         const { sessionId, signal } = context;
+
+        if (!signal) {
+            return undefined;
+        }
 
         const authority = this.resolveSignalAuthority({
             sessionId,
@@ -1502,8 +1709,21 @@ export class CognitiveOrchestrator {
             return authority.override;
         }
 
-        // Sem bloqueio — delegar ao loop (safe mode).
-        return undefined;
+        // FASE 2 KB-023: Orchestrator passa a aplicar ativamente a decisão do signal
+        // já produzido no loop, sem recalcular heurística e sem mudar comportamento.
+        const appliedDecision = signal.reclassificationRecommended;
+
+        this.logger.info('reclassification_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de reclassificação aplicada', {
+            sessionId,
+            reclassificationRecommended: appliedDecision,
+            reason: signal.reason,
+            suggestedTaskType: signal.suggestedTaskType,
+            confidence: signal.confidence,
+            source: 'loop_signal_applied_by_orchestrator'
+        });
+
+        this._orchestratorAppliedDecisions.reclassification = signal;
+        return appliedDecision;
     }
 
     /**
@@ -1516,6 +1736,10 @@ export class CognitiveOrchestrator {
      */
     public decidePlanAdjustment(context: { sessionId: string; signal: PlanAdjustmentSignal }): boolean | undefined {
         const { sessionId, signal } = context;
+
+        if (!signal) {
+            return undefined;
+        }
 
         const authority = this.resolveSignalAuthority({
             sessionId,
@@ -1544,8 +1768,20 @@ export class CognitiveOrchestrator {
             return authority.override;
         }
 
-        // Sem bloqueio — delegar ao loop (safe mode).
-        return undefined;
+        // FASE 2 KB-023: Orchestrator aplica ativamente a decisão do signal
+        // já produzido no loop, sem recalcular heurística.
+        const appliedDecision = signal.shouldAdjustPlan;
+
+        this.logger.info('plan_adjustment_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de ajuste de plano aplicada', {
+            sessionId,
+            shouldAdjustPlan: appliedDecision,
+            reason: signal.reason,
+            failedStep: signal.failedStep,
+            source: 'loop_signal_applied_by_orchestrator'
+        });
+
+        this._orchestratorAppliedDecisions.planAdjustment = signal;
+        return appliedDecision;
     }
 
     /**
