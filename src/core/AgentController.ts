@@ -990,10 +990,11 @@ export class AgentController {
         // TODO (Single Brain): Same as main flow - ingest signals in passive mode.
         const skillSignals = this.loop.getSignalsSnapshot();
         this.orchestrator.ingestSignalsFromLoop(skillSignals, sessionId);
+        const activeDecisions: ActiveDecisionsResult = this.orchestrator.applyActiveDecisions(sessionId);
 
         // â”€â”€ ACTIVE DECISION: StopContinue (Controlled Evolution - Skill Path) â”€â”€â”€â”€â”€â”€â”€
         // Same active governance for skills - consistency across execution paths
-        const skillStopContinueDecision = this.orchestrator.decideStopContinue(sessionId);
+        const skillStopContinueDecision = activeDecisions.orchestrator.stop;
         this.logger.debug('stop_continue_active_decision_skill', '[ACTIVE MODE] StopContinueSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
@@ -1004,17 +1005,17 @@ export class AgentController {
             } : undefined
         });
 
-        const skillFallbackDecision = this.orchestrator.decideToolFallback(sessionId);
+        const skillFallbackDecision = activeDecisions.orchestrator.fallback;
         this.logger.debug('tool_fallback_active_decision_skill', '[ACTIVE MODE] ToolFallbackSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
             hasOrchestratorDecision: !!skillFallbackDecision,
-            signalFromLoop: skillSignals.fallback ? {
-                trigger: skillSignals.fallback.trigger,
-                fallbackRecommended: skillSignals.fallback.fallbackRecommended,
-                originalTool: skillSignals.fallback.originalTool,
-                fallbackTool: skillSignals.fallback.suggestedTool,
-                reason: skillSignals.fallback.reason
+            signalFromLoop: activeDecisions.loop.fallback ? {
+                trigger: activeDecisions.loop.fallback.trigger,
+                fallbackRecommended: activeDecisions.loop.fallback.fallbackRecommended,
+                originalTool: activeDecisions.loop.fallback.originalTool,
+                fallbackTool: activeDecisions.loop.fallback.suggestedTool,
+                reason: activeDecisions.loop.fallback.reason
             } : undefined,
             orchestratorDecision: skillFallbackDecision ? {
                 trigger: skillFallbackDecision.trigger,
@@ -1025,18 +1026,18 @@ export class AgentController {
             } : undefined
         });
 
-        const skillValidationDecision = this.orchestrator.decideStepValidation(sessionId);
-        const finalSkillValidationDecision = skillValidationDecision ?? skillSignals.validation;
+        const skillValidationDecision = activeDecisions.orchestrator.validation;
+        const finalSkillValidationDecision = activeDecisions.applied.validation;
         this.logger.debug('step_validation_active_decision_skill', '[ACTIVE MODE] StepValidationSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
             hasOrchestratorDecision: !!skillValidationDecision,
-            loopValidation: skillSignals.validation ? {
-                success: skillSignals.validation.validationPassed,
-                errors: skillSignals.validation.failureReason,
-                confidence: skillSignals.validation.confidence,
-                reason: skillSignals.validation.reason,
-                requiresLlmReview: skillSignals.validation.requiresLlmReview
+            loopValidation: activeDecisions.loop.validation ? {
+                success: activeDecisions.loop.validation.validationPassed,
+                errors: activeDecisions.loop.validation.failureReason,
+                confidence: activeDecisions.loop.validation.confidence,
+                reason: activeDecisions.loop.validation.reason,
+                requiresLlmReview: activeDecisions.loop.validation.requiresLlmReview
             } : undefined,
             orchestratorDecision: skillValidationDecision ? {
                 success: skillValidationDecision.validationPassed,
@@ -1052,31 +1053,31 @@ export class AgentController {
                 reason: finalSkillValidationDecision.reason,
                 requiresLlmReview: finalSkillValidationDecision.requiresLlmReview
             } : undefined,
-            safeModeFallbackApplied: !skillValidationDecision && !!skillSignals.validation
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.validation
         });
 
-        const skillRouteDecision = this.orchestrator.decideRouteAutonomy(sessionId);
-        const finalSkillRoute = skillRouteDecision ?? skillSignals.route;
+        const skillRouteDecision = activeDecisions.orchestrator.route;
+        const finalSkillRoute = activeDecisions.applied.route;
         this.logger.debug('route_autonomy_active_decision_skill', '[ACTIVE MODE] RouteAutonomySignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
-            loopDecision: this.mapRouteSignalToAuditDecision(skillSignals.route),
+            loopDecision: this.mapRouteSignalToAuditDecision(activeDecisions.loop.route),
             orchestratorDecision: this.mapRouteSignalToAuditDecision(skillRouteDecision),
             appliedDecision: this.mapRouteSignalToAuditDecision(finalSkillRoute),
-            safeModeFallbackApplied: !skillRouteDecision && !!skillSignals.route
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.route
         });
 
         // â”€â”€ ACTIVE DECISION: FailSafe (ETAPA 7 - Safe Mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Mesmo padrÃ£o do fluxo principal â€” consistÃªncia entre caminhos de execuÃ§Ã£o.
         // FailSafe tem PRIORIDADE sobre Route â€” conflito apenas auditado nesta etapa.
-        const skillFailSafeDecision = this.orchestrator.decideFailSafe(sessionId);
-        const finalSkillFailSafe = skillFailSafeDecision ?? skillSignals.failSafe;
+        const skillFailSafeDecision = activeDecisions.orchestrator.failSafe;
+        const finalSkillFailSafe = activeDecisions.applied.failSafe;
         this.logger.debug('failsafe_active_decision_skill', '[ACTIVE MODE] FailSafeSignal decisÃ£o do orquestrador (skill)', {
             sessionId,
             skillName: skill.name,
-            loopDecision: skillSignals.failSafe ? {
-                activated: skillSignals.failSafe.activated,
-                trigger: skillSignals.failSafe.trigger
+            loopDecision: activeDecisions.loop.failSafe ? {
+                activated: activeDecisions.loop.failSafe.activated,
+                trigger: activeDecisions.loop.failSafe.trigger
             } : undefined,
             orchestratorDecision: skillFailSafeDecision ? {
                 activated: skillFailSafeDecision.activated,
@@ -1086,8 +1087,10 @@ export class AgentController {
                 activated: finalSkillFailSafe.activated,
                 trigger: finalSkillFailSafe.trigger
             } : undefined,
-            safeModeFallbackApplied: !skillFailSafeDecision && !!skillSignals.failSafe
+            safeModeFallbackApplied: activeDecisions.safeModeFallbackApplied.failSafe
         });
+
+        this.orchestrator.auditSignalConsistency(sessionId);
 
         this.updatePendingActionFromResponse(sessionId, originalQuery, result.answer, skill.name);
 
