@@ -22,6 +22,15 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- **FASE 2.2 IMPLEMENTADA (ExecutionPlanRegistry + builder separado de filesystem)**: criado `ExecutionPlanRegistry` em `src/core/planner/ExecutionPlanRegistry.ts` com contrato simples de registro/consulta por `taskType`.
+- Extração estrutural concluída do builder de filesystem para `src/core/planner/builders/filesystemBuilder.ts`, reaproveitando a lógica existente de extração de paths sem alterar comportamento.
+- Integração incremental aplicada no `TaskClassifier`: `buildExecutionPlan(taskType, userInput)` agora resolve builder via registry (`ExecutionPlanRegistry.get(taskType)`) e mantém fallback legado inalterado em `getForcedExecutablePlanForTaskType(...)`.
+- Hardening FASE 2.1: unificacao da origem de input no builder deterministico (`buildExecutionPlan(taskType, originalInput)`) com remocao do caminho `null` no `TaskClassifier`.
+- Hardening FASE 2.1: duplicacao de descricao de tool removida; `AgentLoop` passou a reutilizar `getToolDescription(tool)` centralizado no `TaskClassifier`.
+- Hardening FASE 2.1: telemetria de origem do plano adicionada em `ExecutionPlan.meta.source` (`deterministic_builder` | `legacy_forced_plan`) com log explicito `[PLAN] source=...`.
+- **FASE 2.1 IMPLEMENTADA (Execution Plan Builder determinístico)**: `TaskClassifier` agora expõe `buildExecutionPlan(taskType, userInput)` para tarefas operacionais de `filesystem`, gerando steps estruturados (`tool` + `params`) sem dependência de LLM/parsing de texto.
+- Integração incremental no `AgentLoop.ensureMinimalPlan`: para intenção operacional, tenta builder determinístico primeiro; se não houver builder para o tipo, aplica fallback legado existente (sem regressão).
+- Teste de regressão adicionado em `src/tests/run.ts` cobrindo caso real (`crie pasta jogos e subpasta jogo-cobra`) e fallback controlado (`content_generation` retorna `null`).
 - **ETAPA ANTI-SIMULAÇÃO IMPLEMENTADA**: `AgentLoop` agora força modo `REAL_TOOLS_ONLY` para intenção operacional, bloqueia `DIRECT_LLM`/simulação nesse contexto e falha quando `tools_count === 0`.
 - Guardrail de executabilidade adicionado: para intenção operacional, o plano precisa ser executável (steps mapeáveis para tool) antes da execução; caso contrário, erro controlado i18n é lançado.
 - `TaskClassifier` passou a expor plano forçado executável estruturado (`description`, `tool`, `params`) para intenções operacionais, e o `AgentLoop.ensureMinimalPlan` reaproveita esse contrato sem reimplementar heurísticas.
@@ -188,6 +197,8 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - d) O que nao deve ser tocado agora: conflitos, autoridade e zonas vermelhas preservadas.
 
 ## O que esta em andamento
+- Validacao dirigida da FASE 2.2 em runtime para confirmar `meta.source=deterministic_builder` no caso `filesystem` e `legacy_forced_plan` nos tipos sem builder registrado.
+- Monitoramento da FASE 2.1 em runtime para confirmar que planos de `filesystem` entram sempre como steps executáveis (`tool` definido em 100% dos steps).
 - Revalidacao final de terminal para confirmar execucao limpa de `npx tsc --noEmit` e `npm.cmd test` apos a integracao de intent (houve encerramento de sessao de terminal com codigo 1 durante tentativa de confirmacao explicita).
 - Validacao dirigida do fluxo de update em ambientes reais (Windows e Linux) para confirmar UX da pergunta de reinicio em cenarios com daemon e sem daemon ativo.
 - Monitoramento dirigido dos logs de runtime para confirmar estabilidade da nova rota de execução de filesystem em produção (sem regressão no fluxo conversacional).
@@ -202,6 +213,7 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Confirmar limite seguro antes da fase 2: nenhum trecho com `RouteAutonomy`, `resolveSignalAuthority` ou auditoria sera extraido.
 
 ## O que ainda falta
+- Expandir `buildExecutionPlan(taskType, userInput)` para outros domínios operacionais (file_search, file_conversion, system_operation, skill_installation) mantendo fallback controlado por `null` quando não houver builder.
 - Cobrir com teste dedicado de contrato a prioridade entre intent `EXPLORATION` e sinais de recovery/flow/pending no Orchestrator (garantir precedencia documentada em todos os ramos).
 - Publicar nota de arquitetura da integração em `docs/architecture/` descrevendo que o classificador apenas informa contexto e não executa/decide fluxo fora do Orchestrator.
 - Adicionar opcao por flag para automacao de CI/scripts: `--auto-start` e `--no-start` no update (sem prompt interativo).

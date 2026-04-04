@@ -12,7 +12,7 @@ import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/p
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { getPendingAction, isConfirmation, setPendingAction } from '../core/agent/PendingActionTracker';
-import { classifyTask } from '../core/agent/TaskClassifier';
+import { buildExecutionPlan, classifyTask } from '../core/agent/TaskClassifier';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
 import { FlowManager } from '../core/flow/FlowManager';
@@ -537,6 +537,16 @@ async function run() {
 
     const snakeClassification = classifyTask('crie um jogo da cobrinha em html');
     assert.equal(snakeClassification.type, 'content_generation');
+
+    const filesystemDeterministicPlan = buildExecutionPlan('filesystem', 'crie pasta jogos e subpasta jogo-cobra');
+    assert.ok(filesystemDeterministicPlan);
+    assert.equal(filesystemDeterministicPlan?.length, 2);
+    assert.equal(filesystemDeterministicPlan?.[0]?.tool, 'create_directory');
+    assert.equal(filesystemDeterministicPlan?.[0]?.params.path, 'workspace/jogos');
+    assert.equal(filesystemDeterministicPlan?.[1]?.params.path, 'workspace/jogos/jogo-cobra');
+
+    const noBuilderPlan = buildExecutionPlan('content_generation', 'explique quicksort');
+    assert.equal(noBuilderPlan, null);
 
     await SessionManager.runWithSession('exploration-orchestrator-test', async () => {
         const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());

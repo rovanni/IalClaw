@@ -9,6 +9,8 @@ import { LLMProvider, ProviderFactory } from '../../engine/ProviderFactory';
 import { createLogger } from '../../shared/AppLogger';
 import { getClassificationMemory } from '../../memory/ClassificationMemory';
 import { t } from '../../i18n';
+import { ExecutionPlanRegistry, ExecutionStep } from '../planner/ExecutionPlanRegistry';
+import { buildFilesystemPlan } from '../planner/builders/filesystemBuilder';
 
 export type TaskType =
     | 'file_conversion'
@@ -41,6 +43,15 @@ export interface ForcedExecutableStep {
     tool: string;
     params: Record<string, unknown>;
 }
+
+export interface DeterministicExecutionStep {
+    tool: ExecutionStep['tool'];
+    params: ExecutionStep['params'];
+}
+
+export type PlanSource = 'deterministic_builder' | 'legacy_forced_plan';
+
+ExecutionPlanRegistry.register('filesystem', buildFilesystemPlan);
 
 // ── Detecção de Continuidade ─────────────────────────────────────────────
 
@@ -919,14 +930,15 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
     }
 }
 
-export function getForcedExecutablePlanForTaskType(type: TaskType): ForcedExecutableStep[] | null {
+export function getForcedExecutablePlanForTaskType(type: TaskType, userInput: string): ForcedExecutableStep[] | null {
+    if (type === 'filesystem') {
+        const deterministicPlan = buildExecutionPlan(type, userInput);
+        if (deterministicPlan) {
+            return mapDeterministicToForcedSteps(deterministicPlan);
+        }
+    }
+
     switch (type) {
-        case 'filesystem':
-            return [
-                { description: 'criar diretório', tool: 'create_directory', params: {} },
-                { description: 'criar arquivo', tool: 'write_file', params: {} },
-                { description: 'salvar arquivo', tool: 'write_file', params: {} }
-            ];
         case 'file_search':
             return [
                 { description: 'localizar arquivo no diretório alvo', tool: 'search_file', params: {} },
@@ -959,5 +971,33 @@ export function getForcedExecutablePlanForTaskType(type: TaskType): ForcedExecut
             ];
         default:
             return null;
+    }
+}
+
+export function buildExecutionPlan(taskType: TaskType, userInput: string): DeterministicExecutionStep[] | null {
+    const builder = ExecutionPlanRegistry.get(taskType);
+    if (!builder) {
+        return null;
+    }
+
+    return builder(userInput);
+}
+
+function mapDeterministicToForcedSteps(steps: DeterministicExecutionStep[]): ForcedExecutableStep[] {
+    return steps.map(step => ({
+        description: getToolDescription(step.tool),
+        tool: step.tool,
+        params: step.params
+    }));
+}
+
+export function getToolDescription(tool: string): string {
+    switch (tool) {
+        case 'create_directory':
+            return 'criar diretório';
+        case 'write_file':
+            return 'salvar arquivo';
+        default:
+            return 'executar operação';
     }
 }

@@ -5,7 +5,7 @@ import { emitDebug } from '../shared/DebugBus';
 import { SessionManager } from '../shared/SessionManager';
 import { CognitiveOrchestrator } from '../core/orchestrator/CognitiveOrchestrator';
 import { t } from '../i18n';
-import { classifyTask, getForcedExecutablePlanForTaskType, getForcedPlanForTaskType, TaskType } from '../core/agent/TaskClassifier';
+import { buildExecutionPlan, classifyTask, getForcedExecutablePlanForTaskType, getForcedPlanForTaskType, getToolDescription, PlanSource, TaskType } from '../core/agent/TaskClassifier';
 import { decideAutonomy, createAutonomyContext, AutonomyDecision } from '../core/autonomy';
 import { TaskContextSignals } from '../core/context/TaskContextSignals';
 import { getPlanExecutionValidator, PlanExecutionValidator } from '../core/validation/PlanExecutionValidator';
@@ -50,6 +50,9 @@ export type ExecutionStep = {
 export type ExecutionPlan = {
     goal: string;
     steps: ExecutionStep[];
+    meta?: {
+        source: PlanSource;
+    };
     currentStepIndex: number;
     createdAt: number;
     triedPaths: string[];
@@ -643,9 +646,21 @@ export class AgentLoop {
         }
 
         // generic_task AGORA TEM PLANO ÚTIL (não é mais "processar entrada")
-        const executableForcedPlan = getForcedExecutablePlanForTaskType(this.currentTaskType);
+        const deterministicOperationalPlan = this.requiresRealWorldAction(this.currentTaskType, ExecutionRoute.TOOL_LOOP)
+            ? buildExecutionPlan(this.currentTaskType, this.originalInput)
+            : null;
+        const executableForcedPlan = deterministicOperationalPlan
+            ? deterministicOperationalPlan.map((step) => ({
+                description: getToolDescription(step.tool),
+                tool: step.tool,
+                params: step.params
+            }))
+            : getForcedExecutablePlanForTaskType(this.currentTaskType, this.originalInput);
         const forcedPlan = getForcedPlanForTaskType(this.currentTaskType);
         if (executableForcedPlan || forcedPlan) {
+            const source: PlanSource = deterministicOperationalPlan
+                ? 'deterministic_builder'
+                : 'legacy_forced_plan';
             const steps = executableForcedPlan
                 ? executableForcedPlan.map((step, idx) => ({
                     id: idx + 1,
@@ -664,6 +679,7 @@ export class AgentLoop {
             this.executionContext.currentPlan = {
                 goal: this.originalInput,
                 steps,
+                meta: { source },
                 currentStepIndex: 0,
                 createdAt: Date.now(),
                 triedPaths: [],
@@ -671,7 +687,10 @@ export class AgentLoop {
             };
             this.executionContext.planTaskType = this.currentTaskType;
 
-            this.logger.info('minimal_plan_created', `[PLAN] Plano mínimo criado para: ${this.currentTaskType}`);
+            this.logger.info('minimal_plan_created', `[PLAN] source=${source} Plano mínimo criado para: ${this.currentTaskType}`, {
+                source,
+                taskType: this.currentTaskType
+            });
         }
     }
 
