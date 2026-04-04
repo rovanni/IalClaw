@@ -171,10 +171,15 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Método novo no módulo: `decideActivatedPassThrough(signal)` em `src/core/orchestrator/modules/FailSafeModule.ts`.
   - `decideFailSafe(sessionId)` passou a delegar esse bloco após a auditoria de conflito, preservando ordem e comportamento.
   - Limite seguro reafirmado: conflitos `FailSafe vs Route`, `resolveSignalAuthority` e `auditSignalConsistency` permanecem no Orchestrator.
+- **MODULARIZAÇÃO FASE 1.3 (ÚLTIMO BLOCO LOCAL) CONCLUÍDA**: fechamento do bloco estritamente local no domínio FailSafe.
+  - Bloco extraído para o módulo: decisão pós-auditoria puramente orientada ao `FailSafeSignal`.
+  - Método aplicado no módulo: `resolvePostAuditDecision(signal)` em `src/core/orchestrator/modules/FailSafeModule.ts`.
+  - Garantia de escopo: método recebe apenas `FailSafeSignal`, sem acesso a `RouteAutonomy`, histórico ou estado global.
+  - Comportamento preservado: retorno final permanece equivalente ao fluxo anterior (`signal`), sem alteração de precedência ou autoridade.
 - **CHECKLIST VIVO SINCRONIZADO (OBRIGATÓRIO)**: atualizacao completa nos 4 blocos apos cada alteração recente da modularização.
-  - a) O que ja foi corrigido: fases 1, 1.1 e 1.2 registradas.
-  - b) O que esta em andamento: preparacao controlada da fase 1.3.
-  - c) O que ainda falta: limite seguro final do FailSafe antes da fase 2.
+  - a) O que ja foi corrigido: fases 1, 1.1, 1.2 e 1.3 registradas.
+  - b) O que esta em andamento: monitoramento de estabilidade e rastreabilidade em produção.
+  - c) O que ainda falta: consolidacao dos limites de fase 2 sem cruzar zonas de autoridade.
   - d) O que nao deve ser tocado agora: conflitos, autoridade e zonas vermelhas preservadas.
 
 ## O que esta em andamento
@@ -189,7 +194,6 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Monitoramento pós-ETAPA 6: verificar logs `[ORCHESTRATOR AUTHORITY]` de bloqueio em produção para os 3 novos call sites.
 - Verificação de divergência: quando loop quer continuar e Orchestrator bloqueia via FailSafe/StopContinue.
 - Monitorar em produção os novos eventos `short_circuit_governance`, `short_circuit_blocked` e `hybrid_blocked` para confirmar redução de "promessa sem execução".
-- Modularizacao FailSafe fase 1.3 em preparo: identificar apenas bloco coeso restante que dependa exclusivamente de `FailSafeSignal`.
 - Confirmar limite seguro antes da fase 2: nenhum trecho com `RouteAutonomy`, `resolveSignalAuthority` ou auditoria sera extraido.
 
 ## O que ainda falta
@@ -209,7 +213,6 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
 - Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
-- Finalizar FASE 1.3 com apenas o ultimo bloco puro de `FailSafeSignal`, sem cruzar para governanca de conflitos.
 - Definir ponto de parada da fase 1: apos extrair decisoes puras de signal, interromper extracao direta e migrar para fase 2.
 
 - **ETAPA 5 IMPLEMENTADA**: Orchestrator ativado no AgentLoop para os 3 call sites de decisão cognitiva.
