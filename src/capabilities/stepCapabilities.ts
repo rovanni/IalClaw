@@ -33,11 +33,6 @@ export function getRequiredCapabilitiesForStep(step: PlanStep): Capability[] {
     }
 }
 
-import { 
-    PlanRuntimeDecision, 
-    RuntimeDecisionReasons 
-} from '../core/orchestrator/PlanRuntimeDecision';
-
 export interface PlanRuntimeSignals {
     hasHtmlEntry: boolean;
     hasNodeEntry: boolean;
@@ -52,57 +47,6 @@ export function extractPlanRuntimeSignals(
         hasHtmlEntry: workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.html'),
         hasNodeEntry: workspaceContext.some(file => file.relative_path.toLowerCase() === 'index.js'),
         hasDomSteps: plan.steps.some(step => requiresDOM(step))
-    };
-}
-
-/**
- * Adapter para converter a auditoria legada no novo contrato de decisão.
- * Usado pelo Executor para manter o SAFE MODE durante a migração definitiva.
- */
-export function mapLegacyToDecision(legacy: {
-    requiresBrowserValidation: boolean;
-    skipRuntimeExecution: boolean;
-    skipReason?: 'no_runnable_entry' | 'html_without_requiresDOM';
-}): PlanRuntimeDecision {
-    const reasonMap = {
-        'no_runnable_entry': RuntimeDecisionReasons.NO_RUNNABLE_ENTRY,
-        'html_without_requiresDOM': RuntimeDecisionReasons.HTML_WITHOUT_DOM
-    };
-
-    return {
-        shouldExecute: !legacy.skipRuntimeExecution,
-        requiresBrowser: legacy.requiresBrowserValidation,
-        reasonKey: legacy.skipReason ? (reasonMap[legacy.skipReason] || RuntimeDecisionReasons.LEGACY_FALLBACK) : RuntimeDecisionReasons.EXECUTABLE_PROJECT,
-        decisionSource: "safe_mode"
-    };
-}
-
-/**
- * @deprecated Use extractPlanRuntimeSignals + orchestrator.decidePlanRuntimeMode
- * Mantido apenas para suporte ao SAFE MODE durante a migração.
- */
-export function legacyResolveRuntimeModeForPlan(
-    plan: ExecutionPlan,
-    workspaceContext: WorkspaceFileContext[]
-): {
-    requiresBrowserValidation: boolean;
-    skipRuntimeExecution: boolean;
-    skipReason?: 'no_runnable_entry' | 'html_without_requiresDOM';
-} {
-    const signals = extractPlanRuntimeSignals(plan, workspaceContext);
-
-    if (!signals.hasHtmlEntry && !signals.hasNodeEntry) {
-        return {
-            requiresBrowserValidation: false,
-            skipRuntimeExecution: true,
-            skipReason: 'no_runnable_entry'
-        };
-    }
-
-    return {
-        requiresBrowserValidation: signals.hasHtmlEntry && signals.hasDomSteps,
-        skipRuntimeExecution: signals.hasHtmlEntry && !signals.hasNodeEntry && !signals.hasDomSteps,
-        skipReason: signals.hasHtmlEntry && !signals.hasNodeEntry && !signals.hasDomSteps ? 'html_without_requiresDOM' : undefined
     };
 }
 

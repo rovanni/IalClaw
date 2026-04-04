@@ -14,13 +14,6 @@ Legenda de status:
   - Evidência curta: governança de retry existe, mas ainda com fallback decisório local no executor.
   - Criterio de pronto: executor executa passo atômico e retorna erro bruto; retry/replan decidido no Orchestrator
 
-- [x] KB-002 - Refatorar stepCapabilities para Pure Signals (sem decisão)
-  - Origem: ProposedChanges (fase 2)
-  - Risco: Crítico
-  - Status atual: Resolvido
-  - Evidência curta: resolveRuntimeModeForPlan ainda decide skip/runtime localmente.
-  - Criterio de pronto: stepCapabilities retorna fatos; decisões de skip/runtime ficam no Orchestrator
-
 - [ ] KB-017 - Externalizar capabilityFallback para signal puro
   - Origem: AntiPatterns + CognitiveArchitectureMap (src/capabilities)
   - Risco: Crítico

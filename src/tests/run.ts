@@ -6,7 +6,7 @@ import { agentConfig, getExecutionModeSnapshot } from '../core/executor/AgentCon
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
 import { clearLearningBuffer, getLearningBuffer, hashLearningInput, pushLearningRecord } from '../core/executor/operationalLearning';
 import { normalizeExecutionPlan, repairPlanStructure } from '../core/executor/repairPipeline';
-import { requiresDOM, extractPlanRuntimeSignals, legacyResolveRuntimeModeForPlan, sanitizeStep } from '../capabilities/stepCapabilities';
+import { requiresDOM, extractPlanRuntimeSignals, sanitizeStep } from '../capabilities/stepCapabilities';
 import { computeConfidence, evaluateSessionConsistency } from '../core/planner/plannerDiagnostics';
 import { createSlidesProjectTemplate, createWebProjectTemplate } from '../core/planner/templates/planTemplates';
 import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/planningRecovery';
@@ -123,13 +123,16 @@ async function run() {
         ]
     };
 
-    const htmlRuntimeMode = legacyResolveRuntimeModeForPlan(htmlPlan, [
+    const runtimeOrchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+
+    const htmlSignals = extractPlanRuntimeSignals(htmlPlan, [
         { name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>' }
     ]);
+    const htmlRuntimeMode = runtimeOrchestrator.decidePlanRuntimeMode(htmlSignals);
 
-    assert.equal(htmlRuntimeMode.requiresBrowserValidation, false);
-    assert.equal(htmlRuntimeMode.skipRuntimeExecution, true);
-    assert.equal(htmlRuntimeMode.skipReason, 'html_without_requiresDOM');
+    assert.ok(htmlRuntimeMode);
+    assert.equal(htmlRuntimeMode.shouldExecute, false);
+    assert.equal(htmlRuntimeMode.requiresBrowser, false);
 
     const domPlan: ExecutionPlan = {
         goal: 'valide no navegador se o canvas renderiza',
@@ -144,14 +147,16 @@ async function run() {
         ]
     };
 
-    const domRuntimeMode = legacyResolveRuntimeModeForPlan(domPlan, [
+    const domSignals = extractPlanRuntimeSignals(domPlan, [
         { name: 'index.html', relative_path: 'index.html', size: 100, preview: '<html></html>' }
     ]);
+    const domRuntimeMode = runtimeOrchestrator.decidePlanRuntimeMode(domSignals);
 
-    assert.equal(domRuntimeMode.requiresBrowserValidation, true);
-    assert.equal(domRuntimeMode.skipRuntimeExecution, false);
+    assert.ok(domRuntimeMode);
+    assert.equal(domRuntimeMode.requiresBrowser, true);
+    assert.equal(domRuntimeMode.shouldExecute, true);
 
-    const markdownRuntimeMode = legacyResolveRuntimeModeForPlan({
+    const markdownSignals = extractPlanRuntimeSignals({
         goal: 'registrar tarefa em markdown',
         steps: [
             {
@@ -164,10 +169,39 @@ async function run() {
     }, [
         { name: 'IALCLAW_FALLBACK_TASK.md', relative_path: 'IALCLAW_FALLBACK_TASK.md', size: 100, preview: '# fallback' }
     ]);
+    const markdownRuntimeMode = runtimeOrchestrator.decidePlanRuntimeMode(markdownSignals);
 
-    assert.equal(markdownRuntimeMode.requiresBrowserValidation, false);
-    assert.equal(markdownRuntimeMode.skipRuntimeExecution, true);
-    assert.equal(markdownRuntimeMode.skipReason, 'no_runnable_entry');
+    assert.ok(markdownRuntimeMode);
+    assert.equal(markdownRuntimeMode.requiresBrowser, false);
+    assert.equal(markdownRuntimeMode.shouldExecute, false);
+
+    const retrySessionId = 'kb001-retry-governance';
+    const retryFallbackDecision = runtimeOrchestrator.decideRetryAfterFailure({
+        sessionId: retrySessionId,
+        attempt: 1,
+        executorDecision: true
+    });
+    assert.equal(retryFallbackDecision, undefined);
+
+    runtimeOrchestrator.ingestSignalsFromLoop({
+        failSafe: { activated: true, trigger: 'runtime_failure' }
+    } as any, retrySessionId);
+    runtimeOrchestrator.ingestSelfHealingSignal({
+        activated: true,
+        attempts: 1,
+        maxAttempts: 6,
+        success: false,
+        lastError: 'simulated runtime failure',
+        stepId: '1',
+        toolName: 'workspace_run_project'
+    }, retrySessionId);
+
+    const retryGovernedDecision = runtimeOrchestrator.decideRetryAfterFailure({
+        sessionId: retrySessionId,
+        attempt: 2,
+        executorDecision: true
+    });
+    assert.equal(retryGovernedDecision, false);
 
     const templatePlan = await createWebProjectTemplate.build({
         goal: 'crie um jogo da cobrinha em HTML',
@@ -991,13 +1025,26 @@ async function run() {
         ];
 
         for (const tc of testCases) {
-            const legacy = legacyResolveRuntimeModeForPlan(tc.plan, tc.context);
             const signals = extractPlanRuntimeSignals(tc.plan, tc.context);
             const orchestrated = orchestrator.decidePlanRuntimeMode(signals);
 
             assert.ok(orchestrated, `Orchestrator should decide for ${tc.name}`);
-            assert.equal(orchestrated.shouldExecute, !legacy.skipRuntimeExecution, `Parity failure (shouldExecute) in ${tc.name}`);
-            assert.equal(orchestrated.requiresBrowser, legacy.requiresBrowserValidation, `Parity failure (requiresBrowser) in ${tc.name}`);
+            if (tc.name === 'HTML without Node and without requiresDOM') {
+                assert.equal(orchestrated.shouldExecute, false, `Expected skip in ${tc.name}`);
+                assert.equal(orchestrated.requiresBrowser, false, `Expected no browser in ${tc.name}`);
+            }
+            if (tc.name === 'HTML with DOM validation') {
+                assert.equal(orchestrated.shouldExecute, true, `Expected execute in ${tc.name}`);
+                assert.equal(orchestrated.requiresBrowser, true, `Expected browser in ${tc.name}`);
+            }
+            if (tc.name === 'Pure Markdown (no runnable entry)') {
+                assert.equal(orchestrated.shouldExecute, false, `Expected skip in ${tc.name}`);
+                assert.equal(orchestrated.requiresBrowser, false, `Expected no browser in ${tc.name}`);
+            }
+            if (tc.name === 'Node project') {
+                assert.equal(orchestrated.shouldExecute, true, `Expected execute in ${tc.name}`);
+                assert.equal(orchestrated.requiresBrowser, false, `Expected no browser in ${tc.name}`);
+            }
             assert.equal(orchestrated.decisionSource, "orchestrator");
         }
     });

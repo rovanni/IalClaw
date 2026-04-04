@@ -25,6 +25,7 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Abril/2026: KB-002 concluído de forma estrutural. `stepCapabilities` ficou restrito a sinais puros (`extractPlanRuntimeSignals`), funções legadas de decisão de runtime foram removidas do módulo de capabilities e o `AgentExecutor` passou a exigir decisão de runtime via Orchestrator (sem fallback decisório local).
 - Abril/2026: KB-038 concluído. Validação heurística de resultado de step extraída para `StepResultValidator` (paridade 1:1 de padrões/fluxo), com suíte dedicada + parity check; imports tipados pós-extração migrados para `AgentLoopTypes` em AgentController/CognitiveOrchestrator/FailSafeModule/StopContinueModule; ajuste de tipagem TS18048 no Orchestrator e suíte principal estabilizada.
 - Abril/2026: KB-022 follow-up (skill flow) aplicado em `runWithSkill`: removidas chamadas manuais de decide* no controller e consolidacao via `applyActiveDecisions(sessionId)`; auditoria `auditSignalConsistency(sessionId)` restaurada no mesmo estagio logico do fluxo principal, preservando safe mode e sem alteracao funcional.
 - Abril/2026: KB-022 concluído. Split-brain entre AgentController e AgentRuntime removido: AgentRuntime deixou de instanciar CognitiveOrchestrator local e passou a aceitar injeção externa; AgentController isolou context building/system prompt e consolidou ACTIVE DECISIONs no Orchestrator via applyActiveDecisions.
@@ -37,6 +38,7 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Historico detalhado preservado a partir deste ponto no arquivo original movido para kanban/historico.
 
 ## O que esta em andamento
+- KB-001 (Fase 1 + Fase 2 concluidas): fallback decisorio local removido do healing loop no `AgentExecutor`. Consultas a `decideRetryAfterFailure` reduzidas de 8 para 4 por ciclo (cache no bloco repair e no bloco runtime). Teste legado `stepCapabilities.test.ts` migrado para API atual (`extractPlanRuntimeSignals` + `decidePlanRuntimeMode`). Compilacao global limpa (`TSC_EXIT=0`). Aguardando validacao em runtime para marcar KB-001 como concluido.
 - Validacao dirigida da FASE 2.2 em runtime para confirmar `meta.source=deterministic_builder` no caso `filesystem` e `legacy_forced_plan` nos tipos sem builder registrado.
 - Monitoramento da FASE 2.1 em runtime para confirmar que planos de `filesystem` entram sempre como steps executáveis (`tool` definido em 100% dos steps).
 - Validacao dirigida do fluxo de update em ambientes reais (Windows e Linux) para confirmar UX da pergunta de reinicio em cenarios com daemon e sem daemon ativo.

@@ -29,8 +29,6 @@ import {
     getRequiredCapabilitiesForStep,
     requiresDOM,
     extractPlanRuntimeSignals,
-    legacyResolveRuntimeModeForPlan,
-    mapLegacyToDecision,
     sanitizeStep
 } from '../../capabilities/stepCapabilities';
 
@@ -475,27 +473,27 @@ export class AgentExecutor {
                         && session.last_error_type === 'tool_input'
                         && payload.tool === repairStep.tool;
 
-                    if (newStep?.tool !== repairStep.tool) {
-                        const executorDecision = false;
-                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                            sessionId: session.conversation_id,
-                            attempt,
-                            executorDecision: false
-                        });
-                        const finalDecision = orchestratorDecision ?? executorDecision;
+                    // KB-001 Fase 2: decisão de abort do Orchestrator cacheada uma vez para os
+                    // 4 pontos de aborto do bloco repair (executorDecision=false). Safe Mode mantido.
+                    const orchestratorAbortDecision = this.orchestrator?.decideRetryAfterFailure({
+                        sessionId: session.conversation_id,
+                        attempt,
+                        executorDecision: false
+                    });
 
+                    if (newStep?.tool !== repairStep.tool) {
                         debugBus.emit('self_healing_abort', {
                             reason: 'tool_mismatch_during_repair',
                             expected_tool: repairStep.tool,
                             received_tool: newStep?.tool,
                             repair_step: repairStep,
                             normalized_step: newStep,
-                            governedByOrchestrator: finalDecision !== false
+                            governedByOrchestrator: orchestratorAbortDecision === true
                         });
 
                         emitSelfHealingEnd(attempt + 1, false);
 
-                        if (orchestratorDecision === true) {
+                        if (orchestratorAbortDecision === true) {
                             return {
                                 success: false,
                                 error: t('error.executor.governance.tool_mismatch_repair', { expected: repairStep.tool, received: newStep?.tool ?? '' })
@@ -509,24 +507,16 @@ export class AgentExecutor {
                     }
 
                     if (isCorrectionMode && JSON.stringify(repairStep.input) === JSON.stringify(newStep?.input)) {
-                        const executorDecision = false;
-                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                            sessionId: session.conversation_id,
-                            attempt,
-                            executorDecision: false
-                        });
-                        const finalDecision = orchestratorDecision ?? executorDecision;
-
                         debugBus.emit('self_healing_abort', {
                             reason: 'noop_correction',
                             tool: payload.tool,
                             input: newStep?.input,
-                            governedByOrchestrator: finalDecision !== false
+                            governedByOrchestrator: orchestratorAbortDecision === true
                         });
 
                         emitSelfHealingEnd(attempt + 1, false);
 
-                        if (orchestratorDecision === true) {
+                        if (orchestratorAbortDecision === true) {
                             return {
                                 success: false,
                                 error: t('error.executor.governance.noop_correction')
@@ -540,26 +530,18 @@ export class AgentExecutor {
                     }
 
                     if (isCorrectionMode && !isMinimalChange(repairStep, newStep, payload.issues || [])) {
-                        const executorDecision = false;
-                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                            sessionId: session.conversation_id,
-                            attempt,
-                            executorDecision: false
-                        });
-                        const finalDecision = orchestratorDecision ?? executorDecision;
-
                         debugBus.emit('self_healing_abort', {
                             reason: 'non_minimal_change',
                             tool: payload.tool,
                             issues: payload.issues,
                             prev_input: repairStep.input,
                             new_input: newStep?.input,
-                            governedByOrchestrator: finalDecision !== false
+                            governedByOrchestrator: orchestratorAbortDecision === true
                         });
 
                         emitSelfHealingEnd(attempt + 1, false);
 
-                        if (orchestratorDecision === true) {
+                        if (orchestratorAbortDecision === true) {
                             return {
                                 success: false,
                                 error: t('error.executor.governance.non_minimal_correction')
@@ -575,24 +557,16 @@ export class AgentExecutor {
                     session._input_history = session._input_history || [];
 
                     if (isCorrectionMode && detectOscillation(session._input_history, newStep.input)) {
-                        const executorDecision = false;
-                        const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                            sessionId: session.conversation_id,
-                            attempt,
-                            executorDecision: false
-                        });
-                        const finalDecision = orchestratorDecision ?? executorDecision;
-
                         debugBus.emit('self_healing_abort', {
                             reason: 'input_oscillation',
                             tool: payload.tool,
                             input: newStep.input,
-                            governedByOrchestrator: finalDecision !== false
+                            governedByOrchestrator: orchestratorAbortDecision === true
                         });
 
                         emitSelfHealingEnd(attempt + 1, false);
 
-                        if (orchestratorDecision === true) {
+                        if (orchestratorAbortDecision === true) {
                             return {
                                 success: false,
                                 error: t('error.executor.governance.input_oscillation')
@@ -635,18 +609,7 @@ export class AgentExecutor {
                         trace_id: getTraceIdSafe()
                     });
                     attempt++;
-                    const executorDecision631 = true; // executor quer continuar
-                    const orchestratorDecision631 = this.orchestrator?.decideRetryAfterFailure({
-                        sessionId: session.conversation_id,
-                        attempt,
-                        executorDecision: executorDecision631
-                    });
-                    const finalDecision631 = orchestratorDecision631 ?? executorDecision631;
-                    if (finalDecision631 === true) {
-                        continue;
-                    } else {
-                        break; // manter encerramento equivalente
-                    }
+                    continue;
                 }
 
                 lastError = failureMessage;
@@ -712,18 +675,7 @@ export class AgentExecutor {
                     trace_id: getTraceIdSafe()
                 });
                 attempt++;
-                const executorDecision697 = true; // executor quer continuar
-                const orchestratorDecision697 = this.orchestrator?.decideRetryAfterFailure({
-                    sessionId: session.conversation_id,
-                    attempt,
-                    executorDecision: executorDecision697
-                });
-                const finalDecision697 = orchestratorDecision697 ?? executorDecision697;
-                if (finalDecision697 === true) {
-                    continue;
-                } else {
-                    break; // manter encerramento equivalente
-                }
+                continue;
             }
 
             if (!session.current_project_id) {
@@ -834,18 +786,7 @@ export class AgentExecutor {
                             trace_id: getTraceIdSafe()
                         });
                         attempt++;
-                        const executorDecision808 = true; // executor quer continuar
-                        const orchestratorDecision808 = this.orchestrator?.decideRetryAfterFailure({
-                            sessionId: session.conversation_id,
-                            attempt,
-                            executorDecision: executorDecision808
-                        });
-                        const finalDecision808 = orchestratorDecision808 ?? executorDecision808;
-                        if (finalDecision808 === true) {
-                            continue;
-                        } else {
-                            break; // manter encerramento equivalente
-                        }
+                        continue;
                     }
                 }
             }
@@ -855,11 +796,17 @@ export class AgentExecutor {
             // NOVO FLUXO SINGLE BRAIN (KB-002) - Centralização da autoridade
             const signals = extractPlanRuntimeSignals(plan, workspaceContextForRuntime);
             const orchestratorDecision = this.orchestrator?.decidePlanRuntimeMode(signals);
-            
-            // SAFE MODE: Fallback para adapter legado se o orquestrador delegar (null)
-            const runtimeDecision = orchestratorDecision ?? mapLegacyToDecision(
-                legacyResolveRuntimeModeForPlan(plan, workspaceContextForRuntime)
-            );
+
+            if (!orchestratorDecision) {
+                emitSelfHealingEnd(attempt + 1, false);
+                return {
+                    success: false,
+                    error: t('error.executor.runtime_decision_unavailable'),
+                    error_type: 'runtime_decision_unavailable'
+                };
+            }
+
+            const runtimeDecision = orchestratorDecision;
 
             const skipRuntimeExecution = !runtimeDecision.shouldExecute;
             const requiresBrowserValidation = runtimeDecision.requiresBrowser;
@@ -943,25 +890,25 @@ export class AgentExecutor {
                 const errorType = classifyError(runtimeError);
                 const normalizedError = normalizeError(runtimeError);
 
-                if (errorType === 'environment_dependency') {
-                    const executorDecision = false;
-                    const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                        sessionId: session.conversation_id,
-                        attempt,
-                        executorDecision: false
-                    });
-                    const finalDecision = orchestratorDecision ?? executorDecision;
+                // KB-001 Fase 2: decisão de abort do Orchestrator cacheada uma vez para os
+                // 2 pontos de aborto do bloco runtime (executorDecision=false). Safe Mode mantido.
+                const orchestratorRuntimeAbortDecision = this.orchestrator?.decideRetryAfterFailure({
+                    sessionId: session.conversation_id,
+                    attempt,
+                    executorDecision: false
+                });
 
+                if (errorType === 'environment_dependency') {
                     debugBus.emit('self_healing_abort', {
                         reason: 'missing_runtime_dependency',
                         error: runtimeError,
                         dependency: 'puppeteer',
-                        governedByOrchestrator: finalDecision !== false
+                        governedByOrchestrator: orchestratorRuntimeAbortDecision === true
                     });
 
                     emitSelfHealingEnd(attempt + 1, false);
 
-                    if (orchestratorDecision === true) {
+                    if (orchestratorRuntimeAbortDecision === true) {
                         return {
                             success: false,
                             error: t('error.executor.governance.missing_runtime_dependency', { error: runtimeError }),
@@ -979,25 +926,17 @@ export class AgentExecutor {
                 }
 
                 if (session.last_error_fingerprint && session.last_error_fingerprint === normalizedError) {
-                    const executorDecision = false;
-                    const orchestratorDecision = this.orchestrator?.decideRetryAfterFailure({
-                        sessionId: session.conversation_id,
-                        attempt,
-                        executorDecision: false
-                    });
-                    const finalDecision = orchestratorDecision ?? executorDecision;
-
                     debugBus.emit('self_healing_abort', {
                         reason: 'equivalent_error_loop',
                         error: runtimeError,
                         error_hash: runtimeHash,
                         normalized: normalizedError,
-                        governedByOrchestrator: finalDecision !== false
+                        governedByOrchestrator: orchestratorRuntimeAbortDecision === true
                     });
 
                     emitSelfHealingEnd(attempt + 1, false);
 
-                    if (orchestratorDecision === true) {
+                    if (orchestratorRuntimeAbortDecision === true) {
                         return {
                             success: false,
                             error: t('error.executor.governance.equivalent_error_loop', { error: runtimeError })
@@ -1074,18 +1013,7 @@ export class AgentExecutor {
                     trace_id: getTraceIdSafe()
                 });
                 attempt++;
-                const executorDecision1025 = true; // executor quer continuar
-                const orchestratorDecision1025 = this.orchestrator?.decideRetryAfterFailure({
-                    sessionId: session.conversation_id,
-                    attempt,
-                    executorDecision: executorDecision1025
-                });
-                const finalDecision1025 = orchestratorDecision1025 ?? executorDecision1025;
-                if (finalDecision1025 === true) {
-                    continue;
-                } else {
-                    break; // manter encerramento equivalente
-                }
+                continue;
             }
 
             debugBus.emit('execution_success', {

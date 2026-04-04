@@ -6,7 +6,7 @@
 
 - [x] KB-002 - Refatorar stepCapabilities para Pure Signals (sem decisão)
   - Data: 2026-04-04
-  - Evidência: stepCapabilities agora extrai PlanRuntimeSignals puros; CognitiveOrchestrator possui a autoridade única via decidePlanRuntimeMode; AgentExecutor opera em Safe Mode consumindo decisões centrais.
+  - Evidência: stepCapabilities agora extrai apenas PlanRuntimeSignals; decisão de skip/runtime centralizada no CognitiveOrchestrator via decidePlanRuntimeMode; fallback legado removido do AgentExecutor.
 
 - [x] KB-022 - Follow-up Skill Flow Single Brain
 
