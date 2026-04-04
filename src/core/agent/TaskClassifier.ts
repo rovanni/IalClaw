@@ -13,6 +13,7 @@ import { t } from '../../i18n';
 export type TaskType =
     | 'file_conversion'
     | 'file_search'
+    | 'filesystem'
     | 'content_generation'
     | 'system_operation'
     | 'skill_installation'
@@ -370,11 +371,16 @@ export class TaskClassifier {
         }
 
         // 4. CRIAÇÃO DE SLIDES/HTML - content_generation
+        if (this.isFilesystemOperation(normalized)) {
+            return { type: 'filesystem', confidence: 0.90, source: 'heuristic' };
+        }
+
+        // 5. CRIAÇÃO DE SLIDES/HTML - content_generation
         if (this.isContentGeneration(normalized)) {
             return { type: 'content_generation', confidence: 0.95, source: 'heuristic' };
         }
 
-        // 5. Conversão de arquivos - MAS NÃO se for melhoria/organização
+        // 6. Conversão de arquivos - MAS NÃO se for melhoria/organização
         if (this.isFileConversion(normalized)) {
             return { type: 'file_conversion', confidence: 0.95, source: 'heuristic' };
         }
@@ -429,6 +435,16 @@ export class TaskClassifier {
         ];
 
         return skillPatterns.some(pattern => pattern.test(normalized));
+    }
+
+    private isFilesystemOperation(normalized: string): boolean {
+        const filesystemPatterns = [
+            /\b(criar|crie|fazer|faça|montar|monte)\b.*\b(pasta|diret[óo]rio|folder)\b/i,
+            /\b(criar|crie|salvar|salve|escrever|escreva)\b.*\b(arquivo|file)\b/i,
+            /\b(salvar|salve|gravar|grave)\b.*\b(conte[úu]do|html|json|texto)\b.*\b(arquivo|file)\b/i
+        ];
+
+        return filesystemPatterns.some(pattern => pattern.test(normalized));
     }
 
     /**
@@ -646,7 +662,7 @@ Responda APENAS JSON válido:
         }
 
         const validTypes: TaskType[] = [
-            'file_conversion', 'file_search', 'content_generation',
+            'file_conversion', 'file_search', 'filesystem', 'content_generation',
             'system_operation', 'skill_installation', 'information_request',
             'code_generation', 'data_analysis'
         ];
@@ -833,9 +849,15 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
             ];
         case 'file_search':
             return [
-                'determinar localização de busca',
-                'executar busca',
-                'listar resultados encontrados'
+                'localizar arquivo no diretório alvo',
+                'listar diretório',
+                'ler arquivo'
+            ];
+        case 'filesystem':
+            return [
+                'criar diretório',
+                'criar arquivo',
+                'salvar arquivo'
             ];
         case 'content_generation':
             return [

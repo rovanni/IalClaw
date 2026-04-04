@@ -22,6 +22,21 @@ Manter visibilidade continua da refatoracao para evitar:
 Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre localmente no AgentLoop.
 
 ## O que ja foi corrigido
+- Integracao do `IntentClassifier` centralizada em `src/core/intent/` com detectores dedicados (`ExplorationDetector`, `ExecutionDetector`, `ConversionDetector`) sem bypass de decisao.
+- `AgentController` atualizado para classificar intencao antes da decisao cognitiva e repassar `intent` ao `CognitiveOrchestrator` como contexto adicional.
+- `CognitiveOrchestrator` atualizado para receber `intent` em `decide(...)` e tratar `EXPLORATION` internamente (estrategia `ASK`) com resposta i18n, mantendo autoridade unica de decisao no Orchestrator.
+- Catálogos i18n atualizados em `src/i18n/pt-BR.json` e `src/i18n/en-US.json` com novas chaves de intent/exploration (sem strings hardcoded no fluxo novo).
+- Testes de regressão adicionados em `src/tests/run.ts` para os 3 cenários obrigatórios: exploração, execução e conversão.
+- Update operacional concluido: `update.bat` e `update.sh` agora perguntam se o usuario deseja iniciar/reiniciar o agente ao final da atualizacao (nao inicia automaticamente sem confirmacao).
+- i18n do fluxo de update alinhada para o novo prompt de reinicio opcional em `i18n.bat`, `i18n.sh` e `i18n.json` (pt-BR e en-US).
+- PATCH CIRURGICO no `TaskClassifier`: `getForcedPlanForTaskType('file_search')` ajustado para steps compatíveis com `STEP_TOOL_MAPPING` (`localizar arquivo`, `listar diretório`, `ler arquivo`).
+- Suporte mínimo de filesystem no classificador: novo tipo `filesystem` + detecção heurística explícita para pedidos de pasta/arquivo + plano forçado com steps executáveis (`criar diretório`, `criar arquivo`, `salvar arquivo`).
+- Guardrail de classificação reforçado no `TaskClassifier`: `file_conversion` agora exige sinal real de arquivo; sem sinal, fallback obrigatório para `content_generation` (sem alterar heurísticas de execução de tools).
+- Guardrail espelhado no `AgentLoop`: fallback local para `content_generation` quando `file_conversion` é detectado sem sinal de arquivo, incluindo ajuste do `ask_for_source` para evitar solicitação indevida de arquivo.
+- `AgentController` atualizado para repassar `intent` também no contexto/policy consumido pelo loop, mantendo rastreabilidade de intenção ponta a ponta.
+- `AgentLoop` atualizado com `currentIntentMode`: reclassificação e ajuste de plano ficam bloqueados quando a intenção já é `EXECUTION`, reduzindo desvio de tipo durante execução ativa.
+- Teste de regressão adicionado em `src/tests/run.ts`: pedido "crie um jogo da cobrinha em html" deve permanecer `content_generation` (não `file_conversion`).
+- Validação pós-patch concluída: `npx tsc --noEmit` sem erros; cenários validados com `ts-node` confirmando `planRequiresTools=true`, `hasExecutionIntent=true` e estratégia `TOOL_LOOP` para pedidos executáveis.
 - Mapeamento cirurgico do short-circuit no AgentLoop concluido e documentado em `docs/architecture/ShortCircuitMapping.md` (sem alteracao de codigo).
 - Pontos criticos registrados: gate `DIRECT_LLM`, caminho `HYBRID`, `executeContentGenerationDirect`, retorno por `final_answer` sem tool obrigatoria e fallback final sem tools.
 - Correcao cirurgica de compatibilidade de testes: `AgentController` agora injeta orchestrator com guarda defensiva (`typeof this.loop?.setOrchestrator === 'function'`) para evitar crash em mocks parciais.
@@ -156,16 +171,34 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Método novo no módulo: `decideActivatedPassThrough(signal)` em `src/core/orchestrator/modules/FailSafeModule.ts`.
   - `decideFailSafe(sessionId)` passou a delegar esse bloco após a auditoria de conflito, preservando ordem e comportamento.
   - Limite seguro reafirmado: conflitos `FailSafe vs Route`, `resolveSignalAuthority` e `auditSignalConsistency` permanecem no Orchestrator.
+- **CHECKLIST VIVO SINCRONIZADO (OBRIGATÓRIO)**: atualizacao completa nos 4 blocos apos cada alteração recente da modularização.
+  - a) O que ja foi corrigido: fases 1, 1.1 e 1.2 registradas.
+  - b) O que esta em andamento: preparacao controlada da fase 1.3.
+  - c) O que ainda falta: limite seguro final do FailSafe antes da fase 2.
+  - d) O que nao deve ser tocado agora: conflitos, autoridade e zonas vermelhas preservadas.
 
 ## O que esta em andamento
+- Revalidacao final de terminal para confirmar execucao limpa de `npx tsc --noEmit` e `npm.cmd test` apos a integracao de intent (houve encerramento de sessao de terminal com codigo 1 durante tentativa de confirmacao explicita).
+- Validacao dirigida do fluxo de update em ambientes reais (Windows e Linux) para confirmar UX da pergunta de reinicio em cenarios com daemon e sem daemon ativo.
+- Monitoramento dirigido dos logs de runtime para confirmar estabilidade da nova rota de execução de filesystem em produção (sem regressão no fluxo conversacional).
+- Monitorar impacto do novo guardrail de arquivo em pedidos híbridos (texto + execução) para confirmar ausência de falso positivo em `file_conversion`.
+- Monitorar divergência entre intenção (`currentIntentMode=EXECUTION`) e reclassificação bloqueada para confirmar estabilidade sem perda de recovery legítimo.
 - Auditoria de logs de producao para correlacionar eventos `short_circuit_activated`/`bypass_loop` com respostas de sucesso sem evidencia de tool.
 - Verificar presenca de metodos opcionais em dependencias injetadas (contratos fracos).
 - Monitoramento pos-correcao da camada de integracao do `AgentController` para garantir compatibilidade continua com mocks legados sem alterar fluxo de producao.
 - Monitoramento pós-ETAPA 6: verificar logs `[ORCHESTRATOR AUTHORITY]` de bloqueio em produção para os 3 novos call sites.
 - Verificação de divergência: quando loop quer continuar e Orchestrator bloqueia via FailSafe/StopContinue.
 - Monitorar em produção os novos eventos `short_circuit_governance`, `short_circuit_blocked` e `hybrid_blocked` para confirmar redução de "promessa sem execução".
+- Modularizacao FailSafe fase 1.3 em preparo: identificar apenas bloco coeso restante que dependa exclusivamente de `FailSafeSignal`.
+- Confirmar limite seguro antes da fase 2: nenhum trecho com `RouteAutonomy`, `resolveSignalAuthority` ou auditoria sera extraido.
 
 ## O que ainda falta
+- Cobrir com teste dedicado de contrato a prioridade entre intent `EXPLORATION` e sinais de recovery/flow/pending no Orchestrator (garantir precedencia documentada em todos os ramos).
+- Publicar nota de arquitetura da integração em `docs/architecture/` descrevendo que o classificador apenas informa contexto e não executa/decide fluxo fora do Orchestrator.
+- Adicionar opcao por flag para automacao de CI/scripts: `--auto-start` e `--no-start` no update (sem prompt interativo).
+- Alinhamento completo e sistemático de todos os pares `TaskType -> plano forçado -> mapeamento de tool` para eliminar casos residuais de steps genéricos não executáveis.
+- Cobrir com testes dedicados os limites do guardrail de arquivo (com caminho válido, sem caminho, com extensão citada no texto, e com intenção de criação sem arquivo de origem).
+- Definir estratégia futura para consolidar o guardrail `file_conversion` em um único ponto de autoridade (evitar manutenção duplicada entre `TaskClassifier` e `AgentLoop`).
 - Classificar os bypass mapeados por categoria operacional (conversa simples, execucao de task, fallback, erro) com amostras reais de trace.
 - Consolidar rastreabilidade ponta a ponta do fluxo: input -> route/autonomy -> estrategia aplicada -> execucao real vs resposta direta.
 - Blindagem opcional dos testes com mocks tipados de `AgentLoop` para reduzir risco de quebras futuras por metodos de integracao ausentes.
@@ -176,6 +209,8 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Unificar estado cognitivo no SessionManager para suportar decisões centralizadas
 - Resolver conflitos de autoridade identificados (FailSafe vs Route) com override explícito
 - Remover loops de decisão residuais do AgentLoop (gradualmente — próxima fase)
+- Finalizar FASE 1.3 com apenas o ultimo bloco puro de `FailSafeSignal`, sem cruzar para governanca de conflitos.
+- Definir ponto de parada da fase 1: apos extrair decisoes puras de signal, interromper extracao direta e migrar para fase 2.
 
 - **ETAPA 5 IMPLEMENTADA**: Orchestrator ativado no AgentLoop para os 3 call sites de decisão cognitiva.
   - `decideRetryWithLlm`, `decideReclassification` e `decidePlanAdjustment` adicionados ao `CognitiveOrchestrator`.
@@ -200,6 +235,15 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
   - Validação obrigatória: `npx tsc --noEmit` sem erros ✓.
 
 ## O que NAO deve ser tocado agora
+- Nao criar resposta direta no `AgentController` baseada em `intent.mode`.
+- Nao duplicar logica de decisao de intent no `AgentLoop`, `TaskClassifier` ou executores; `IntentClassifier` apenas informa contexto e `CognitiveOrchestrator` decide.
+- Nao alterar fluxo original de conversao/execucao para encaixar intent; qualquer ajuste de estrategia deve continuar centralizado no Orchestrator.
+- Nao alterar fluxo de parada/deteccao de processo no update alem do prompt de reinicio (evitar regressao de operacao em producao).
+- `AgentLoop.mapStepToTool` — nao alterar nesta etapa (somente ajustar texto dos steps no plano quando necessario).
+- `CognitiveOrchestrator` e `decisionGate` — nao alterar por causa deste patch de classificacao/plano.
+- `IntentClassifier` e heuristicas globais de risco/autoridade — nao alterar nesta etapa.
+- Nao mover agora o guardrail de `file_conversion` para nova camada de decisão; manter implementação atual estável até fechar bateria de testes de borda.
+- Nao reativar reclassificacao durante `currentIntentMode=EXECUTION` sem critério formal e teste de regressão específico.
 - Nao corrigir short-circuit nesta etapa; manter foco apenas em mapeamento e auditoria.
 - Nao alterar heuristicas de route/autonomy, thresholds de risco ou branches de fallback durante a fase de diagnostico.
 - Nao remover `setOrchestrator` do `AgentLoop` real; a guarda defensiva existe apenas para compatibilidade de integracao em testes.
@@ -219,6 +263,8 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Nao transformar auditoria de conflitos em mecanismo de bloqueio automatico nesta fase.
 - Nao substituir decisoes existentes diretamente; override de autoridade permanece opcional e controlado.
 - Nao mover a heuristica de `shouldStopExecution()` ou `checkDeltaAndStop()` para o Orchestrator nesta etapa; apenas governar a decisao final.
+- Na modularizacao do FailSafe, nao extrair nada que dependa de `RouteAutonomy`, `resolveSignalAuthority` ou `auditSignalConsistency`.
+- Nao consolidar conflitos no modulo; conflitos permanecem no `CognitiveOrchestrator` ate a fase 2.
 
 ## ETAPA: GOVERNANCA DO SELF-HEALING (SAFE MODE) ✓ IMPLEMENTADA
 
@@ -244,9 +290,12 @@ Toda correcao deve atualizar este checklist vivo com:
 4. O que NAO deve ser tocado agora
 
 ## Atualizado em
-- Data: 2 de abril de 2026
-- Contexto: **ETAPA 4 INICIADA E CONCLUÍDA**. Neutralização do AgentLoop como mini-brain: signals de `reclassification`, `llmRetry` e `planAdjustment` explicitados no `CognitiveSignalsState`, armazenados em `this.currentSignals` e protegidos por safe mode (`orchestratorDecision ?? loopDecision`). AgentLoop ainda decide localmente. Orchestrator preparado para assumir via `getSignalsSnapshot()`. Compilação limpa. Nenhuma heurística alterada. Nenhuma regressão introduzida.
-- Registro adicional: diagnostico de short-circuit e bypass documentado em `docs/architecture/ShortCircuitMapping.md`.
+- Data: 3 de abril de 2026
+- Contexto: integração do IntentClassifier centralizado concluída (`src/core/intent/*`), repasse de `intent` no `AgentController` e tratamento de exploração no `CognitiveOrchestrator`, com i18n e testes obrigatórios adicionados.
+- Contexto: patch cirurgico aplicado em `src/core/agent/TaskClassifier.ts` para alinhar plano forçado com `STEP_TOOL_MAPPING` e ativar execução quando a intenção for operacional de filesystem. Escopo mantido: sem mudanças em `AgentLoop`, `mapStepToTool`, `Orchestrator` e `IntentClassifier`.
+- Contexto: correção de registro do checklist: houve mudanças adicionais no `AgentLoop` e no `AgentController` no mesmo ciclo (guardrail de `file_conversion`, `currentIntentMode` e repasse de `intent` para policy do loop), além de teste de regressão específico no `run.ts`.
+- Registro adicional: validação executada com compilação (`npx tsc --noEmit`) e cenários de controle/execução confirmando `TOOL_LOOP` para "crie uma pasta" e "salve um arquivo html", preservando `DIRECT_LLM` no caso explicativo.
+- Registro adicional: update operacional com reinicio opcional aplicado em `update.bat` e `update.sh`, com novas chaves i18n de prompt/skip em `i18n.bat`, `i18n.sh` e `i18n.json`.
 
 ---
 
