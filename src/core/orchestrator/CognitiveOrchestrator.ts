@@ -1857,6 +1857,262 @@ export class CognitiveOrchestrator {
     }
 
     /**
+     * KB-027 FASE 5: Decidir se query deve ser expandida (sinônimos)
+     * 
+     * IMPLEMENTAÇÃO: Expande QueryExpansion quando:
+     * 1. Estado cognitivo é estável (isStable === true)
+     * 2. Tarefa é exploratória (task_type = 'exploration' ou 'research')
+     * 3. Nenhuma recuperação ativa (isInRecovery === false)
+     * 
+     * Retorna true/false para governar expansão ou undefined para delegar ao SearchEngine
+     * (Safe Mode: orchestratorDecision ?? localDecision)
+     */
+    public decideQueryExpansion(sessionId?: string): boolean | undefined {
+        if (!sessionId) return undefined;
+
+        try {
+            const session = SessionManager.getSession(sessionId);
+            if (!session) return undefined;
+
+            const cognitiveState = SessionManager.getCognitiveState(session);
+            if (!cognitiveState) return undefined;
+
+            const { isStable, isInRecovery, taskContext } = cognitiveState;
+
+            // Expandir quando: estável + não recuperando + exploratório
+            const isExploratoryTask = taskContext?.type === 'exploration' || taskContext?.type === 'research';
+            const shouldExpand = isStable && !isInRecovery && isExploratoryTask;
+
+            if (shouldExpand) {
+                this.logger.debug('query_expansion_enabled', '[KB-027] Query expansion ativada', {
+                    sessionId,
+                    taskType: taskContext?.type,
+                    cognitiveState: { isStable, isInRecovery }
+                });
+            }
+
+            return shouldExpand ? true : undefined;
+        } catch (error) {
+            this.logger.error('decide_query_expansion_error', error, '[KB-027] Erro em decideQueryExpansion', { sessionId });
+            return undefined;
+        }
+    }
+
+    /**
+     * KB-027 FASE 5: Decidir pesos de scoring para busca
+     * 
+     * IMPLEMENTAÇÃO: Ajusta pesos quando há confiança de contexto:
+     * - Aumenta peso de relevância quando task_confidence > 0.8
+     * - Aumenta peso com base em importância semântica quando há CognitiveMemory hits
+     * - Reduz peso de antiguidade quando em tarefa urgente
+     * 
+     * Retorna Record<string, number> para governar pesos ou undefined para usar defaults
+     * (Safe Mode: orchestratorDecision ?? defaultWeights)
+     */
+    public decideSearchWeights(sessionId?: string): Record<string, number> | undefined {
+        if (!sessionId) return undefined;
+
+        try {
+            const session = SessionManager.getSession(sessionId);
+            if (!session) return undefined;
+
+            const cognitiveState = SessionManager.getCognitiveState(session);
+            if (!cognitiveState) return undefined;
+
+            const { taskContext } = cognitiveState;
+            const taskConfidence = session.task_confidence ?? 0;
+
+            // Aumenta relevância quando confiante da tarefa
+            if (taskConfidence > 0.8) {
+                const weights: Record<string, number> = {
+                    relevance: 1.2,      // +20% boost
+                    semanticSimilarity: 1.0,
+                    recency: 0.9,        // -10% penalidade
+                    importance: 1.1      // +10% boost
+                };
+
+                this.logger.debug('search_weights_adjusted', '[KB-027] Pesos de scoring ajustados', {
+                    sessionId,
+                    taskConfidence,
+                    weights
+                });
+
+                return weights;
+            }
+
+            return undefined; // Safe Mode: usa defaults
+        } catch (error) {
+            this.logger.error('decide_search_weights_error', error, '[KB-027] Erro em decideSearchWeights', { sessionId });
+            return undefined;
+        }
+    }
+
+    /**
+     * KB-027 FASE 5: Decidir se deve expandir com grafo semântico
+     * 
+     * IMPLEMENTAÇÃO: Ativa expansão semântica quando:
+     * 1. Estado estável + não em recuperação
+     * 2. TaskContext é semântico (research, analysis)
+     * 3. GraphExpansion habilitado no cache de busca (search_cache.graphExpansionEnabled)
+     * 
+     * Retorna { enabled: boolean; maxTerms: number; boost: number } ou undefined
+     * (Safe Mode: orchestratorDecision ?? defaultConfig)
+     */
+    public decideGraphExpansion(sessionId?: string): { enabled: boolean; maxTerms: number; boost: number } | undefined {
+        if (!sessionId) return undefined;
+
+        try {
+            const session = SessionManager.getSession(sessionId);
+            if (!session) return undefined;
+
+            const cognitiveState = SessionManager.getCognitiveState(session);
+            if (!cognitiveState) return undefined;
+
+            const { isStable, isInRecovery, taskContext } = cognitiveState;
+
+            // Ativa expansão quando: estável + não recuperando + tarefa semântica
+            const isSemanticTask = taskContext?.type === 'research' || taskContext?.type === 'analysis';
+            const shouldExpandGraph = isStable && !isInRecovery && isSemanticTask;
+
+            if (shouldExpandGraph) {
+                const config = {
+                    enabled: true,
+                    maxTerms: 15,      // Limite de expansão
+                    boost: 1.3         // Boost de 30% para termos expandidos
+                };
+
+                this.logger.debug('graph_expansion_enabled', '[KB-027] Expansão semântica ativada', {
+                    sessionId,
+                    taskType: taskContext?.type,
+                    config
+                });
+
+                return config;
+            }
+
+            return undefined; // Safe Mode: deixa SearchEngine decidir
+        } catch (error) {
+            this.logger.error('decide_graph_expansion_error', error, '[KB-027] Erro em decideGraphExpansion', { sessionId });
+            return undefined;
+        }
+    }
+
+    /**
+     * KB-027 FASE 5: Decidir se deve aplicar reranking com LLM
+     * 
+     * IMPLEMENTAÇÃO: Ativa reranking quando:
+     * 1. Estado é estável (isStable === true)
+     * 2. Tentativa inicial (attempt === 1 ou undefined)
+     * 3. Resultado tem múltiplos candidatos (para LLM reordenar)
+     * 
+     * Bloqueia reranking quando:
+     * - Em recuperação de falha (isInRecovery === true)
+     * - Já houve múltiplas tentativas (attempt > 2)
+     * 
+     * Retorna true/false para governar reranking ou undefined para delegar
+     * (Safe Mode: orchestratorDecision ?? localHeuristic)
+     */
+    public decideReranking(sessionId?: string): boolean | undefined {
+        if (!sessionId) return undefined;
+
+        try {
+            const session = SessionManager.getSession(sessionId);
+            if (!session) return undefined;
+
+            const cognitiveState = SessionManager.getCognitiveState(session);
+            if (!cognitiveState) return undefined;
+
+            const { isStable, isInRecovery, attempt } = cognitiveState;
+
+            // Bloqueia reranking em recuperação ou após múltiplas tentativas
+            if (isInRecovery || (attempt && attempt > 2)) {
+                this.logger.debug('reranking_disabled', '[KB-027] Reranking bloqueado', {
+                    sessionId,
+                    reason: isInRecovery ? 'in_recovery' : 'max_attempts',
+                    attempt
+                });
+                return false;
+            }
+
+            // Ativa reranking quando estável e em tentativa inicial
+            const shouldRerank = isStable && (!attempt || attempt === 1);
+
+            if (shouldRerank) {
+                this.logger.debug('reranking_enabled', '[KB-027] Reranking ativado', {
+                    sessionId,
+                    isStable,
+                    attempt
+                });
+            }
+
+            return shouldRerank ? true : undefined;
+        } catch (error) {
+            this.logger.error('decide_reranking_error', error, '[KB-027] Erro em decideReranking', { sessionId });
+            return undefined;
+        }
+    }
+
+    /**
+     * KB-027 FASE 5: Decidir estratégia de fallback para falhas em Search
+     * 
+     * IMPLEMENTAÇÃO: Escolhe fallback baseado em contexto:
+     * - Falhas normais (não-críticas) → 'warn_and_continue' (padrão)
+     * - Em tarefa crítica + estável → 'use_default' (usa defaults, tenta sempre)
+     * - Em recuperação após falha → 'abort' (para e reclassifica)
+     * - Fallback para tagging (baixa criticidade) → 'warn_and_continue'
+     * 
+     * Retorna 'use_default' | 'warn_and_continue' | 'abort' ou undefined
+     * (Safe Mode: orchestratorDecision ?? 'warn_and_continue')
+     */
+    public decideSearchFallbackStrategy(
+        sessionId?: string,
+        component?: 'expansion' | 'scoring' | 'reranking' | 'tagging'
+    ): 'use_default' | 'warn_and_continue' | 'abort' | undefined {
+        if (!sessionId) return undefined;
+
+        try {
+            const session = SessionManager.getSession(sessionId);
+            if (!session) return undefined;
+
+            const cognitiveState = SessionManager.getCognitiveState(session);
+            if (!cognitiveState) return undefined;
+
+            const { isStable, isInRecovery, attempt } = cognitiveState;
+
+            // Tagging é low-priority → sempre continua com aviso
+            if (component === 'tagging') {
+                return 'warn_and_continue';
+            }
+
+            // Em recuperação → aborta para reclassificar
+            if (isInRecovery) {
+                this.logger.debug('fallback_strategy_abort', '[KB-027] Fallback: ABORT (em recuperação)', {
+                    sessionId,
+                    component,
+                    isInRecovery
+                });
+                return 'abort';
+            }
+
+            // Em estágio estável → usa defaults (tenta sempre)
+            if (isStable && (!attempt || attempt === 1)) {
+                this.logger.debug('fallback_strategy_use_default', '[KB-027] Fallback: USE_DEFAULT (estável)', {
+                    sessionId,
+                    component,
+                    attempt
+                });
+                return 'use_default';
+            }
+
+            // Caso padrão → continua com aviso
+            return 'warn_and_continue';
+        } catch (error) {
+            this.logger.error('decide_fallback_strategy_error', error, '[KB-027] Erro em decideSearchFallbackStrategy', { sessionId });
+            return undefined;
+        }
+    }
+
+    /**
      * ETAPA SHORT-CIRCUIT GOVERNANCE: Decide se o AgentLoop pode executar diretamente
      * (sem passar pelo loop de tools). Retorna false para bloquear, undefined para delegar.
      *

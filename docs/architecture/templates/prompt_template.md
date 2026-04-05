@@ -42,6 +42,12 @@ Antes de qualquer implementação, você DEVE:
 * inconsistência cognitiva
 
 ---
+## ⚙️ PLANO ESTRATÉGICO DE REFATORAÇÃO (OBRIGATÓRIO)
+
+Crie um plano em arquivo do que precisa ser feito com Checklist a ser validado e salve em:
+D:\IA\IalClaw\docs\architecture\plans
+Exemplo: D:\IA\IalClaw\docs\architecture\plans\KB-027-PLANO.md
+---
 
 ## ⚙️ ESTRATÉGIA DE REFATORAÇÃO (OBRIGATÓRIO)
 
@@ -70,20 +76,17 @@ O comportamento do sistema deve permanecer exatamente igual.
 
 ---
 
-## 📋 CHECKLIST VIVO (OBRIGATÓRIO)
+## 📋 CHECKLIST kanban (OBRIGATÓRIO)
 
 Arquivo:
 
 ```
-D:\IA\IalClaw\docs\architecture\kanban\historico\checklist_vivo.md
+D:\IA\IalClaw\docs\architecture\kanban\README.md
 ```
 
 Fonte oficial de controle:
 
 * Kanban em `D:\IA\IalClaw\docs\architecture\kanban`
-* Checklist vivo em `D:\IA\IalClaw\docs\architecture\kanban\historico\checklist_vivo.md`
-
-⚠️ Não usar mais `D:\IA\IalClaw\docs\architecture\checklist.md` como fonte de status/controle.
 
 Após qualquer alteração, atualizar:
 

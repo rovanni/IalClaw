@@ -184,13 +184,17 @@ export class SearchEngine {
         const normalizedQuery = normalize(query, { removeAccents: true });
         let queryTokens = tokenize(normalizedQuery);
 
-        if (expandSynonyms) {
+        // T2.1 — SAFE MODE: Decisão de expansão com sinônimos
+        const orchestratorQueryExpansionDecision = this.orchestrator?.decideQueryExpansion(sessionId);
+        const shouldExpandSynonyms = orchestratorQueryExpansionDecision ?? expandSynonyms;
+
+        if (shouldExpandSynonyms) {
             queryTokens = this.expandWithSynonyms(queryTokens);
             queryTokens = Array.from(new Set(queryTokens));
         }
 
         // T2.1 — SEARCH_QUERY signal: registrar expansão por sinônimos
-        if (expandSynonyms && this.orchestrator && sessionId) {
+        if (shouldExpandSynonyms && this.orchestrator && sessionId) {
             this.orchestrator.ingestSearchSignal(sessionId, {
                 type: 'SEARCH_QUERY',
                 originalQuery: query,
@@ -202,10 +206,18 @@ export class SearchEngine {
 
         let expansionResult: ExpansionResult | null = null;
         
-        if (expandWithGraph && this.graphBridge.isEnabled()) {
+        // T2.3 — SAFE MODE: Decisão de expansão com grafo semântico
+        const orchestratorGraphDecision = this.orchestrator?.decideGraphExpansion(sessionId);
+        const graphConfig = orchestratorGraphDecision ?? {
+            enabled: expandWithGraph && this.graphBridge.isEnabled(),
+            maxTerms: graphMaxTerms,
+            boost: 0.1
+        };
+
+        if (graphConfig.enabled && this.graphBridge.isEnabled()) {
             try {
                 expansionResult = await this.graphBridge.expandWithGraph(queryTokens, {
-                    maxTerms: graphMaxTerms
+                    maxTerms: graphConfig.maxTerms
                 });
                 
                 if (expansionResult.graphTerms.length > 0) {
@@ -232,15 +244,22 @@ export class SearchEngine {
                     error: error instanceof Error ? error.message : String(error)
                 });
 
+                // T2.3 — SAFE MODE: Decisão de fallback para expansão com grafo
+                const fallbackStrategy = this.orchestrator?.decideSearchFallbackStrategy(sessionId, 'expansion') ?? 'warn_and_continue';
+
                 // T2.3 — SEARCH_FALLBACK signal: registrar falha na expansão via grafo
                 if (this.orchestrator && sessionId) {
                     this.orchestrator.ingestSearchSignal(sessionId, {
                         type: 'SEARCH_FALLBACK',
                         offendingComponent: 'expansion',
                         errorSummary: error instanceof Error ? error.message : String(error),
-                        fallbackStrategy: 'warn_and_continue',
+                        fallbackStrategy: fallbackStrategy,
                         reasoningContext: 'Graph expansion failed, continuing without graph terms'
                     });
+                }
+
+                if (fallbackStrategy === 'abort') {
+                    throw error;
                 }
             }
         }
@@ -254,13 +273,19 @@ export class SearchEngine {
             return [];
         }
 
-        const scoredDocs = this.scorer.scoreDocuments(query, searchResults, this.index.getDocuments());
+        // T2.2 — SAFE MODE: Decisão de pesos de scoring
+        // T2.2 — SAFE MODE: Decisão de pesos de scoring
+        // Usa scorer local para não mutar this.scorer (estado compartilhado entre buscas)
+        const orchestratorWeights = this.orchestrator?.decideSearchWeights(sessionId);
+        const activeScorer = orchestratorWeights ? new Scorer(orchestratorWeights) : this.scorer;
+
+        const scoredDocs = activeScorer.scoreDocuments(query, searchResults, this.index.getDocuments());
 
         // T2.2 — SEARCH_SCORING signal: registrar pesos de scoring aplicados
         if (this.orchestrator && sessionId) {
             this.orchestrator.ingestSearchSignal(sessionId, {
                 type: 'SEARCH_SCORING',
-                weights: { ...this.scorer.getWeights() } as unknown as Record<string, number>,
+                weights: { ...activeScorer.getWeights() } as unknown as Record<string, number>,
                 semanticBoost: 1.0,
                 reasoningContext: `Scoring applied to ${scoredDocs.length} documents`
             });
@@ -321,23 +346,29 @@ export class SearchEngine {
             });
 
         if (useRerank && searchResultsFinal.length > 1) {
-            const reranked = await this.llmReranker.rerank(query, scoredDocs.map(s => s.doc));
-            const rerankMap = new Map(reranked.map(r => [r.docId, r.relevanceScore]));
-            
-            searchResultsFinal.sort((a, b) => {
-                const scoreA = rerankMap.get(a.doc.id) ?? a.score;
-                const scoreB = rerankMap.get(b.doc.id) ?? b.score;
-                return scoreB - scoreA;
-            });
+            // T2.4 — SAFE MODE: Decisão de reranking com LLM
+            const orchestratorRerankerDecision = this.orchestrator?.decideReranking(sessionId);
+            const shouldRerank = orchestratorRerankerDecision ?? useRerank;
 
-            // T2.4 — SEARCH_RERANKER signal: registrar decisão de reranking com LLM
-            if (this.orchestrator && sessionId) {
-                this.orchestrator.ingestSearchSignal(sessionId, {
-                    type: 'SEARCH_RERANKER',
-                    shouldRerank: true,
-                    confidence: 0.8,
-                    reasoningContext: `LLM reranking applied to ${searchResultsFinal.length} results`
+            if (shouldRerank) {
+                const reranked = await this.llmReranker.rerank(query, scoredDocs.map(s => s.doc));
+                const rerankMap = new Map(reranked.map(r => [r.docId, r.relevanceScore]));
+                
+                searchResultsFinal.sort((a, b) => {
+                    const scoreA = rerankMap.get(a.doc.id) ?? a.score;
+                    const scoreB = rerankMap.get(b.doc.id) ?? b.score;
+                    return scoreB - scoreA;
                 });
+
+                // T2.4 — SEARCH_RERANKER signal: registrar decisão de reranking com LLM
+                if (this.orchestrator && sessionId) {
+                    this.orchestrator.ingestSearchSignal(sessionId, {
+                        type: 'SEARCH_RERANKER',
+                        shouldRerank: true,
+                        confidence: 0.8,
+                        reasoningContext: `LLM reranking applied to ${searchResultsFinal.length} results`
+                    });
+                }
             }
         }
 

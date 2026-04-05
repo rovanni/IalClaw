@@ -28,9 +28,3 @@ Legenda de status:
   - Evidência curta: SessionManager centraliza parte do estado, mas ranking e executionMemory seguem locais no AgentLoop.
   - Criterio de pronto: sem ranking/merge decisório local e sem caches paralelos invisíveis à sessão
 
-- [ ] KB-027 - Neutralizar Search como subsistema decisório isolado
-  - Origem: AntiPatterns + ProposedChanges (src/search)
-  - Risco: Crítico
-  - Status atual: Persiste
-  - Evidência curta: search segue com scoring, boosts e caches proprios fora da governança central.
-  - Criterio de pronto: busca devolve sinais/metadados; estratégia e fallback ficam no Orchestrator

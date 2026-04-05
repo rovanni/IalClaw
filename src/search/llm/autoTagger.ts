@@ -105,21 +105,27 @@ export class AutoTagger {
                     error: error instanceof Error ? error.message : String(error)
                 });
 
+                // T2.5 — SAFE MODE: Decisão de estratégia de fallback para tagging
+                const fallbackStrategy = this.orchestrator?.decideSearchFallbackStrategy(options.sessionId, 'tagging') ?? (fallbackToTokenize ? 'warn_and_continue' : 'abort');
+
                 // T2.5 — SEARCH_FALLBACK signal: registrar falha no LLM e estratégia de fallback
                 if (this.orchestrator && options.sessionId) {
                     this.orchestrator.ingestSearchSignal(options.sessionId, {
                         type: 'SEARCH_FALLBACK',
                         offendingComponent: 'tagging',
                         errorSummary: error instanceof Error ? error.message : String(error),
-                        fallbackStrategy: fallbackToTokenize ? 'warn_and_continue' : 'abort',
+                        fallbackStrategy: fallbackStrategy,
                         reasoningContext: 'LLM semantic structure generation failed'
                     });
                 }
 
-                if (fallbackToTokenize) {
+                if (fallbackStrategy === 'warn_and_continue' || fallbackStrategy === 'use_default') {
                     semanticStructure = this.generateFallback(doc);
-                } else {
+                } else if (fallbackStrategy === 'abort') {
                     throw error;
+                } else {
+                    // Fallback padrão se strategy for undefined
+                    semanticStructure = fallbackToTokenize ? this.generateFallback(doc) : (() => { throw error; })();
                 }
             }
         } else {

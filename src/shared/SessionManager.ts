@@ -53,6 +53,26 @@ export interface SessionDeltaState {
     updatedAt: number;
 }
 
+/**
+ * KB-027 FASE 3: Cache centralizado para Search
+ * Substitui 9 Maps desacopladas em SearchEngine, InvertedIndex, SemanticGraphBridge e AutoTagger
+ */
+export interface SearchCache {
+    documentCache: Map<string, any>;
+    invertedIndexes: {
+        termIndex: Map<string, string[]>;
+        titleIndex: Map<string, string[]>;
+        tagIndex: Map<string, string[]>;
+        categoryIndex: Map<string, string[]>;
+        termFrequency: Map<string, number>;
+    };
+    semanticCache: {
+        expansionCache: Map<string, string[]>;
+        enrichmentCache: Map<string, any>;
+    };
+    autoTaggerCache: Map<string, string[]>;
+}
+
 const STM_MAX_MESSAGES = 10; // 5 exchanges
 
 export interface SessionContext {
@@ -89,6 +109,7 @@ export interface SessionContext {
     flow_state?: FlowState;
     task_context?: TaskContextData; // Estado operacional contínuo da tarefa
     delta_state?: SessionDeltaState;
+    search_cache?: SearchCache; // KB-027 FASE 3: Cache centralizado para Search
 }
 
 export type Session = SessionContext;

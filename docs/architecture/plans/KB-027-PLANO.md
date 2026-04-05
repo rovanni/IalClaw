@@ -731,5 +731,39 @@ grep -r "orchestratorDecision ??" src/search/ | wc -l
 
 ---
 
-**Status**: 🔴 Planejado — Pronto para FASE 1  
-**Próximo passo**: Ler este plano, validar escopo, iniciar FASE 1
+**Status**: � FASE 2 Completa — Safe Mode Implementado  
+**Próximo passo**: Implementar FASE 3 (Cache Centralizado) e FASE 4 (Testes)
+
+---
+
+## 📍 PROGRESSO ATUAL (Abril 4, 2026 — Continuação)
+
+### O que já foi corrigido
+- ✅ Abril/2026: KB-027 FASE 1 completa — SearchSignals criados, ingestão no Orchestrator implementada, i18n adicionado
+- ✅ Abril/2026: KB-027 FASE 2 completa — Safe Mode implementado em 5 tarefas (query expansion, scoring weights, graph expansion, reranking, fallback strategy)
+  - T2.1: `SearchEngine.search()` agora consulta `decideQueryExpansion()` com Safe Mode
+  - T2.2: `SearchEngine.scoreResults()` agora consulta `decideSearchWeights()` com Safe Mode
+  - T2.3: `SemanticGraphBridge.expandWithGraph()` agora consulta `decideGraphExpansion()` com Safe Mode e fallback estratégico
+  - T2.4: `SearchEngine.rerank()` agora consulta `decideReranking()` com Safe Mode
+  - T2.5: `AutoTagger.tagWithLLM()` agora consulta `decideSearchFallbackStrategy()` para tagging com Safe Mode
+  - ✅ `npx tsc --noEmit` sem erros
+  - ✅ `npm test` sem regressão
+
+---
+
+## O que está em andamento
+- KB-027 FASE 3: T3.1 COMPLETO - Interface SearchCache criada. T3.2-T3.5 em pausa (requer refatoração arquitetural)
+- KB-027 FASE 4: Testes iniciados - SearchSignals validados com node:test
+
+---
+
+## O que ainda falta
+- KB-027 FASE 3: T3.2-T3.5 (Migração de caches — requer injeção de SessionManager em componentes)
+- KB-027 FASE 4: Testes adicionais de SafeMode e Cache Persistence
+- KB-027 FASE 5: Ativar decisões reais no Orchestrator (implementar lógica dos métodos decide*)
+- KB-027 FASE 6: Remover fallbacks locais e consolidar autoridade no Orchestrator
+
+---
+
+**Status**: 🟡 FASE 3-4 em Progresso — Infrastructure + Testes Iniciais OK  
+**Próximo passo**: Continuar com T3.2-T3.5 OU saltar para FASE 5 (ativar decisões reais)

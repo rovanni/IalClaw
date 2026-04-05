@@ -44,8 +44,11 @@ Nota: neste estagio, os signals foram extraidos, mas a aplicacao ainda ocorre lo
 - Abril/2026: compatibilidade dos testes de fluxo restaurada com o contrato atual do CognitiveOrchestrator (assinatura do construtor e `decide` com `sessionId`).
 - Abril/2026: suite principal estabilizada para o sufixo de reality-check com acento (`não`) em `src/tests/run.ts`, aceitando variacao acentuada sem reduzir cobertura funcional.
 - Historico detalhado preservado a partir deste ponto no arquivo original movido para kanban/historico.
+- Abril/2026: KB-027 FASE 5-6 concluída. Implementação de lógica real nos 5 métodos `decide*` do `CognitiveOrchestrator`: `decideQueryExpansion` (ativa em exploração estável), `decideSearchWeights` (ajusta com taskConfidence > 0.8), `decideGraphExpansion` (ativa em research/analysis estável, maxTerms=15 boost=1.3), `decideReranking` (bloqueia em recovery/attempt>2), `decideSearchFallbackStrategy` (tagging='warn', recovery='abort', estável='use_default'). Bug de state mutation em `searchEngine.ts` corrigido, variável não utilizada removida. Compilação global limpa. Safe Mode preservado.
 
 ## O que esta em andamento
+- KB-027 movido formalmente para `docs/architecture/kanban/em_andamento.md`, com status por fase consolidado no card operacional (F1/F2/F5/F6 concluídas; F3 parcial; F4 iniciada).
+- KB-027 (85% concluído): FASE 3 T3.2-T3.5 (migração de 9 caches para SessionManager centralizado) pausada por requerer refactor de injeção de SessionManager no SearchEngine; FASE 4 (testes de integração SearchSignals + SafeMode) iniciada em `src/tests/KB027SearchSignals.test.ts`.
 - KB-023 concluído e movido para histórico de correções; manter apenas monitoramento passivo de logs de auditoria para regressão.
 - KB-001 (Fase 1 + Fase 2 concluidas): fallback decisorio local removido do healing loop no `AgentExecutor`. Consultas a `decideRetryAfterFailure` reduzidas de 8 para 4 por ciclo (cache no bloco repair e no bloco runtime). Teste legado `stepCapabilities.test.ts` migrado para API atual (`extractPlanRuntimeSignals` + `decidePlanRuntimeMode`). Compilacao global limpa (`TSC_EXIT=0`). Aguardando validacao em runtime para marcar KB-001 como concluido.
 - Validacao dirigida da FASE 2.2 em runtime para confirmar `meta.source=deterministic_builder` no caso `filesystem` e `legacy_forced_plan` nos tipos sem builder registrado.
@@ -73,4 +76,4 @@ Toda correcao deve atualizar este checklist vivo com:
 4. O que NAO deve ser tocado agora
 
 ## Atualizado em
-- Data: 4 de abril de 2026
+- Data: 4 de abril de 2026 (última atualização: KB-027 movido para Em andamento com status por fase consolidado no card)
