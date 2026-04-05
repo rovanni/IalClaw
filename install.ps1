@@ -8,8 +8,6 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\i18n.ps1"
 
-try { chcp.com 65001 | Out-Null } catch {}
-
 Write-Host (t "app.header_line") -ForegroundColor Cyan
 Write-Host "    $(t 'app.title')" -ForegroundColor Cyan
 Write-Host (t "app.header_line") -ForegroundColor Cyan
