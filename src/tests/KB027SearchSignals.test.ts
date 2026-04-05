@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SearchEngine, SearchDocument } from '../search/pipeline/searchEngine';
+import { SemanticGraphBridge } from '../search/graph/semanticGraphBridge';
 import { DEFAULT_WEIGHTS } from '../search/ranking/scorer';
 import { SessionManager } from '../shared/SessionManager';
 
@@ -650,5 +651,150 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
         const abortSignals = getSignalsByType(abortOrchestrator, 'SEARCH_FALLBACK');
         assert.equal(abortSignals.length, 1, 'abort path should still emit fallback signal before throwing');
         assert.equal(abortSignals[0].fallbackStrategy, 'abort', 'fallback signal should record orchestrator abort override');
+    });
+
+    await suite.test('same session reuses semantic caches and different sessions stay isolated', async () => {
+        const sessionOneId = createTestSessionId('graph-cache-one');
+        const sessionTwoId = createTestSessionId('graph-cache-two');
+        const adapterCalls = {
+            relatedTerms: 0,
+            relatedNodes: 0
+        };
+
+        const graphAdapter = {
+            isAvailable: () => true,
+            getNodeByTerm: async () => null,
+            getNodeEmbedding: async () => null,
+            getRelatedTerms: async (term: string) => {
+                adapterCalls.relatedTerms++;
+                return [`${term}-neighbor`];
+            },
+            getRelatedNodes: async (term: string) => {
+                adapterCalls.relatedNodes++;
+                return [{ id: `node-${term}`, name: `${term}-neighbor`, score: 1 }];
+            },
+            syncTagsToGraph: async () => {},
+            syncRelationsToGraph: async () => {}
+        };
+
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: true
+        });
+        (engine as any).graphBridge = new SemanticGraphBridge(graphAdapter as any);
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'doc-cache-reuse',
+                title: 'Graph Cache Reuse',
+                content: 'baseline-neighbor graph cache validation',
+                metadata: {}
+            }
+        ];
+
+        await engine.indexDocuments(docs, sessionOneId);
+
+        await engine.search('baseline', {
+            sessionId: sessionOneId,
+            expandSynonyms: false,
+            expandWithGraph: true,
+            limit: 10
+        });
+
+        const firstSession = SessionManager.getSession(sessionOneId);
+        assert.equal(adapterCalls.relatedTerms, 1, 'first search in session one should populate graph expansion cache');
+        assert.equal(adapterCalls.relatedNodes, 1, 'first search in session one should populate graph node cache context');
+        assert.equal(firstSession.search_cache?.semanticCache.expansionCache.size, 1, 'session one should store one expansion cache entry');
+
+        await engine.search('baseline', {
+            sessionId: sessionOneId,
+            expandSynonyms: false,
+            expandWithGraph: true,
+            limit: 10
+        });
+
+        assert.equal(adapterCalls.relatedTerms, 1, 'same session should reuse expansion cache without new adapter term lookup');
+        assert.equal(adapterCalls.relatedNodes, 1, 'same session should reuse expansion cache without new adapter node lookup');
+
+        await engine.indexDocuments(docs, sessionTwoId);
+        await engine.search('baseline', {
+            sessionId: sessionTwoId,
+            expandSynonyms: false,
+            expandWithGraph: true,
+            limit: 10
+        });
+
+        const secondSession = SessionManager.getSession(sessionTwoId);
+        assert.equal(adapterCalls.relatedTerms, 2, 'different session should build its own expansion cache');
+        assert.equal(adapterCalls.relatedNodes, 2, 'different session should build its own graph node context');
+        assert.equal(secondSession.search_cache?.semanticCache.expansionCache.size, 1, 'session two should maintain its own expansion cache entry');
+        assert.notEqual(firstSession.search_cache?.semanticCache.expansionCache, secondSession.search_cache?.semanticCache.expansionCache, 'sessions should not share the same cache map instance');
+    });
+
+    await suite.test('clearIndex and resetVolatileState respect session scope', async () => {
+        const sessionOneId = createTestSessionId('clear-scope-one');
+        const sessionTwoId = createTestSessionId('clear-scope-two');
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        const docsOne: SearchDocument[] = [
+            {
+                id: 'doc-clear-one',
+                title: 'Clear Session One',
+                content: 'scopedtermone content for clear scope',
+                metadata: {}
+            }
+        ];
+        const docsTwo: SearchDocument[] = [
+            {
+                id: 'doc-clear-two',
+                title: 'Clear Session Two',
+                content: 'scopedtermtwo content for clear scope',
+                metadata: {}
+            }
+        ];
+
+        await engine.indexDocuments(docsOne, sessionOneId);
+        await engine.indexDocuments(docsTwo, sessionTwoId);
+
+        const beforeResetSessionOne = SessionManager.getSession(sessionOneId);
+        const beforeResetSessionTwo = SessionManager.getSession(sessionTwoId);
+        assert.ok(beforeResetSessionOne.search_cache?.documentCache.has('doc-clear-one'), 'session one should start with its own cached document');
+        assert.ok(beforeResetSessionTwo.search_cache?.documentCache.has('doc-clear-two'), 'session two should start with its own cached document');
+
+        SessionManager.resetVolatileState(sessionOneId);
+
+        const afterResetSessionOne = SessionManager.getSession(sessionOneId);
+        assert.ok(afterResetSessionOne.search_cache?.documentCache.has('doc-clear-one'), 'resetVolatileState should not clear search cache for the session');
+        assert.ok(beforeResetSessionTwo.search_cache?.documentCache.has('doc-clear-two'), 'resetVolatileState in session one should not affect session two cache');
+
+        engine.clearIndex(sessionOneId);
+
+        const sessionOneResults = await engine.search('scopedtermone', {
+            sessionId: sessionOneId,
+            expandSynonyms: false,
+            useRerank: false,
+            useLLM: false
+        });
+        const sessionTwoResults = await engine.search('scopedtermtwo', {
+            sessionId: sessionTwoId,
+            expandSynonyms: false,
+            useRerank: false,
+            useLLM: false
+        });
+
+        const clearedSessionOne = SessionManager.getSession(sessionOneId);
+        const intactSessionTwo = SessionManager.getSession(sessionTwoId);
+        assert.equal(sessionOneResults.length, 0, 'clearIndex should remove indexed data only from the targeted session');
+        assert.ok(sessionTwoResults.length > 0, 'clearIndex in session one should not remove session two search results');
+        assert.equal(clearedSessionOne.search_cache?.documentCache.size, 0, 'target session document cache should be cleared');
+        assert.equal(clearedSessionOne.search_cache?.autoTaggerCache.size, 0, 'target session autotagger cache should be cleared');
+        assert.equal(clearedSessionOne.search_cache?.semanticCache.expansionCache.size, 0, 'target session semantic expansion cache should be cleared');
+        assert.ok((intactSessionTwo.search_cache?.documentCache.size ?? 0) > 0, 'other session document cache should remain intact');
+        assert.ok((intactSessionTwo.search_cache?.autoTaggerCache.size ?? 0) > 0, 'other session autotagger cache should remain intact');
     });
 });
