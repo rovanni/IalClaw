@@ -22,6 +22,7 @@ import { StopContinueDeltaContext, StopContinueDeltaEvaluationResult, StopContin
 import { IntentResult } from '../intent/IntentResult';
 import { PlanRuntimeSignals } from '../../capabilities/stepCapabilities';
 import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecision';
+import { SearchSignal } from '../../shared/signals/SearchSignals';
 
 
 export enum CognitiveStrategy {
@@ -156,6 +157,7 @@ export class CognitiveOrchestrator {
     private observedSelfHealingSignal?: SelfHealingSignal;
     private observedRepairStrategySignal?: RepairStrategySignal;
     private _observedRepairResult?: { success: boolean; hasRepairedPlan: boolean };
+    private _observedSearchSignals: SearchSignal[] = [];
     private routeVsFailSafeConflictLoggedInCycle = false;
     private lastCapabilityAwarePlanBySession = new Map<string, CapabilityAwarePlan>();
 
@@ -1064,13 +1066,13 @@ export class CognitiveOrchestrator {
         const fallbackStrategySignal: FallbackStrategySignal | undefined = this.observedSignals.fallbackStrategy;
 
         if (!fallbackStrategySignal) {
-            this.logger.debug('no_fallback_strategy_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum FallbackStrategySignal observado para decisão ativa', {
+            this.logger.debug('no_fallback_strategy_signal_available', t('agent.kb023.fallback_strategy_signal_missing'), {
                 sessionId
             });
             return undefined;
         }
 
-        this.logger.info('fallback_strategy_active_decision', '[ORCHESTRATOR ACTIVE] Decisão de fallback estratégico aplicada', {
+        this.logger.info('fallback_strategy_active_decision', t('agent.kb023.fallback_strategy_active_applied'), {
             sessionId,
             source: 'loop_signal_applied_by_orchestrator',
             trigger: fallbackStrategySignal.trigger,
@@ -1810,6 +1812,48 @@ export class CognitiveOrchestrator {
 
         this._orchestratorAppliedDecisions.realityCheck = signal;
         return signal.shouldInject;
+    }
+
+    /**
+     * KB-027 FASE 1: Ingerir signal de Search
+     * 
+     * Armazena signals observados do módulo Search para auditoria e governança futura.
+     * Em FASE 1, apenas observa (modo passivo). Decisões de Search ainda acontecem localmente.
+     * Em FASE 2+, o Orchestrator usará esses signals para tomar decisões.
+     */
+    public ingestSearchSignal(sessionId: string, signal: SearchSignal): void {
+        this._observedSearchSignals.push(signal);
+
+        this.logger.info('search_signal_ingested', '[ORCHESTRATOR PASSIVE KB-027] Signal de Search recebido e registrado', {
+            sessionId,
+            signalType: signal.type,
+            timestamp: Date.now(),
+            reasoningContext: signal.reasoningContext
+        });
+
+        emitDebug('search_signal_ingested', {
+            sessionId,
+            signalType: signal.type,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * KB-027 FASE 1: Obter último signal de Search observado
+     * 
+     * Retorna o sinal mais recente para auditoria ou para preparar próxima decisão.
+     */
+    public getLastSearchSignal(): SearchSignal | undefined {
+        return this._observedSearchSignals[this._observedSearchSignals.length - 1];
+    }
+
+    /**
+     * KB-027 FASE 1: Limpar histórico de signals de Search
+     * 
+     * Limpa o histórico entre ciclos ou sessões para evitar dados stale.
+     */
+    public clearSearchSignals(): void {
+        this._observedSearchSignals = [];
     }
 
     /**

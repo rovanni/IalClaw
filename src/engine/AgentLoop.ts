@@ -1712,7 +1712,7 @@ export class AgentLoop {
             );
 
             if (!finalFallbackDirectAttemptDecision) {
-                this.logger.info('fallback_direct_attempt_blocked', '[FALLBACK STRATEGY] Tentativa direta bloqueada por decisão ativa do Orchestrator');
+                this.logger.info('fallback_direct_attempt_blocked', t('agent.kb023.fallback_direct_attempt_blocked'));
             } else {
                 this.logger.warn('fail_safe_final', '[FAIL-SAFE] Tentando execução direta por haver steps pendentes ou modo fail-safe');
                 const defaultTool = this.getDefaultToolForInput(userInput);

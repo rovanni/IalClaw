@@ -7,6 +7,7 @@ import { LlmReranker } from '../llm/llmReranker';
 import { createLogger } from '../../shared/AppLogger';
 import { SemanticGraphBridge, getSemanticGraphBridge, ExpansionResult } from '../graph/semanticGraphBridge';
 import { GraphNode } from '../graph/graphAdapter';
+import { CognitiveOrchestrator } from '../../core/orchestrator/CognitiveOrchestrator';
 
 export interface SearchDocument {
     id: string;
@@ -25,6 +26,7 @@ export interface SearchOptions {
     expandWithGraph?: boolean;
     graphMaxTerms?: number;
     debug?: boolean;
+    sessionId?: string;
 }
 
 export interface SearchResult {
@@ -81,6 +83,7 @@ export class SearchEngine {
     private useCache: boolean;
     private documentCache: Map<string, SearchDocument>;
     private enableGraphExpansion: boolean = true;
+    private orchestrator?: CognitiveOrchestrator;
 
     constructor(options: {
         useLLM?: boolean;
@@ -172,7 +175,8 @@ export class SearchEngine {
             minScore = 0,
             expandWithGraph = this.enableGraphExpansion,
             graphMaxTerms = 20,
-            debug = false
+            debug = false,
+            sessionId
         } = options;
 
         this.logger.info('search_started', 'Iniciando busca', { query: query.slice(0, 50), limit, expandWithGraph });
@@ -183,6 +187,17 @@ export class SearchEngine {
         if (expandSynonyms) {
             queryTokens = this.expandWithSynonyms(queryTokens);
             queryTokens = Array.from(new Set(queryTokens));
+        }
+
+        // T2.1 — SEARCH_QUERY signal: registrar expansão por sinônimos
+        if (expandSynonyms && this.orchestrator && sessionId) {
+            this.orchestrator.ingestSearchSignal(sessionId, {
+                type: 'SEARCH_QUERY',
+                originalQuery: query,
+                expandedTerms: queryTokens,
+                graphExpansion: false,
+                reasoningContext: `Synonym expansion applied: ${queryTokens.length} terms`
+            });
         }
 
         let expansionResult: ExpansionResult | null = null;
@@ -200,11 +215,33 @@ export class SearchEngine {
                         expanded: expansionResult.expandedTerms.length,
                         graphTerms: expansionResult.graphTerms.length
                     });
+
+                    // T2.3 — SEARCH_QUERY signal: registrar expansão via grafo semântico
+                    if (this.orchestrator && sessionId) {
+                        this.orchestrator.ingestSearchSignal(sessionId, {
+                            type: 'SEARCH_QUERY',
+                            originalQuery: query,
+                            expandedTerms: expansionResult.graphTerms,
+                            graphExpansion: true,
+                            reasoningContext: `Graph expansion applied: +${expansionResult.graphTerms.length} terms`
+                        });
+                    }
                 }
             } catch (error) {
                 this.logger.warn('graph_expansion_failed', 'Falha na expansão via grafo, continuando sem ela', {
                     error: error instanceof Error ? error.message : String(error)
                 });
+
+                // T2.3 — SEARCH_FALLBACK signal: registrar falha na expansão via grafo
+                if (this.orchestrator && sessionId) {
+                    this.orchestrator.ingestSearchSignal(sessionId, {
+                        type: 'SEARCH_FALLBACK',
+                        offendingComponent: 'expansion',
+                        errorSummary: error instanceof Error ? error.message : String(error),
+                        fallbackStrategy: 'warn_and_continue',
+                        reasoningContext: 'Graph expansion failed, continuing without graph terms'
+                    });
+                }
             }
         }
 
@@ -218,6 +255,16 @@ export class SearchEngine {
         }
 
         const scoredDocs = this.scorer.scoreDocuments(query, searchResults, this.index.getDocuments());
+
+        // T2.2 — SEARCH_SCORING signal: registrar pesos de scoring aplicados
+        if (this.orchestrator && sessionId) {
+            this.orchestrator.ingestSearchSignal(sessionId, {
+                type: 'SEARCH_SCORING',
+                weights: { ...this.scorer.getWeights() } as unknown as Record<string, number>,
+                semanticBoost: 1.0,
+                reasoningContext: `Scoring applied to ${scoredDocs.length} documents`
+            });
+        }
 
         const searchResultsFinal: SearchResult[] = scoredDocs
             .filter(scored => scored.score >= minScore)
@@ -282,6 +329,16 @@ export class SearchEngine {
                 const scoreB = rerankMap.get(b.doc.id) ?? b.score;
                 return scoreB - scoreA;
             });
+
+            // T2.4 — SEARCH_RERANKER signal: registrar decisão de reranking com LLM
+            if (this.orchestrator && sessionId) {
+                this.orchestrator.ingestSearchSignal(sessionId, {
+                    type: 'SEARCH_RERANKER',
+                    shouldRerank: true,
+                    confidence: 0.8,
+                    reasoningContext: `LLM reranking applied to ${searchResultsFinal.length} results`
+                });
+            }
         }
 
         this.logger.info('search_completed', 'Busca concluída', {
@@ -348,6 +405,10 @@ export class SearchEngine {
 
     setRerankEnabled(enabled: boolean): void {
         this.llmReranker.setEnabled(enabled);
+    }
+
+    setOrchestrator(orchestrator: CognitiveOrchestrator): void {
+        this.orchestrator = orchestrator;
     }
 
     setGraphExpansionEnabled(enabled: boolean): void {

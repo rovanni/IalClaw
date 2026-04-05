@@ -58,6 +58,27 @@ Isso gerava risco de split-brain tático, duplicação de governança e dificuld
 - manutenção de logs e trilha de auditoria
 - manutenção de fallback seguro no loop em caso de `undefined` no Orchestrator
 
+## Rastreabilidade de fases (template)
+
+### Fase 1 — extração (sem decisão nova)
+
+- signals/facts extraídos no loop (`FallbackStrategySignal`, `RealityCheckFacts`, delta em sessão)
+- ingestão passiva no Orchestrator (`ingestSignalsFromLoop`)
+- safe mode preservado com fallback local
+
+### Fase 2 — ativação (com decisão governada)
+
+- ativação de decisão no Orchestrator para reclassificação, retry LLM e ajuste de plano
+- ativação de decisão no Orchestrator para fallback estratégico (`decideFallbackStrategy`)
+- safe mode preservado em todos os blocos: `finalDecision = orchestratorDecision ?? loopDecision`
+
+### Validação incremental registrada
+
+- compilação e testes executados ao fim de marcos críticos de fase (extração, ativação e limpeza)
+- validação final objetiva:
+  - `npx.cmd tsc --noEmit` ✅
+  - `npm.cmd test` ✅
+
 ## Arquivos alterados
 
 - src/engine/AgentLoopTypes.ts

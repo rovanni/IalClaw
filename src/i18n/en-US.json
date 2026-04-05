@@ -70,6 +70,9 @@
   "error.executor.repair_strategy_unavailable": "Repair strategy decision unavailable: Orchestrator not configured.",
   "flow.start.initiated": "[KB-045] Flow start governed by Orchestrator: {flowId}",
   "flow.start.not_found": "Requested flow was not found in the registry: {flowId}.",
+  "agent.kb023.fallback_strategy_signal_missing": "[KB-023] No FallbackStrategySignal observed for active decision.",
+  "agent.kb023.fallback_strategy_active_applied": "[KB-023] Active fallback strategy decision applied by Orchestrator.",
+  "agent.kb023.fallback_direct_attempt_blocked": "[KB-023] Direct fallback attempt blocked by Orchestrator active decision.",
   "error.parse_llm_json.empty_response": "Empty LLM response.",
   "error.parse_llm_json.recovery_failed": "Failed to parse LLM JSON after recovery attempts:\n{preview}",
   "error.plan.hallucinated_tool": "Validation failed: hallucinated tool detected in plan -> {tool}",
@@ -429,5 +432,6 @@
   "intent.confirm.strong": "^(yes|ok|okay|permission|can|you can|install|go ahead|confirm|confirmed|proceed|continue|1|y)$",
   "intent.confirm.permissive": "\\b(yes|ok|okay|can|install|go ahead|proceed|continue|yes please|1|y)\\b",
   "intent.decline.regex": "^(no|cancel|stop|stop it|forget it|dont|do not|nevermind|better not)$",
-  "intent.retry.regex": "\\b(try again|retry|repeat|re-run|execute again|re-execute)\\b"
+  "intent.retry.regex": "\\b(try again|retry|repeat|re-run|execute again|re-execute)\\b",
+  "search_signal_ingested": "[ORCHESTRATOR PASSIVE KB-027] Search signal received and registered"
 }

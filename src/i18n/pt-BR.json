@@ -70,6 +70,9 @@
   "error.executor.repair_strategy_unavailable": "Decisão de estratégia de repair indisponível: Orquestrador não configurado.",
   "flow.start.initiated": "[KB-045] Início de flow governado pelo Orquestrador: {flowId}",
   "flow.start.not_found": "Não encontrei o flow solicitado no registry: {flowId}.",
+  "agent.kb023.fallback_strategy_signal_missing": "[KB-023] Nenhum FallbackStrategySignal observado para decisão ativa.",
+  "agent.kb023.fallback_strategy_active_applied": "[KB-023] Decisão ativa de fallback estratégico aplicada pelo Orquestrador.",
+  "agent.kb023.fallback_direct_attempt_blocked": "[KB-023] Tentativa direta de fallback bloqueada por decisão ativa do Orquestrador.",
   "error.parse_llm_json.empty_response": "Resposta vazia do LLM.",
   "error.parse_llm_json.recovery_failed": "Falha ao parsear JSON do LLM após tentativas de recuperação:\n{preview}",
   "error.plan.hallucinated_tool": "Validação falhou: tool alucinada detectada no plano -> {tool}",
@@ -195,6 +198,7 @@
   "log.agent.unified_flow_started": "[LOG] log.agent.unified_flow_started",
   "log.agent.user_name_captured": "[LOG] log.agent.user_name_captured",
   "log.agent.user_name_captured_direct": "[LOG] log.agent.user_name_captured_direct",
+  "search_signal_ingested": "[ORCHESTRATOR PASSIVE KB-027] Signal de Search recebido e registrado",
   "log.agent.web_flow_completed": "[LOG] log.agent.web_flow_completed",
   "log.agent.web_flow_failed": "[LOG] log.agent.web_flow_failed",
   "log.agent.web_flow_started": "[LOG] log.agent.web_flow_started",
@@ -429,5 +433,6 @@
   "intent.confirm.strong": "^(sim|yes|ok|okay|pode|pode sim|instala|instalar|instale|pode instalar|pode instalar sim|go ahead|manda ver|confirmo|confirmado|pode prosseguir|prosseguir|1|y)$",
   "intent.confirm.permissive": "\\b(sim|yes|ok|instala|instalar|instale|go ahead|prosseguir|pode|1|y)\\b",
   "intent.decline.regex": "^(nao|não|no|cancelar|cancela|cancel|parar|pare|deixa|deixa pra la|deixa pra lá|melhor nao|melhor não)$",
-  "intent.retry.regex": "\\b(tente|tentar|tenta)\\s+(novamente|de novo)\\b|\\b(try again|retry|repetir|repita|re-executar)\\b|\\b(rodar|executar)\\s+novamente\\b"
+  "intent.retry.regex": "\\b(tente|tentar|tenta)\\s+(novamente|de novo)\\b|\\b(try again|retry|repetir|repita|re-executar)\\b|\\b(rodar|executar)\\s+novamente\\b",
+  "search_signal_ingested": "[ORCHESTRATOR PASSIVE KB-027] Signal de Search recebido e registrado"
 }

@@ -4,6 +4,7 @@ import { createLogger } from '../../shared/AppLogger';
 import { parseLlmJson } from '../../utils/parseLlmJson';
 import { tokenize } from '../core/tokenizer';
 import { normalize } from '../core/normalizer';
+import { CognitiveOrchestrator } from '../../core/orchestrator/CognitiveOrchestrator';
 
 export interface SemanticStructure {
     tokens: string[];
@@ -19,6 +20,7 @@ export interface GenerateSemanticOptions {
     fallbackToTokenize?: boolean;
     maxKeywords?: number;
     maxTags?: number;
+    sessionId?: string;
 }
 
 const SEMANTIC_ANALYSIS_SYSTEM = `Você é um sistema de análise semântica para indexação de documentos.
@@ -67,6 +69,7 @@ export class AutoTagger {
     private logger = createLogger('AutoTagger');
     private useCache: boolean;
     private cache: Map<string, SemanticStructure>;
+    private orchestrator?: CognitiveOrchestrator;
 
     constructor(useCache: boolean = true) {
         this.provider = ProviderFactory.getProvider();
@@ -101,6 +104,17 @@ export class AutoTagger {
                     docId: doc.id,
                     error: error instanceof Error ? error.message : String(error)
                 });
+
+                // T2.5 — SEARCH_FALLBACK signal: registrar falha no LLM e estratégia de fallback
+                if (this.orchestrator && options.sessionId) {
+                    this.orchestrator.ingestSearchSignal(options.sessionId, {
+                        type: 'SEARCH_FALLBACK',
+                        offendingComponent: 'tagging',
+                        errorSummary: error instanceof Error ? error.message : String(error),
+                        fallbackStrategy: fallbackToTokenize ? 'warn_and_continue' : 'abort',
+                        reasoningContext: 'LLM semantic structure generation failed'
+                    });
+                }
 
                 if (fallbackToTokenize) {
                     semanticStructure = this.generateFallback(doc);
@@ -231,6 +245,10 @@ export class AutoTagger {
 
     clearCache(): void {
         this.cache.clear();
+    }
+
+    setOrchestrator(orchestrator: CognitiveOrchestrator): void {
+        this.orchestrator = orchestrator;
     }
 
     getCacheSize(): number {
