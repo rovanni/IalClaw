@@ -5,6 +5,7 @@ import { parseLlmJson } from '../../utils/parseLlmJson';
 import { tokenize } from '../core/tokenizer';
 import { normalize } from '../core/normalizer';
 import { CognitiveOrchestrator } from '../../core/orchestrator/CognitiveOrchestrator';
+import { SearchCache, SessionManager } from '../../shared/SessionManager';
 
 export interface SemanticStructure {
     tokens: string[];
@@ -70,11 +71,48 @@ export class AutoTagger {
     private useCache: boolean;
     private cache: Map<string, SemanticStructure>;
     private orchestrator?: CognitiveOrchestrator;
+    private sessionManager: Pick<typeof SessionManager, 'getSession'>;
 
-    constructor(useCache: boolean = true) {
+    constructor(useCache: boolean = true, options: {
+        sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+    } = {}) {
         this.provider = ProviderFactory.getProvider();
         this.useCache = useCache;
         this.cache = new Map();
+        this.sessionManager = options.sessionManager ?? SessionManager;
+    }
+
+    private getCache(sessionId?: string): Map<string, SemanticStructure> {
+        if (!sessionId) {
+            return this.cache;
+        }
+
+        const session = this.sessionManager.getSession(sessionId);
+        if (!session.search_cache) {
+            session.search_cache = {
+                documentCache: new Map<string, any>(),
+                invertedIndexes: {
+                    termIndex: new Map<string, Set<string>>(),
+                    titleIndex: new Map<string, Set<string>>(),
+                    tagIndex: new Map<string, Set<string>>(),
+                    categoryIndex: new Map<string, Set<string>>(),
+                    termFrequency: new Map<string, Map<string, number>>(),
+                    documents: new Map<string, any>()
+                },
+                semanticCache: {
+                    expansionCache: new Map<string, string[]>(),
+                    enrichmentCache: new Map<string, any>()
+                },
+                autoTaggerCache: new Map<string, any>()
+            };
+        }
+
+        const searchCache = session.search_cache as SearchCache;
+        if (!searchCache.autoTaggerCache) {
+            searchCache.autoTaggerCache = new Map<string, any>();
+        }
+
+        return searchCache.autoTaggerCache as Map<string, SemanticStructure>;
     }
 
     async generateSemanticStructure(
@@ -89,9 +127,10 @@ export class AutoTagger {
         } = options;
 
         const cacheKey = `${doc.id}:${doc.content.slice(0, 100)}`;
-        if (this.useCache && this.cache.has(cacheKey)) {
+        const cache = this.getCache(options.sessionId);
+        if (this.useCache && cache.has(cacheKey)) {
             this.logger.debug('cache_hit', 'Usando cache para documento', { docId: doc.id });
-            return this.cache.get(cacheKey)!;
+            return cache.get(cacheKey)!;
         }
 
         let semanticStructure: SemanticStructure;
@@ -141,7 +180,7 @@ export class AutoTagger {
         }
 
         if (this.useCache) {
-            this.cache.set(cacheKey, semanticStructure);
+            cache.set(cacheKey, semanticStructure);
         }
 
         return semanticStructure;
@@ -249,19 +288,21 @@ export class AutoTagger {
         return 'geral';
     }
 
-    clearCache(): void {
-        this.cache.clear();
+    clearCache(sessionId?: string): void {
+        this.getCache(sessionId).clear();
     }
 
     setOrchestrator(orchestrator: CognitiveOrchestrator): void {
         this.orchestrator = orchestrator;
     }
 
-    getCacheSize(): number {
-        return this.cache.size;
+    getCacheSize(sessionId?: string): number {
+        return this.getCache(sessionId).size;
     }
 }
 
-export function createAutoTagger(useCache?: boolean): AutoTagger {
-    return new AutoTagger(useCache);
+export function createAutoTagger(useCache?: boolean, options: {
+    sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+} = {}): AutoTagger {
+    return new AutoTagger(useCache, options);
 }

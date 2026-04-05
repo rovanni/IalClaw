@@ -1,11 +1,15 @@
 # Em andamento
 
-- [ ] KB-027 - Neutralizar Search como subsistema decisório isolado (Fases 1-6)
+- [ ] 
+ - Neutralizar Search como subsistema decisório isolado (Fases 1-6)
   - Origem: problemas_criticos (Single Brain)
   - Risco: Crítico
   - Status: 85% concluído
-  - Progresso por fase: F1/F2 concluídas; F3 parcial (T3.2-T3.5 pendentes por refactor de injeção de SessionManager no SearchEngine); F4 iniciada (`src/tests/KB027SearchSignals.test.ts`); F5/F6 concluídas (lógica real nos `decide*` + safe mode preservado)
-  - Evidência atual: integração do `CognitiveOrchestrator` nas decisões de busca, correção de state mutation do scorer em `searchEngine.ts`, compilação limpa e testes gerais passando na última validação completa
+  - Progresso por fase: F1/F2 concluídas; F3 concluída com T3.2-T3.5 aplicadas (SearchEngine session-aware, InvertedIndex session-scoped, SemanticGraphBridge sem singleton no caminho principal e AutoTagger com cache por sessão); F4 iniciada com src/tests/KB027SearchSignals.test.ts e ampliada com isolamento de cache por sessão, mas ainda sem cobertura completa de Safe Mode em todas as decisões; F5/F6 concluídas com logica real nos decide* e safe mode preservado
+  - Evidência atual: integração do CognitiveOrchestrator nas decisões de busca, SearchCache já existe em src/shared/SessionManager.ts, compilação limpa e testes gerais passando na última validação completa
+  - Planejamento vigente: docs/architecture/plans/KB-027-PLANO.md replanejado em 5 de abril de 2026 para fechar apenas F3/F4 remanescentes
+  - O que falta: fechar F4 com cobertura completa de Safe Mode e validação final de conflitos/autoridade; registrar evidências finais no kanban para mover o card quando pronto
+  - O que NÃO deve ser tocado agora: heurísticas de busca, tuning de scoring/boost, redesign do GraphAdapter e outras KBs críticas fora do escopo do Search
 
 - [ ] KB-001 - Externalizar healing loop do executor para governanca do Orchestrator (Fase 1+2)
   - Origem: problemas_criticos (Single Brain)

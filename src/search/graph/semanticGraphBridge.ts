@@ -1,5 +1,6 @@
 import { GraphAdapter, getGraphAdapter, GraphNode } from './graphAdapter';
 import { createLogger } from '../../shared/AppLogger';
+import { SearchCache, SessionManager } from '../../shared/SessionManager';
 
 export interface ExpansionOptions {
     maxDepth?: number;
@@ -36,9 +37,58 @@ export class SemanticGraphBridge {
     private logger = createLogger('SemanticGraphBridge');
     private enabled: boolean = true;
     private static readonly MAX_CACHE_SIZE = 1000;
+    private sessionManager: Pick<typeof SessionManager, 'getSession'>;
 
-    constructor(graphAdapter?: GraphAdapter) {
+    constructor(graphAdapter?: GraphAdapter, options: {
+        sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+    } = {}) {
         this.graphAdapter = graphAdapter || getGraphAdapter();
+        this.sessionManager = options.sessionManager ?? SessionManager;
+    }
+
+    private getSemanticCaches(sessionId?: string): {
+        expansionCache: Map<string, string[]>;
+        enrichmentCache: Map<string, GraphEnrichmentResult>;
+    } {
+        if (!sessionId) {
+            return {
+                expansionCache: this.expansionCache,
+                enrichmentCache: this.enrichmentCache
+            };
+        }
+
+        const session = this.sessionManager.getSession(sessionId);
+        if (!session.search_cache) {
+            session.search_cache = {
+                documentCache: new Map<string, any>(),
+                invertedIndexes: {
+                    termIndex: new Map<string, Set<string>>(),
+                    titleIndex: new Map<string, Set<string>>(),
+                    tagIndex: new Map<string, Set<string>>(),
+                    categoryIndex: new Map<string, Set<string>>(),
+                    termFrequency: new Map<string, Map<string, number>>(),
+                    documents: new Map<string, any>()
+                },
+                semanticCache: {
+                    expansionCache: new Map<string, string[]>(),
+                    enrichmentCache: new Map<string, any>()
+                },
+                autoTaggerCache: new Map<string, any>()
+            };
+        }
+
+        const searchCache = session.search_cache as SearchCache;
+        if (!searchCache.semanticCache.expansionCache) {
+            searchCache.semanticCache.expansionCache = new Map<string, string[]>();
+        }
+        if (!searchCache.semanticCache.enrichmentCache) {
+            searchCache.semanticCache.enrichmentCache = new Map<string, any>();
+        }
+
+        return {
+            expansionCache: searchCache.semanticCache.expansionCache,
+            enrichmentCache: searchCache.semanticCache.enrichmentCache as Map<string, GraphEnrichmentResult>
+        };
     }
 
     private cleanupCache<K, V>(cache: Map<K, V>): void {
@@ -61,7 +111,8 @@ export class SemanticGraphBridge {
 
     async expandWithGraph(
         terms: string[],
-        options: ExpansionOptions = {}
+        options: ExpansionOptions = {},
+        sessionId?: string
     ): Promise<ExpansionResult> {
         const {
             maxDepth = 1,
@@ -83,14 +134,15 @@ export class SemanticGraphBridge {
         const allGraphTerms: string[] = [];
         const allGraphNodes: GraphNode[] = [];
         const processedTerms = new Set<string>();
+        const { expansionCache } = this.getSemanticCaches(sessionId);
 
         for (const term of terms) {
             if (processedTerms.has(term.toLowerCase())) continue;
             processedTerms.add(term.toLowerCase());
 
             const cacheKey = `${term}:${maxDepth}`;
-            if (this.expansionCache.has(cacheKey)) {
-                const cached = this.expansionCache.get(cacheKey)!;
+            if (expansionCache.has(cacheKey)) {
+                const cached = expansionCache.get(cacheKey)!;
                 for (const t of cached) {
                     if (!excludeTerms.includes(t)) {
                         allExpanded.add(t);
@@ -110,8 +162,8 @@ export class SemanticGraphBridge {
                     .filter(t => t.length > 2 && !excludeTerms.includes(t))
                     .slice(0, maxTerms);
 
-                this.expansionCache.set(cacheKey, validTerms);
-                this.cleanupCache(this.expansionCache);
+                expansionCache.set(cacheKey, validTerms);
+                this.cleanupCache(expansionCache);
 
                 for (const t of validTerms) {
                     allExpanded.add(t);
@@ -149,7 +201,8 @@ export class SemanticGraphBridge {
         docId: string,
         docTags: string[],
         docKeywords: string[],
-        docRelations: string[] = []
+        docRelations: string[] = [],
+        sessionId?: string
     ): Promise<GraphEnrichmentResult> {
         if (!this.isEnabled()) {
             return {
@@ -161,8 +214,9 @@ export class SemanticGraphBridge {
         }
 
         const cacheKey = docId;
-        if (this.enrichmentCache.has(cacheKey)) {
-            return this.enrichmentCache.get(cacheKey)!;
+        const { enrichmentCache } = this.getSemanticCaches(sessionId);
+        if (enrichmentCache.has(cacheKey)) {
+            return enrichmentCache.get(cacheKey)!;
         }
 
         const connectedNodes: GraphNode[] = [];
@@ -200,8 +254,8 @@ export class SemanticGraphBridge {
             semanticBoost
         };
 
-        this.enrichmentCache.set(cacheKey, result);
-        this.cleanupCache(this.enrichmentCache);
+        enrichmentCache.set(cacheKey, result);
+        this.cleanupCache(enrichmentCache);
         return result;
     }
 
@@ -240,17 +294,19 @@ export class SemanticGraphBridge {
     async syncDocumentRelations(
         docId: string,
         tags: string[],
-        relations: string[]
+        relations: string[],
+        sessionId?: string
     ): Promise<void> {
         if (!this.isEnabled()) {
             return;
         }
 
         try {
+            const { enrichmentCache } = this.getSemanticCaches(sessionId);
             await this.graphAdapter.syncTagsToGraph(tags, docId);
             await this.graphAdapter.syncRelationsToGraph(relations, docId);
             
-            this.enrichmentCache.delete(docId);
+            enrichmentCache.delete(docId);
             
             this.logger.info('relations_synced', `Relações sincronizadas para documento: ${docId}`, {
                 tagsCount: tags.length,
@@ -263,9 +319,10 @@ export class SemanticGraphBridge {
         }
     }
 
-    clearCaches(): void {
-        this.expansionCache.clear();
-        this.enrichmentCache.clear();
+    clearCaches(sessionId?: string): void {
+        const { expansionCache, enrichmentCache } = this.getSemanticCaches(sessionId);
+        expansionCache.clear();
+        enrichmentCache.clear();
     }
 
     reset(): void {
@@ -274,21 +331,24 @@ export class SemanticGraphBridge {
         this.enabled = true;
     }
 
-    getCacheStats(): {
+    getCacheStats(sessionId?: string): {
         expansionCacheSize: number;
         enrichmentCacheSize: number;
     } {
+        const { expansionCache, enrichmentCache } = this.getSemanticCaches(sessionId);
         return {
-            expansionCacheSize: this.expansionCache.size,
-            enrichmentCacheSize: this.enrichmentCache.size
+            expansionCacheSize: expansionCache.size,
+            enrichmentCacheSize: enrichmentCache.size
         };
     }
 }
 
 let globalBridge: SemanticGraphBridge | null = null;
 
-export function createSemanticGraphBridge(graphAdapter?: GraphAdapter): SemanticGraphBridge {
-    return new SemanticGraphBridge(graphAdapter);
+export function createSemanticGraphBridge(graphAdapter?: GraphAdapter, options: {
+    sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+} = {}): SemanticGraphBridge {
+    return new SemanticGraphBridge(graphAdapter, options);
 }
 
 export function getSemanticGraphBridge(): SemanticGraphBridge {

@@ -5,9 +5,10 @@ import { Scorer, ScoredDocument, ScoringWeights } from '../ranking/scorer';
 import { AutoTagger, SemanticStructure } from '../llm/autoTagger';
 import { LlmReranker } from '../llm/llmReranker';
 import { createLogger } from '../../shared/AppLogger';
-import { SemanticGraphBridge, getSemanticGraphBridge, ExpansionResult } from '../graph/semanticGraphBridge';
+import { SemanticGraphBridge, createSemanticGraphBridge, ExpansionResult } from '../graph/semanticGraphBridge';
 import { GraphNode } from '../graph/graphAdapter';
 import { CognitiveOrchestrator } from '../../core/orchestrator/CognitiveOrchestrator';
+import { SearchCache, SessionManager } from '../../shared/SessionManager';
 
 export interface SearchDocument {
     id: string;
@@ -84,37 +85,76 @@ export class SearchEngine {
     private documentCache: Map<string, SearchDocument>;
     private enableGraphExpansion: boolean = true;
     private orchestrator?: CognitiveOrchestrator;
+    private sessionManager: Pick<typeof SessionManager, 'getSession'>;
 
     constructor(options: {
         useLLM?: boolean;
         useRerank?: boolean;
         synonyms?: SynonymMap;
         useGraphExpansion?: boolean;
+        sessionManager?: Pick<typeof SessionManager, 'getSession'>;
     } = {}) {
-        this.index = new InvertedIndex();
+        this.sessionManager = options.sessionManager ?? SessionManager;
+        this.index = new InvertedIndex({ sessionManager: this.sessionManager });
         this.scorer = new Scorer();
-        this.autoTagger = new AutoTagger();
+        this.autoTagger = new AutoTagger(true, { sessionManager: this.sessionManager });
         this.llmReranker = new LlmReranker(options.useRerank ?? false);
-        this.graphBridge = getSemanticGraphBridge();
+        this.graphBridge = createSemanticGraphBridge(undefined, { sessionManager: this.sessionManager });
         this.synonyms = { ...DEFAULT_SYNONYMS, ...options.synonyms };
         this.useCache = true;
         this.documentCache = new Map();
         this.enableGraphExpansion = options.useGraphExpansion ?? true;
     }
 
-    async indexDocument(doc: SearchDocument, syncToGraph: boolean = true): Promise<void> {
+    private createSearchCache(): SearchCache {
+        return {
+            documentCache: new Map<string, SearchDocument>(),
+            invertedIndexes: {
+                termIndex: new Map<string, Set<string>>(),
+                titleIndex: new Map<string, Set<string>>(),
+                tagIndex: new Map<string, Set<string>>(),
+                categoryIndex: new Map<string, Set<string>>(),
+                termFrequency: new Map<string, Map<string, number>>(),
+                documents: new Map<string, IndexedDocument>()
+            },
+            semanticCache: {
+                expansionCache: new Map<string, string[]>(),
+                enrichmentCache: new Map<string, any>()
+            },
+            autoTaggerCache: new Map<string, string[]>()
+        };
+    }
+
+    private getSearchCache(sessionId?: string): SearchCache | undefined {
+        if (!sessionId) {
+            return undefined;
+        }
+
+        const session = this.sessionManager.getSession(sessionId);
+        if (!session.search_cache) {
+            session.search_cache = this.createSearchCache();
+        }
+
+        return session.search_cache;
+    }
+
+    private getDocumentCache(sessionId?: string): Map<string, SearchDocument> {
+        return this.getSearchCache(sessionId)?.documentCache as Map<string, SearchDocument> ?? this.documentCache;
+    }
+
+    async indexDocument(doc: SearchDocument, syncToGraph: boolean = true, sessionId?: string): Promise<void> {
         this.logger.info('indexing_document', 'Indexando documento', { docId: doc.id, title: doc.title });
 
         let semanticStructure: SemanticStructure;
 
         try {
-            semanticStructure = await this.autoTagger.generateSemanticStructure(doc);
+            semanticStructure = await this.autoTagger.generateSemanticStructure(doc, { sessionId });
         } catch (error) {
             this.logger.warn('auto_tag_failed', 'Falha no auto-tagging, usando fallback', {
                 docId: doc.id,
                 error: error instanceof Error ? error.message : String(error)
             });
-            semanticStructure = await this.autoTagger.generateSemanticStructure(doc, { useLLM: false });
+            semanticStructure = await this.autoTagger.generateSemanticStructure(doc, { useLLM: false, sessionId });
         }
 
         const indexedDoc: IndexedDocument = {
@@ -130,10 +170,10 @@ export class SearchEngine {
             metadata: doc.metadata
         };
 
-        this.index.addDocument(indexedDoc);
+        this.index.addDocument(indexedDoc, sessionId);
 
         if (this.useCache) {
-            this.documentCache.set(doc.id, doc);
+            this.getDocumentCache(sessionId).set(doc.id, doc);
         }
 
         if (syncToGraph && this.graphBridge.isEnabled()) {
@@ -141,7 +181,8 @@ export class SearchEngine {
                 await this.graphBridge.syncDocumentRelations(
                     doc.id,
                     semanticStructure.tags,
-                    semanticStructure.relacoes
+                    semanticStructure.relacoes,
+                    sessionId
                 );
             } catch (error) {
                 this.logger.warn('graph_sync_failed', 'Falha ao sincronizar com grafo', {
@@ -159,9 +200,9 @@ export class SearchEngine {
         });
     }
 
-    async indexDocuments(docs: SearchDocument[]): Promise<void> {
+    async indexDocuments(docs: SearchDocument[], sessionId?: string): Promise<void> {
         for (const doc of docs) {
-            await this.indexDocument(doc);
+            await this.indexDocument(doc, true, sessionId);
         }
     }
 
@@ -218,7 +259,7 @@ export class SearchEngine {
             try {
                 expansionResult = await this.graphBridge.expandWithGraph(queryTokens, {
                     maxTerms: graphConfig.maxTerms
-                });
+                }, sessionId);
                 
                 if (expansionResult.graphTerms.length > 0) {
                     queryTokens = [...new Set([...queryTokens, ...expansionResult.graphTerms])];
@@ -266,7 +307,7 @@ export class SearchEngine {
 
         this.logger.debug('query_tokens', 'Tokens da query processados', { tokens: queryTokens });
 
-        const searchResults = this.index.search(queryTokens);
+        const searchResults = this.index.search(queryTokens, sessionId);
         
         if (searchResults.size === 0) {
             this.logger.info('no_results', 'Nenhum resultado encontrado', { query: query.slice(0, 50) });
@@ -279,7 +320,7 @@ export class SearchEngine {
         const orchestratorWeights = this.orchestrator?.decideSearchWeights(sessionId);
         const activeScorer = orchestratorWeights ? new Scorer(orchestratorWeights) : this.scorer;
 
-        const scoredDocs = activeScorer.scoreDocuments(query, searchResults, this.index.getDocuments());
+        const scoredDocs = activeScorer.scoreDocuments(query, searchResults, this.index.getDocuments(sessionId));
 
         // T2.2 — SEARCH_SCORING signal: registrar pesos de scoring aplicados
         if (this.orchestrator && sessionId) {
@@ -296,7 +337,7 @@ export class SearchEngine {
             .slice(offset, offset + limit)
             .map(scored => {
                 const baseResult: SearchResult = {
-                    doc: this.getSearchDocument(scored.doc),
+                    doc: this.getSearchDocument(scored.doc, sessionId),
                     score: scored.score,
                     matchDetails: scored.matchDetails
                 };
@@ -401,8 +442,8 @@ export class SearchEngine {
         return expanded;
     }
 
-    private getSearchDocument(indexedDoc: IndexedDocument): SearchDocument {
-        const cached = this.documentCache.get(indexedDoc.id);
+    private getSearchDocument(indexedDoc: IndexedDocument, sessionId?: string): SearchDocument {
+        const cached = this.getDocumentCache(sessionId).get(indexedDoc.id);
         if (cached) {
             return cached;
         }
@@ -415,15 +456,16 @@ export class SearchEngine {
         };
     }
 
-    removeDocument(docId: string): void {
-        this.index.removeDocument(docId);
-        this.documentCache.delete(docId);
+    removeDocument(docId: string, sessionId?: string): void {
+        this.index.removeDocument(docId, sessionId);
+        this.getDocumentCache(sessionId).delete(docId);
     }
 
-    clearIndex(): void {
-        this.index.clear();
-        this.documentCache.clear();
-        this.autoTagger.clearCache();
+    clearIndex(sessionId?: string): void {
+        this.index.clear(sessionId);
+        this.getDocumentCache(sessionId).clear();
+        this.autoTagger.clearCache(sessionId);
+        this.graphBridge.clearCaches(sessionId);
     }
 
     setSynonyms(synonyms: SynonymMap): void {

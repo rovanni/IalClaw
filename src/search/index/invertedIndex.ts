@@ -1,5 +1,6 @@
 import { tokenize } from '../core/tokenizer';
 import { normalize } from '../core/normalizer';
+import { SearchCache, SessionManager } from '../../shared/SessionManager';
 
 export interface IndexedDocument {
     id: string;
@@ -20,6 +21,15 @@ export interface InvertedIndexData {
     termFrequency: Map<string, Map<string, number>>;
 }
 
+interface InvertedIndexState {
+    termIndex: Map<string, Set<string>>;
+    documents: Map<string, IndexedDocument>;
+    termFrequency: Map<string, Map<string, number>>;
+    titleIndex: Map<string, Set<string>>;
+    tagIndex: Map<string, Set<string>>;
+    categoryIndex: Map<string, Set<string>>;
+}
+
 export class InvertedIndex {
     private termIndex: Map<string, Set<string>>;
     private documents: Map<string, IndexedDocument>;
@@ -27,63 +37,135 @@ export class InvertedIndex {
     private titleIndex: Map<string, Set<string>>;
     private tagIndex: Map<string, Set<string>>;
     private categoryIndex: Map<string, Set<string>>;
+    private sessionManager: Pick<typeof SessionManager, 'getSession'>;
 
-    constructor() {
+    constructor(options: {
+        sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+    } = {}) {
         this.termIndex = new Map();
         this.documents = new Map();
         this.termFrequency = new Map();
         this.titleIndex = new Map();
         this.tagIndex = new Map();
         this.categoryIndex = new Map();
+        this.sessionManager = options.sessionManager ?? SessionManager;
     }
 
-    addDocument(doc: IndexedDocument): void {
-        if (this.documents.has(doc.id)) {
-            this.removeDocument(doc.id);
+    private createInvertedState(cache: SearchCache): InvertedIndexState {
+        if (!cache.invertedIndexes.termIndex) {
+            cache.invertedIndexes.termIndex = new Map<string, Set<string>>();
+        }
+        if (!cache.invertedIndexes.titleIndex) {
+            cache.invertedIndexes.titleIndex = new Map<string, Set<string>>();
+        }
+        if (!cache.invertedIndexes.tagIndex) {
+            cache.invertedIndexes.tagIndex = new Map<string, Set<string>>();
+        }
+        if (!cache.invertedIndexes.categoryIndex) {
+            cache.invertedIndexes.categoryIndex = new Map<string, Set<string>>();
+        }
+        if (!cache.invertedIndexes.termFrequency) {
+            cache.invertedIndexes.termFrequency = new Map<string, Map<string, number>>();
+        }
+        if (!cache.invertedIndexes.documents) {
+            cache.invertedIndexes.documents = new Map<string, IndexedDocument>();
         }
 
-        this.documents.set(doc.id, doc);
+        return {
+            termIndex: cache.invertedIndexes.termIndex as Map<string, Set<string>>,
+            documents: cache.invertedIndexes.documents as Map<string, IndexedDocument>,
+            termFrequency: cache.invertedIndexes.termFrequency as Map<string, Map<string, number>>,
+            titleIndex: cache.invertedIndexes.titleIndex as Map<string, Set<string>>,
+            tagIndex: cache.invertedIndexes.tagIndex as Map<string, Set<string>>,
+            categoryIndex: cache.invertedIndexes.categoryIndex as Map<string, Set<string>>
+        };
+    }
+
+    private getState(sessionId?: string): InvertedIndexState {
+        if (!sessionId) {
+            return {
+                termIndex: this.termIndex,
+                documents: this.documents,
+                termFrequency: this.termFrequency,
+                titleIndex: this.titleIndex,
+                tagIndex: this.tagIndex,
+                categoryIndex: this.categoryIndex
+            };
+        }
+
+        const session = this.sessionManager.getSession(sessionId);
+        if (!session.search_cache) {
+            session.search_cache = {
+                documentCache: new Map<string, any>(),
+                invertedIndexes: {
+                    termIndex: new Map<string, Set<string>>(),
+                    titleIndex: new Map<string, Set<string>>(),
+                    tagIndex: new Map<string, Set<string>>(),
+                    categoryIndex: new Map<string, Set<string>>(),
+                    termFrequency: new Map<string, Map<string, number>>(),
+                    documents: new Map<string, IndexedDocument>()
+                },
+                semanticCache: {
+                    expansionCache: new Map<string, string[]>(),
+                    enrichmentCache: new Map<string, any>()
+                },
+                autoTaggerCache: new Map<string, string[]>()
+            };
+        }
+
+        return this.createInvertedState(session.search_cache);
+    }
+
+    addDocument(doc: IndexedDocument, sessionId?: string): void {
+        const state = this.getState(sessionId);
+
+        if (state.documents.has(doc.id)) {
+            this.removeDocument(doc.id, sessionId);
+        }
+
+        state.documents.set(doc.id, doc);
 
         const tokens = doc.tokens || tokenize(doc.content);
-        
+
         for (const token of tokens) {
-            this.addTermToIndex(token, doc.id, 'term');
+            this.addTermToIndex(token, doc.id, 'term', sessionId);
         }
 
         const titleTokens = tokenize(doc.title);
         for (const token of titleTokens) {
-            this.addTermToIndex(token, doc.id, 'title');
+            this.addTermToIndex(token, doc.id, 'title', sessionId);
         }
 
         if (doc.tags) {
             for (const tag of doc.tags) {
                 const normalizedTag = normalize(tag);
-                this.addTermToIndex(normalizedTag, doc.id, 'tag');
+                this.addTermToIndex(normalizedTag, doc.id, 'tag', sessionId);
             }
         }
 
         if (doc.categoria) {
             const normalizedCat = normalize(doc.categoria);
-            this.addTermToIndex(normalizedCat, doc.id, 'category');
+            this.addTermToIndex(normalizedCat, doc.id, 'category', sessionId);
         }
     }
 
-    private addTermToIndex(term: string, docId: string, indexType: 'term' | 'title' | 'tag' | 'category'): void {
+    private addTermToIndex(term: string, docId: string, indexType: 'term' | 'title' | 'tag' | 'category', sessionId?: string): void {
+        const state = this.getState(sessionId);
         const normalizedTerm = normalize(term);
-        
+
         let index: Map<string, Set<string>>;
         switch (indexType) {
             case 'title':
-                index = this.titleIndex;
+                index = state.titleIndex;
                 break;
             case 'tag':
-                index = this.tagIndex;
+                index = state.tagIndex;
                 break;
             case 'category':
-                index = this.categoryIndex;
+                index = state.categoryIndex;
                 break;
             default:
-                index = this.termIndex;
+                index = state.termIndex;
         }
 
         if (!index.has(normalizedTerm)) {
@@ -91,57 +173,59 @@ export class InvertedIndex {
         }
         index.get(normalizedTerm)!.add(docId);
 
-        if (!this.termFrequency.has(normalizedTerm)) {
-            this.termFrequency.set(normalizedTerm, new Map());
+        if (!state.termFrequency.has(normalizedTerm)) {
+            state.termFrequency.set(normalizedTerm, new Map());
         }
-        const tf = this.termFrequency.get(normalizedTerm)!;
+        const tf = state.termFrequency.get(normalizedTerm)!;
         tf.set(docId, (tf.get(docId) || 0) + 1);
     }
 
-    removeDocument(docId: string): void {
-        const doc = this.documents.get(docId);
+    removeDocument(docId: string, sessionId?: string): void {
+        const state = this.getState(sessionId);
+        const doc = state.documents.get(docId);
         if (!doc) return;
 
         const tokens = doc.tokens || tokenize(doc.content);
-        
+
         for (const token of tokens) {
-            this.removeTermFromIndex(token, docId, 'term');
+            this.removeTermFromIndex(token, docId, 'term', sessionId);
         }
 
         const titleTokens = tokenize(doc.title);
         for (const token of titleTokens) {
-            this.removeTermFromIndex(token, docId, 'title');
+            this.removeTermFromIndex(token, docId, 'title', sessionId);
         }
 
         if (doc.tags) {
             for (const tag of doc.tags) {
-                this.removeTermFromIndex(normalize(tag), docId, 'tag');
+                this.removeTermFromIndex(normalize(tag), docId, 'tag', sessionId);
             }
         }
 
         if (doc.categoria) {
-            this.removeTermFromIndex(normalize(doc.categoria), docId, 'category');
+            this.removeTermFromIndex(normalize(doc.categoria), docId, 'category', sessionId);
         }
 
-        this.documents.delete(docId);
+        state.documents.delete(docId);
     }
 
-    private removeTermFromIndex(term: string, docId: string, indexType: 'term' | 'title' | 'tag' | 'category'): void {
+    private removeTermFromIndex(term: string, docId: string, indexType: 'term' | 'title' | 'tag' | 'category', sessionId?: string): void {
+        const state = this.getState(sessionId);
         const normalizedTerm = normalize(term);
-        
+
         let index: Map<string, Set<string>>;
         switch (indexType) {
             case 'title':
-                index = this.titleIndex;
+                index = state.titleIndex;
                 break;
             case 'tag':
-                index = this.tagIndex;
+                index = state.tagIndex;
                 break;
             case 'category':
-                index = this.categoryIndex;
+                index = state.categoryIndex;
                 break;
             default:
-                index = this.termIndex;
+                index = state.termIndex;
         }
 
         const docSet = index.get(normalizedTerm);
@@ -152,19 +236,20 @@ export class InvertedIndex {
             }
         }
 
-        const tf = this.termFrequency.get(normalizedTerm);
+        const tf = state.termFrequency.get(normalizedTerm);
         if (tf) {
             tf.delete(docId);
             if (tf.size === 0) {
-                this.termFrequency.delete(normalizedTerm);
+                state.termFrequency.delete(normalizedTerm);
             }
         }
     }
 
-    search(queryTerms: string[]): Map<string, {
+    search(queryTerms: string[], sessionId?: string): Map<string, {
         docIds: Set<string>;
         type: 'term' | 'title' | 'tag' | 'category';
     }> {
+        const state = this.getState(sessionId);
         const results = new Map<string, {
             docIds: Set<string>;
             type: 'term' | 'title' | 'tag' | 'category';
@@ -173,24 +258,24 @@ export class InvertedIndex {
         for (const term of queryTerms) {
             const normalizedTerm = normalize(term);
 
-            const termDocs = this.termIndex.get(normalizedTerm);
+            const termDocs = state.termIndex.get(normalizedTerm);
             if (termDocs && termDocs.size > 0) {
                 results.set(normalizedTerm, { docIds: termDocs, type: 'term' });
             }
 
-            const titleDocs = this.titleIndex.get(normalizedTerm);
+            const titleDocs = state.titleIndex.get(normalizedTerm);
             if (titleDocs && titleDocs.size > 0) {
                 const key = `title:${normalizedTerm}`;
                 results.set(key, { docIds: titleDocs, type: 'title' });
             }
 
-            const tagDocs = this.tagIndex.get(normalizedTerm);
+            const tagDocs = state.tagIndex.get(normalizedTerm);
             if (tagDocs && tagDocs.size > 0) {
                 const key = `tag:${normalizedTerm}`;
                 results.set(key, { docIds: tagDocs, type: 'tag' });
             }
 
-            const catDocs = this.categoryIndex.get(normalizedTerm);
+            const catDocs = state.categoryIndex.get(normalizedTerm);
             if (catDocs && catDocs.size > 0) {
                 const key = `cat:${normalizedTerm}`;
                 results.set(key, { docIds: catDocs, type: 'category' });
@@ -200,52 +285,59 @@ export class InvertedIndex {
         return results;
     }
 
-    getDocument(docId: string): IndexedDocument | undefined {
-        return this.documents.get(docId);
+    getDocument(docId: string, sessionId?: string): IndexedDocument | undefined {
+        const state = this.getState(sessionId);
+        return state.documents.get(docId);
     }
 
-    getDocuments(): Map<string, IndexedDocument> {
-        return this.documents;
+    getDocuments(sessionId?: string): Map<string, IndexedDocument> {
+        const state = this.getState(sessionId);
+        return state.documents;
     }
 
-    getAllDocuments(): IndexedDocument[] {
-        return Array.from(this.documents.values());
+    getAllDocuments(sessionId?: string): IndexedDocument[] {
+        return Array.from(this.getDocuments(sessionId).values());
     }
 
-    getDocumentCount(): number {
-        return this.documents.size;
+    getDocumentCount(sessionId?: string): number {
+        return this.getDocuments(sessionId).size;
     }
 
-    getTermFrequency(term: string, docId: string): number {
+    getTermFrequency(term: string, docId: string, sessionId?: string): number {
+        const state = this.getState(sessionId);
         const normalizedTerm = normalize(term);
-        return this.termFrequency.get(normalizedTerm)?.get(docId) || 0;
+        return state.termFrequency.get(normalizedTerm)?.get(docId) || 0;
     }
 
-    getIndexStats(): {
+    getIndexStats(sessionId?: string): {
         uniqueTerms: number;
         documentCount: number;
         avgTokensPerDoc: number;
     } {
-        const allTokens = Array.from(this.documents.values())
+        const state = this.getState(sessionId);
+        const allTokens = Array.from(state.documents.values())
             .reduce((acc, doc) => acc + (doc.tokens?.length || 0), 0);
-        
+
         return {
-            uniqueTerms: this.termIndex.size,
-            documentCount: this.documents.size,
-            avgTokensPerDoc: this.documents.size > 0 ? allTokens / this.documents.size : 0
+            uniqueTerms: state.termIndex.size,
+            documentCount: state.documents.size,
+            avgTokensPerDoc: state.documents.size > 0 ? allTokens / state.documents.size : 0
         };
     }
 
-    clear(): void {
-        this.termIndex.clear();
-        this.documents.clear();
-        this.termFrequency.clear();
-        this.titleIndex.clear();
-        this.tagIndex.clear();
-        this.categoryIndex.clear();
+    clear(sessionId?: string): void {
+        const state = this.getState(sessionId);
+        state.termIndex.clear();
+        state.documents.clear();
+        state.termFrequency.clear();
+        state.titleIndex.clear();
+        state.tagIndex.clear();
+        state.categoryIndex.clear();
     }
 }
 
-export function createInvertedIndex(): InvertedIndex {
-    return new InvertedIndex();
+export function createInvertedIndex(options?: {
+    sessionManager?: Pick<typeof SessionManager, 'getSession'>;
+}): InvertedIndex {
+    return new InvertedIndex(options);
 }

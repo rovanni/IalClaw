@@ -60,17 +60,18 @@ export interface SessionDeltaState {
 export interface SearchCache {
     documentCache: Map<string, any>;
     invertedIndexes: {
-        termIndex: Map<string, string[]>;
-        titleIndex: Map<string, string[]>;
-        tagIndex: Map<string, string[]>;
-        categoryIndex: Map<string, string[]>;
-        termFrequency: Map<string, number>;
+        termIndex: Map<string, Set<string>>;
+        titleIndex: Map<string, Set<string>>;
+        tagIndex: Map<string, Set<string>>;
+        categoryIndex: Map<string, Set<string>>;
+        termFrequency: Map<string, Map<string, number>>;
+        documents: Map<string, any>;
     };
     semanticCache: {
         expansionCache: Map<string, string[]>;
         enrichmentCache: Map<string, any>;
     };
-    autoTaggerCache: Map<string, string[]>;
+    autoTaggerCache: Map<string, any>;
 }
 
 const STM_MAX_MESSAGES = 10; // 5 exchanges

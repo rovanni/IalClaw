@@ -35,6 +35,22 @@ Objetivo deste arquivo:
     - `source` correto por tipo de tarefa.
     - Em filesystem, 100% dos steps com `tool` preenchido.
 
+- [ ] KB-027 - Neutralizar Search como subsistema decisorio isolado (F3/F4)
+  - Status: validacao parcial atualizada em 5 de abril de 2026 (FASE 3 concluida), pendente fechar F4.
+  - Comportamento esperado:
+    - SearchEngine deve usar cache por sessao quando sessionId for informado, com fallback local controlado quando nao houver sessao.
+    - Safe mode deve permanecer ativo nas decisoes de busca no padrao `orchestratorDecision ?? localDecision`.
+    - Nao deve haver vazamento de cache entre sessoes diferentes.
+  - Evidencias atuais:
+    - Compilacao valida com `npx tsc --noEmit` apos refactor da T3.2-T3.5.
+    - SearchEngine session-aware com cache por sessao em `src/search/pipeline/searchEngine.ts`.
+    - InvertedIndex migrado para estado session-scoped em `src/search/index/invertedIndex.ts`.
+    - SemanticGraphBridge com caches por sessao e sem singleton no caminho principal em `src/search/graph/semanticGraphBridge.ts`.
+    - AutoTagger com cache por sessao em `src/search/llm/autoTagger.ts`.
+    - Suite do projeto via `npm.cmd test -- --grep KB027` com saida `All tests passed`.
+  - Pendencias para aprovar:
+    - Cobrir Safe Mode completo e isolamento ampliado na suite de testes (F4).
+
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 
 ### Preparacao (Windows PowerShell)
@@ -81,3 +97,4 @@ Objetivo deste arquivo:
 - KB-001: fechar quando retries/aborts estiverem governados de forma coerente, sem loop indevido.
 - KB-011: fechar quando short-circuit estiver bloqueado de forma consistente em cenarios operacionais, sem regressao conversacional.
 - KB-012: fechar quando filesystem usar `deterministic_builder` e fallback sem builder usar `legacy_forced_plan` em runtime.
+- KB-027: fechar quando FASE 3 e FASE 4 estiverem completas (sem cache global/local como fonte primaria), com evidencias de compilacao e testes documentadas.

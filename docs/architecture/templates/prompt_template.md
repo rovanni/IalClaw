@@ -76,24 +76,15 @@ O comportamento do sistema deve permanecer exatamente igual.
 
 ---
 
-## 📋 CHECKLIST kanban (OBRIGATÓRIO)
+### 📋 CHECKLIST KANBAN V2.0 (OBRIGATÓRIO)
 
-Arquivo:
+Após qualquer alteração, os ficheiros nas pastas físicas devem ser atualizados:
 
-```
-D:\IA\IalClaw\docs\architecture\kanban\README.md
-```
-
-Fonte oficial de controle:
-
-* Kanban em `D:\IA\IalClaw\docs\architecture\kanban`
-
-Após qualquer alteração, atualizar:
-
-a. O que já foi corrigido
-b. O que está em andamento
-c. O que ainda falta
-d. O que NÃO deve ser tocado agora
+1. Pendente: Remover o card de docs/architecture/kanban/Pendente/problemas_*.md.
+2. Andamento: Manter o rastro em docs/architecture/kanban/Em_Andamento/em_andamento.md.
+3. Testes: Registar evidências em docs/architecture/kanban/Testes/testes.md.
+4. Concluído: Remover o card de docs/architecture/kanban/Concluido/concluido.md.
+5. Mapa: Atualizar o status em docs/architecture/kanban/mapa_problemas_sistema.md.
 
 ---
 

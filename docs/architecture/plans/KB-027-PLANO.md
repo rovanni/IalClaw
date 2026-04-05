@@ -1,769 +1,411 @@
-# 🎯 PLANO DE RESOLUÇÃO — KB-027
+# PLANO DE CONCLUSAO - KB-027
 
-**Data**: 4 de abril de 2026  
-**Status**: Planejamento  
-**Risco**: Crítico  
-**Escopo**: Neutralizar Search como subsistema decisório isolado  
-
----
-
-## 🧠 CONTEXTO
-
-O módulo `SearchEngine` (src/search) toma **15+ decisões autônomas** que deveriam ser governadas pelo `CognitiveOrchestrator`:
-
-- ✗ Estratégia de expansão de query (sinônimos, grafo)
-- ✗ Pesos de scoring (aplicados hardcoded)
-- ✗ Multiplicadores semânticos (10×, 0.1×, 0.5×)
-- ✗ Decisão de reranking com LLM
-- ✗ Tratamento de falhas (warns, defaults)
-- ✗ Caches voláteis (9 Maps desacopladas do SessionManager)
-
-**Critério de pronto** (do KB-027):
-> Busca devolve sinais/metadados; estratégia e fallback ficam no Orchestrator
+Data: 5 de abril de 2026
+Status: Replanejado para fechamento
+Risco: Critico
+Escopo: concluir KB-027 sem reabrir fases ja encerradas
 
 ---
 
-## ⚙️ ESTRATÉGIA GERAL
+## CONTEXTO
 
-### Princípios invioláveis
+O KB-027 nasceu para neutralizar o Search como subsistema decisorio isolado e alinhar o pacote src/search ao modelo Single Brain.
 
-1. **Refatoração estrutural**, não funcional (comportamento idêntico)
-2. **Função por função** (incrementalidade obrigatória)
-3. **Separação cognitiva/técnica** (decisão vs execução)
-4. **Safe Mode em 100%** (orchestrator decision ?? loop decision)
-5. **Signals como representação de intenção**, não lógica nova
-6. **Sem duplicação**, sem fluxos paralelos
+Estado real validado antes deste plano:
 
-### Fases
+- FASE 1 concluida: SearchSignals existem e sao ingeridos pelo CognitiveOrchestrator.
+- FASE 2 concluida: Safe Mode esta aplicado nas decisoes de busca com padrao orchestratorDecision ?? localDecision.
+- FASE 5 concluida: os metodos decideQueryExpansion, decideSearchWeights, decideGraphExpansion, decideReranking e decideSearchFallbackStrategy possuem logica real contextualizada no Orchestrator.
+- FASE 6 concluida: autoridade cognitiva ja foi consolidada nessas decisoes sem regressao funcional conhecida.
+- FASE 3 parcial: a interface SearchCache ja existe em src/shared/SessionManager.ts, mas os componentes de busca ainda mantem caches locais.
+- FASE 4 iniciada: existe cobertura inicial em src/tests/KB027SearchSignals.test.ts, mas ainda nao cobre Safe Mode completo nem persistencia/isolamento de cache por sessao.
 
-```
-FASE 1: Instrumentação (Signals + Ingestão)
-   ↓
-FASE 2: Migração de decisões (função por função)
-   ↓
-FASE 3: Cache centralizado (SessionManager)
-   ↓
-FASE 4: Validação + Estabilização
-```
+Critico: a pendencia restante nao e conceitual. Ela e estrutural. O SearchEngine ainda instancia dependencias com estado proprio, inclusive InvertedIndex via new e SemanticGraphBridge via singleton global, o que impede fechar a centralizacao de cache apenas trocando Maps por getters.
 
 ---
 
-## 📋 FASE 1: INSTRUMENTAÇÃO (Signals + Ingestão)
+## REGRA CRITICA - VERIFICAR ANTES DE IMPLEMENTAR
 
-### Objetivo
-Criar infraestrutura mínima para que SearchEngine possa relatar suas decisões ao Orchestrator.
+Antes de qualquer alteracao:
 
-### Tarefas
+- Verificar se a logica ja existe em src/search, src/shared/SessionManager.ts e src/core/orchestrator/CognitiveOrchestrator.ts.
+- Reutilizar SearchCache existente em vez de criar nova estrutura paralela.
+- Reutilizar o padrao de Safe Mode ja adotado no SearchEngine e no Orchestrator.
+- Confirmar se a decisao pertence a busca ou se ja esta governada pelo Orchestrator.
 
-#### T1.1 — Criar signals para decisões de Search
+Proibido nesta etapa:
 
-**Arquivo**: `src/shared/signals/SearchSignals.ts` (novo)
-
-```typescript
-// SearchQuerySignal: informar estratégia de expansão aplicada
-interface SearchQuerySignal {
-  type: 'SEARCH_QUERY';
-  originalQuery: string;
-  expandedTerms?: string[];
-  graphExpansion?: boolean;
-  reasoningContext?: string;
-}
-
-// SearchScoringSignal: informar estratégia de scoring
-interface SearchScoringSignal {
-  type: 'SEARCH_SCORING';
-  weights: Record<string, number>;
-  semanticBoost: number;
-  reasoningContext?: string;
-}
-
-// SearchRerankerSignal: informar decisão de reranking
-interface SearchRerankerSignal {
-  type: 'SEARCH_RERANKER';
-  shouldRerank: boolean;
-  confidence: number;
-  reasoningContext?: string;
-}
-
-// SearchFallbackSignal: informar estratégia de fallback
-interface SearchFallbackSignal {
-  type: 'SEARCH_FALLBACK';
-  offendingComponent: string; // 'expansion', 'scoring', 'reranking', 'tagging'
-  errorSummary: string;
-  fallbackStrategy: 'use_default' | 'warn_and_continue' | 'abort';
-  reasoningContext?: string;
-}
-
-export type SearchSignal = 
-  | SearchQuerySignal 
-  | SearchScoringSignal 
-  | SearchRerankerSignal 
-  | SearchFallbackSignal;
-```
-
-**Validação**: TypeScript compila sem erros
+- duplicar cache fora de SessionManager
+- recriar signals de busca
+- mudar heuristicas de scoring, query expansion, graph expansion, reranking ou fallback
+- remover branches locais sem manter Safe Mode
 
 ---
 
-#### T1.2 — Adicionar methods de ingestão no CognitiveOrchestrator
+## PLANO ESTRATEGICO DE FECHAMENTO
 
-**Arquivo**: `src/core/orchestrator/CognitiveOrchestrator.ts`
+Arquivo oficial deste plano:
 
-```typescript
-private _observedSearchSignals: SearchSignal[] = [];
+- D:/IA/IalClaw/docs/architecture/plans/KB-027-PLANO.md
 
-ingestSearchSignal(sessionId: string, signal: SearchSignal): void {
-  // Registra sinal observado para decisão subsequente
-  this._observedSearchSignals.push(signal);
-  this.emitDebug('search_signal_ingested', {
-    sessionId,
-    signalType: signal.type,
-    timestamp: Date.now(),
-  });
-}
+Objetivo de pronto do KB-027:
 
-getLastSearchSignal(): SearchSignal | undefined {
-  return this._observedSearchSignals[this._observedSearchSignals.length - 1];
-}
+- busca devolve sinais e metadados
+- estrategia e fallback ficam no Orchestrator
+- caches de busca deixam de ser estado volatil desacoplado e passam a ser session-scoped
+- cobertura de testes prova Safe Mode, persistencia por sessao e ausencia de regressao estrutural
 
-clearSearchSignals(): void {
-  this._observedSearchSignals = [];
-}
-```
+Sequencia obrigatoria para concluir:
 
-**Validação**: TypeScript compila sem erros
+1. fechar a injecao estrutural do SessionManager no pacote de busca
+2. migrar caches locais funcao por funcao e componente por componente
+3. ampliar testes para Safe Mode e persistencia de cache
+4. validar compilacao, testes e sincronizacao do kanban
 
 ---
 
-#### T1.3 — i18n obrigatório para novos logs
+## ESTRATEGIA DE REFATORACAO
 
-**Arquivo**: `src/i18n/pt-BR.json` e `en-US.json`
+A refatoracao continua sendo estrutural, nao funcional. O comportamento deve permanecer equivalente.
 
-```json
-{
-  "search": {
-    "query": {
-      "orchestrator_expansion": "Estratégia de expansão de query definida pelo Orchestrator: {strategy}",
-      "ingested_signal": "Sinal de query recebido e registrado"
-    },
-    "scoring": {
-      "orchestrator_weights": "Pesos de scoring aplicados via Orchestrator: {weights}",
-      "custom_boost": "Multiplicador semântico ajustado: {boost}"
-    },
-    "reranking": {
-      "orchestrator_decision": "Decisão de reranking governada pelo Orchestrator: {decision}"
-    },
-    "fallback": {
-      "strategy_applied": "Estratégia de fallback aplicada: {strategy}"
-    }
-  }
-}
-```
+Granularidade obrigatoria:
 
-**Validação**: `npx tsc --noEmit` sem erros
+- refatorar por componente e por metodo de acesso ao cache
+- nao reescrever arquivos inteiros de uma vez
+
+Ordem obrigatoria por funcao:
+
+1. identificar o estado compartilhado local
+2. separar logica tecnica de acesso do cache da logica cognitiva ja existente
+3. manter a logica cognitiva atual intacta
+4. substituir o armazenamento local por acesso ao SearchCache da sessao
+5. preservar Safe Mode nos pontos decisorios
+6. adicionar TODO explicito apenas se a etapa seguinte depender de outra migracao real
+
+Restricoes desta etapa:
+
+- nao ativar decisoes novas no Orchestrator
+- nao recalibrar pesos, thresholds ou boosts
+- nao trocar singleton global por outro global equivalente
 
 ---
 
-### Checklist FASE 1
+## ESCOPO DESTA ETAPA
 
-- [ ] SearchSignals.ts criado com TypeScript compilável
-- [ ] CognitiveOrchestrator.ingestSearchSignal() implementado
-- [ ] i18n adicionado em pt-BR.json e en-US.json
-- [ ] `npm test` sem regressão
-- [ ] Nenhuma lógica de decisão alterada (mesmo comportamento)
+Implementar apenas o que falta para concluir KB-027:
 
----
+- FASE 3 restante: T3.2 a T3.5
+- FASE 4 restante: consolidacao da cobertura de testes para SearchSignals, Safe Mode e SearchCache session-scoped
+- sincronizacao documental do kanban e checklist historico ao final
 
-## 📋 FASE 2: MIGRAÇÃO DE DECISÕES (Função por Função)
+Fora de escopo agora:
 
-### Objetivo
-Extrair decisões autônomas de SearchEngine e representá-las como signals puros.
-
-### Ordem obrigatória de funções
-
-1. **`SearchEngine.search()` — Query expansion**
-2. **`SearchEngine.scoreResults()` — Scoring weights**
-3. **`SemanticGraphBridge.expandTerms()` — Graph expansion**
-4. **`SearchEngine.rerank()` — Reranking decision**
-5. **`AutoTagger.tagWithLLM()` — Fallback strategy**
-
-### Formato de cada refatoração
-
-Para cada função:
-
-```
-[FUNÇÃO] X
-├─ Lógica técnica (permanecer no local)
-├─ Lógica cognitiva (extrair para signal)
-├─ TODO de migração futura (executar no Orchestrator)
-└─ Safe Mode (orchestrator decision ?? local decision)
-```
+- alterar heuristicas do SearchEngine
+- redesenhar o GraphAdapter
+- mexer em outras Kbs criticas
+- otimizar performance alem do necessario para remover estado local
 
 ---
 
-#### T2.1 — SearchEngine.search() — Query expansion
+## FASE 3 - CACHE CENTRALIZADO (PENDENCIA REAL)
 
-**Função atual** (src/search/SearchEngine.ts, linha ~169):
+### Diagnostico tecnico
 
-```typescript
-// ANTES:
-private async search(
-  query: string,
-  config?: SearchConfig
-): Promise<SearchResult[]> {
-  let expandedQuery = query;
-  
-  // DECISÃO COGNITIVA (autonoma):
-  if (config?.synonymExpansion ?? DEFAULT_EXPANSION_ENABLED) {
-    expandedQuery = this.expandSynonyms(query);
-  }
-  
-  // mais código técnico...
-}
-```
+Os bloqueios reais desta fase sao:
 
-**Após refatoração**:
+- SearchEngine nao recebe SessionManager nem sessionId nos caminhos de indexacao.
+- InvertedIndex mantem documentos e indices em memoria propria.
+- SemanticGraphBridge mantem expansionCache e enrichmentCache em instancia propria e ainda possui acesso via singleton global getSemanticGraphBridge().
+- AutoTagger mantem cache local sem escopo de sessao.
 
-```typescript
-private async search(
-  query: string,
-  config?: SearchConfig,
-  sessionId?: string
-): Promise<SearchResult[]> {
-  let expandedQuery = query;
-  const expandedTerms: string[] = [];
-  
-  // LÓGICA TÉCNICA: aplicar decisão (agora vinda de fora)
-  const shouldExpand = config?.synonymExpansion ?? 
-    this.orchestrator?.decideQueryExpansion(sessionId) ?? 
-    DEFAULT_EXPANSION_ENABLED;
-  
-  if (shouldExpand) {
-    expandedQuery = this.expandSynonyms(query);
-    expandedTerms.push(...expandedQuery.split(/\s+/));
-    
-    // SIGNAL PURO: registrar o que foi expandido
-    if (this.orchestrator && sessionId) {
-      this.orchestrator.ingestSearchSignal(sessionId, {
-        type: 'SEARCH_QUERY',
-        originalQuery: query,
-        expandedTerms,
-        graphExpansion: false,
-        reasoningContext: `Query expansion applied: ${expandedTerms.length} terms`
-      });
-    }
-  }
-  
-  // TODO: FASE 3 — Mover decisão shouldExpand completamente para Orchestrator
-  //       decideQueryExpansion() deverá ser consultado sempre (sem fallback local)
-  
-  // mais código técnico...
-}
-```
+Conclusao: antes de trocar Maps, e necessario tornar o pacote de busca session-aware de forma incremental.
 
-**Validação**:
-- [ ] Comportamento idêntico (mesmos resultados)
-- [ ] Signal emitido e registrado no Orchestrator
-- [ ] `npx tsc --noEmit` sem erros
-- [ ] `npm test` sem regressão
+### T3.2 - Introduzir SessionManager no SearchEngine como dependencia estrutural
 
----
+Objetivo:
 
-#### T2.2 — SearchEngine.scoreResults() — Scoring weights
+- permitir que SearchEngine resolva caches por sessionId sem fallback destrutivo
 
-**Função atual** (src/search/SearchEngine.ts, linha ~280):
+Acoes:
 
-```typescript
-// ANTES:
-private scoreResults(results: any[]): Scored[] {
-  const weights = DEFAULT_WEIGHTS; // AUTONOMA
-  
-  return results.map(r => ({
-    item: r,
-    score: calculateScore(r, weights)
-  }));
-}
-```
+- ajustar constructor de SearchEngine para aceitar SessionManager ou resolver uma facade equivalente, sem quebrar call sites atuais
+- propagar sessionId para indexDocument e indexDocuments quando a operacao depender de cache session-scoped
+- criar getters internos de cache no SearchEngine, sem mudar ainda a heuristica da busca
+- preservar fallback local temporario apenas onde sessionId nao existir, documentando que esse caminho nao fecha a fase
 
-**Após refatoração**:
+Checklist:
 
-```typescript
-private scoreResults(
-  results: any[],
-  sessionId?: string
-): Scored[] {
-  // DECISÃO VINDA DO EXTERNOGENOUS (Safe Mode)
-  const weights = this.orchestrator?.decideSearchWeights(sessionId) ?? 
-    DEFAULT_WEIGHTS;
-  
-  // SIGNAL: registrar pesos aplicados
-  if (this.orchestrator && sessionId) {
-    this.orchestrator.ingestSearchSignal(sessionId, {
-      type: 'SEARCH_SCORING',
-      weights,
-      semanticBoost: 1.0,
-      reasoningContext: `Scoring weights applied`
-    });
-  }
-  
-  return results.map(r => ({
-    item: r,
-    score: calculateScore(r, weights)
-  }));
-  
-  // TODO: FASE 3 — Orchestrator deve calcular/decisionar pesos antes da busca
-}
-```
+- [ ] SearchEngine consegue resolver search_cache da sessao
+- [ ] indexDocument e indexDocuments aceitam sessionId opcional quando necessario
+- [ ] documentCache local deixa de ser fonte primaria
+- [ ] nenhum call site existente quebra por assinatura
 
-**Validação**:
-- [ ] Pesos aplicados corretamente (scores idênticos)
-- [ ] Signal emitido
-- [ ] Safe Mode funcionando
+### T3.3 - Migrar InvertedIndex para dados session-scoped
+
+Objetivo:
+
+- retirar os 5 indices locais como fonte de verdade para sessoes reais
+
+Acoes:
+
+- permitir que InvertedIndex receba acesso a SearchCache da sessao sem mudar a API publica alem do necessario
+- migrar termIndex, titleIndex, tagIndex, categoryIndex e termFrequency para a estrutura existente em SessionManager
+- decidir explicitamente como documents sera tratado: manter local temporariamente com TODO curto ou inclui-lo no SearchCache se a consistencia exigir
+- adaptar search, addDocument, removeDocument e clear para operarem no cache da sessao
+
+Risco principal:
+
+- misturar documentos globais com indices por sessao gera inconsistencia silenciosa
+
+Checklist:
+
+- [ ] indices invertidos usam SearchCache da sessao
+- [ ] documents tem fonte de verdade coerente com os indices
+- [ ] addDocument/removeDocument/search continuam equivalentes
+- [ ] clear limpa estado da sessao correta
+
+### T3.4 - Remover dependencia de singleton global no SemanticGraphBridge
+
+Objetivo:
+
+- impedir compartilhamento de expansionCache e enrichmentCache entre sessoes diferentes
+
+Acoes:
+
+- substituir o uso obrigatorio de getSemanticGraphBridge() por injecao controlada no SearchEngine
+- manter createSemanticGraphBridge para testes e composicao explicita
+- mover expansionCache e enrichmentCache para o SearchCache da sessao ou para estrutura claramente session-scoped ligada ao SearchEngine
+- garantir que clearCaches, reset e getCacheStats reflitam o estado da sessao ativa ou explicitem o escopo usado
+
+Checklist:
+
+- [ ] SearchEngine nao depende mais de singleton global para estado de cache
+- [ ] expansionCache e enrichmentCache deixam de vazar entre sessoes
+- [ ] estatisticas de cache continuam validas
+- [ ] comportamento de graph expansion permanece identico
+
+### T3.5 - Migrar cache do AutoTagger
+
+Objetivo:
+
+- eliminar cache sem escopo de sessao na geracao de estrutura semantica
+
+Acoes:
+
+- substituir cache local por acesso ao autoTaggerCache do SearchCache
+- propagar sessionId em generateSemanticStructure nos fluxos de indexacao que precisarem persistir cache
+- manter fallback atual governado por Safe Mode sem alteracoes
+
+Checklist:
+
+- [ ] cache do AutoTagger passa a ser session-scoped
+- [ ] indexacao com mesma sessao reaproveita cache
+- [ ] sessoes diferentes nao compartilham entradas
+- [ ] fallback de tagging permanece intacto
+
+### Criterio de pronto da FASE 3
+
+- nenhum cache de busca relevante permanece como fonte primaria em memoria global ou de instancia compartilhada
+- a sessao passa a ser a unidade explicita de persistencia do estado de busca
+- a API publica continua compatível ou com mudancas controladas e refletidas nos call sites
 
 ---
 
-#### T2.3 — SemanticGraphBridge.expandTerms() — Graph expansion
+## FASE 4 - VALIDACAO E TESTES (PENDENCIA REAL)
 
-**Decisões autonomas**:
-- Graph expansion enabled/disabled
-- Max terms (20 hardcoded)
-- Semantic boost multiplier (0.1×)
+### Diagnostico tecnico
 
-**Após refatoração**:
+O arquivo src/tests/KB027SearchSignals.test.ts prova emissao basica de signals, mas ainda nao fecha o criterio de pronto do KB-027 porque nao valida:
 
-```typescript
-// ANTES:
-async expandTerms(terms: string[]): Promise<string[]> {
-  const shouldExpandGraph = true; // AUTONOMOUS
-  const maxTerms = 20; // HARDCODED
-  
-  if (shouldExpandGraph) {
-    const expanded = await this.buildSemanticGraph(terms, maxTerms);
-    return expanded;
-  }
-}
+- Safe Mode com decisao do Orchestrator versus fallback local
+- persistencia de cache entre operacoes da mesma sessao
+- isolamento entre sessoes diferentes
+- ausencia de vazamento do singleton do SemanticGraphBridge
 
-// DEPOIS:
-async expandTerms(
-  terms: string[],
-  sessionId?: string,
-  orchestratorDecision?: { enabled: boolean; maxTerms: number; boost: number }
-): Promise<string[]> {
-  // Safe Mode
-  const decision = orchestratorDecision ?? {
-    enabled: true,
-    maxTerms: 20,
-    boost: 0.1
-  };
-  
-  if (decision.enabled) {
-    const expanded = await this.buildSemanticGraph(
-      terms, 
-      decision.maxTerms,
-      decision.boost
-    );
-    
-    // SIGNAL
-    if (sessionId) {
-      this.orchestrator?.ingestSearchSignal(sessionId, {
-        type: 'SEARCH_QUERY',
-        originalQuery: terms.join(' '),
-        expandedTerms: expanded,
-        graphExpansion: true,
-        reasoningContext: `Graph expansion: +${expanded.length - terms.length} terms`
-      });
-    }
-    
-    return expanded;
-  }
-  
-  return terms;
-}
-```
+### T4.1 - Consolidar suite KB027SearchSignals
 
----
+Acoes:
 
-#### T2.4 — SearchEngine.rerank() — Reranking decision
+- manter o arquivo existente como base
+- ampliar para cobrir SEARCH_QUERY, SEARCH_SCORING, SEARCH_RERANKER e SEARCH_FALLBACK com asserts mais precisos
+- validar que o Orchestrator recebe signals coerentes com a execucao observada
 
-**Decisão autonoma**: shouldRerank with LLM
+Checklist:
 
-**Após refatoração**:
+- [ ] suite cobre os 4 tipos principais de signal
+- [ ] asserts verificam payload e nao apenas existencia
+- [ ] testes passam sem depender de side effects globais
 
-```typescript
-// ANTES:
-async rerank(results: Scored[], query: string): Promise<Scored[]> {
-  const shouldRerank = results.length > RERANK_THRESHOLD; // AUTONOMOUS
-  
-  if (shouldRerank) {
-    return await this.llmReranker.rerank(results, query);
-  }
-  return results;
-}
+### T4.2 - Criar testes de Safe Mode do SearchEngine
 
-// DEPOIS:
-async rerank(
-  results: Scored[],
-  query: string,
-  sessionId?: string,
-  orchestratorDecision?: boolean
-): Promise<Scored[]> {
-  // Safe Mode
-  const shouldRerank = orchestratorDecision ?? 
-    results.length > RERANK_THRESHOLD;
-  
-  if (shouldRerank) {
-    const reranked = await this.llmReranker.rerank(results, query);
-    
-    // SIGNAL
-    if (sessionId) {
-      this.orchestrator?.ingestSearchSignal(sessionId, {
-        type: 'SEARCH_RERANKER',
-        shouldRerank: true,
-        confidence: 0.8,
-        reasoningContext: `LLM reranking applied: ${results.length} results`
-      });
-    }
-    
-    return reranked;
-  }
-  
-  return results;
-}
-```
+Acoes:
+
+- validar o padrao orchestratorDecision ?? localDecision para query expansion
+- validar o padrao orchestratorDecision ?? localDecision para scoring weights
+- validar o padrao orchestratorDecision ?? localDecision para graph expansion, reranking e fallback
+- garantir equivalencia funcional quando o Orchestrator devolve undefined
+
+Checklist:
+
+- [ ] Safe Mode coberto nas 5 decisoes de busca
+- [ ] comportamento local permanece igual com orchestrator undefined
+- [ ] override do Orchestrator e respeitado quando presente
+
+### T4.3 - Criar testes de persistencia e isolamento de cache
+
+Acoes:
+
+- validar reuso do documentCache/search_cache na mesma sessao
+- validar isolamento entre sessionId diferentes
+- validar que reset/clear nao apagam outra sessao
+- se o SemanticGraphBridge permanecer com abstracao propria, testar que ela nao compartilha cache entre sessoes
+
+Checklist:
+
+- [ ] persistencia na mesma sessao comprovada
+- [ ] isolamento entre sessoes comprovado
+- [ ] limpeza de cache respeita o escopo da sessao
+
+### Criterio de pronto da FASE 4
+
+- npx tsc --noEmit sem erros
+- npm.cmd test ou suites equivalentes sem regressao atribuivel ao KB-027
+- evidencias registradas no kanban
 
 ---
 
-#### T2.5 — AutoTagger.tagWithLLM() — Fallback strategy
+## CHECKLIST KANBAN
 
-**Decisões autonomas**:
-- Warn and continue on LLM failure
-- Fallback to heuristic tagging
+Fonte oficial:
 
-**Após refatoração**:
+- D:/IA/IalClaw/docs/architecture/kanban/README.md
+- D:/IA/IalClaw/docs/architecture/kanban/Em_Andamento/em_andamento.md
 
-```typescript
-// ANTES:
-async tagWithLLM(doc: Document): Promise<string[]> {
-  try {
-    return await this.llm.tag(doc);
-  } catch (error) {
-    console.warn('LLM tagging failed, using heuristic'); // AUTONOMOUS FALLBACK
-    return this.fallbackToHeuristicTags(doc);
-  }
-}
+Ao concluir cada bloco, atualizar:
 
-// DEPOIS:
-async tagWithLLM(
-  doc: Document,
-  sessionId?: string,
-  orchestratorFallbackStrategy?: 'use_default' | 'warn_and_continue' | 'abort'
-): Promise<string[]> {
-  try {
-    return await this.llm.tag(doc);
-  } catch (error) {
-    const strategy = orchestratorFallbackStrategy ?? 'warn_and_continue';
-    
-    // SIGNAL: LLM falhou
-    if (sessionId) {
-      this.orchestrator?.ingestSearchSignal(sessionId, {
-        type: 'SEARCH_FALLBACK',
-        offendingComponent: 'tagging',
-        errorSummary: error.message,
-        fallbackStrategy: strategy,
-        reasoningContext: `LLM tagging error, applying fallback: ${strategy}`
-      });
-    }
-    
-    if (strategy === 'abort') {
-      throw error;
-    }
-    
-    return this.fallbackToHeuristicTags(doc);
-  }
-}
-```
+- o que ja foi corrigido: F1, F2, F5 e F6
+- o que esta em andamento: F3 e F4
+- o que ainda falta: migracao estrutural de cache e testes de fechamento
+- o que nao deve ser tocado agora: heuristicas de busca e outras Kbs criticas
+
+Antes de mover o card para concluido:
+
+- registrar evidencia objetiva de compilacao e testes
+- sincronizar mapa geral e historico, se houver mudanca de status
 
 ---
 
-### Checklist FASE 2
+## REGRAS ARQUITETURAIS
 
-- [ ] T2.1 — SearchEngine.search() refatorado
-  - [ ] Signal emitido para query expansion
-  - [ ] Safe Mode funcionando
-  - [ ] Comportamento idêntico
-  
-- [ ] T2.2 — SearchEngine.scoreResults() refatorado
-  - [ ] Signal emitido para scoring
-  - [ ] Pesos corretos aplicados
-  
-- [ ] T2.3 — SemanticGraphBridge.expandTerms() refatorado
-  - [ ] Graph expansion decision via orchestrator
-  - [ ] Signal emitido
-  
-- [ ] T2.4 — SearchEngine.rerank() refatorado
-  - [ ] Reranking decision centralizado
-  - [ ] Signal emitido
-  
-- [ ] T2.5 — AutoTagger.tagWithLLM() refatorado
-  - [ ] Fallback strategy via orchestrator
-  - [ ] Signal emitido
-
-- [ ] `npx tsc --noEmit` sem erros
-- [ ] `npm test` sem regressão
-- [ ] Nenhuma integração funcional ativada (Safe Mode apenas)
+- Orchestrator continua sendo o unico decisor
+- signals continuam representando intencao observada, nao logica nova duplicada
+- SearchEngine nao deve recuperar mini-brain local durante a migracao de cache
+- nenhuma heuristica existente deve ser removida antes da validacao completa
+- Safe Mode permanece obrigatorio em todos os pontos de decisao
 
 ---
 
-## 📋 FASE 3: CACHE CENTRALIZADO (SessionManager)
+## I18N - OBRIGATORIO
 
-### Objetivo
-Migrar 9 caches voláteis desacopladas para SessionManager.
+Se a conclusao da FASE 3 ou FASE 4 introduzir novas mensagens visiveis, logs externos ou erros:
 
-### Problema atual
-- `documentCache` (SearchEngine)
-- `autoTagger.cache` (AutoTagger)
-- `termIndex, titleIndex, tagIndex, categoryIndex, termFrequency` (InvertedIndex)
-- `expansionCache, enrichmentCache` (SemanticGraphBridge)
+- [ ] adicionar chaves em src/i18n/pt-BR.json
+- [ ] adicionar chaves em src/i18n/en-US.json
+- [ ] substituir strings hardcoded por t()
+- [ ] validar npx tsc --noEmit apos a alteracao
 
-Nenhuma persistência, nenhuma auditoria, nenhuma sincronização com CognitiveState.
-
-### Solução
-
-#### T3.1 — Criar contrato de SearchCache no SessionManager
-
-```typescript
-// src/memory/SessionManager.ts
-
-interface SearchCache {
-  documentCache: Map<string, any>;
-  invertedIndexes: {
-    termIndex: Map<string, string[]>;
-    titleIndex: Map<string, string[]>;
-    tagIndex: Map<string, string[]>;
-    categoryIndex: Map<string, string[]>;
-    termFrequency: Map<string, number>;
-  };
-  semanticCache: {
-    expansionCache: Map<string, string[]>;
-    enrichmentCache: Map<string, any>;
-  };
-  autoTaggerCache: Map<string, string[]>;
-}
-
-// No Session model:
-search_cache?: SearchCache;
-```
-
-#### T3.2 — Migrar caches existentes para SessionManager
-
-SearchEngine e componentes dependentes deixam de manter caches próprias e consultam SessionManager.
-
-```typescript
-// Em SearchEngine:
-getDocumentCache(sessionId: string): Map<string, any> {
-  const session = this.sessionManager.getSession(sessionId);
-  if (!session.search_cache) {
-    session.search_cache = { /* ... */ };
-  }
-  return session.search_cache.documentCache;
-}
-```
+Se nao houver nova mensagem visivel, registrar explicitamente que a etapa foi estrutural e nao exigiu chaves novas.
 
 ---
 
-### Checklist FASE 3
+## SAFE MODE - OBRIGATORIO
 
-- [ ] SearchCache interface adicionada a Session model
-- [ ] SearchEngine migrado para usar SessionManager.search_cache
-- [ ] AutoTagger migrado para usar SessionManager.search_cache
-- [ ] InvertedIndex migrado para usar SessionManager.search_cache
-- [ ] SemanticGraphBridge migrado para usar SessionManager.search_cache
-- [ ] Caches persistem entre requests
-- [ ] `npm test` sem regressão
+Padrao que deve continuar verdadeiro durante todo o fechamento:
 
----
+finalDecision = orchestratorDecision ?? localDecision
 
-## 📋 FASE 4: VALIDAÇÃO + ESTABILIZAÇÃO
+Aplicacao obrigatoria no escopo do KB-027:
 
-### Objetivo
-Garantir que KB-027 está 100% resolvido e pronto para ativação de decisão no Orchestrator.
-
-### Cobertura de testes
-
-#### T4.1 — Teste de contrato SearchSignals
-
-```typescript
-// src/tests/SearchSignals.test.ts
-
-describe('SearchSignals', () => {
-  it('should emit SEARCH_QUERY signal on query expansion', () => {
-    // Verificar que signal foi emitido
-  });
-  
-  it('should emit SEARCH_SCORING signal on weight application', () => {
-    // Verificar que signal foi registrado
-  });
-  
-  it('should emit SEARCH_RERANKER signal on reranking', () => {
-    // Verificar que signal foi emitido
-  });
-  
-  it('should emit SEARCH_FALLBACK signal on error', () => {
-    // Verificar que estratégia de fallback foi registrada
-  });
-});
-```
-
-#### T4.2 — Teste de SafeMode
-
-```typescript
-describe('SearchEngine SafeMode', () => {
-  it('should use orchestrator decision when available', () => {
-    // Verificar que decision do Orchestrator é usada
-  });
-  
-  it('should fall back to local decision when orchestrator returns undefined', () => {
-    // Verificar fallback
-  });
-  
-  it('should never duplicate decisions', () => {
-    // Verificar que não há duplicação
-  });
-});
-```
-
-#### T4.3 — Teste de persistência de cache
-
-```typescript
-describe('SearchCache Persistence', () => {
-  it('should persist search cache in SessionManager', () => {
-    // Verificar que cache persiste
-  });
-  
-  it('should synchronize cache across requests', () => {
-    // Verificar que múltiplas requisições veem a mesma cache
-  });
-});
-```
+- query expansion
+- search weights
+- graph expansion
+- reranking
+- fallback strategy
 
 ---
 
-### Checklist FASE 4
+## REGRA DE IMPLEMENTACAO
 
-- [ ] SearchSignals tests adicionados
-- [ ] SafeMode tests adicionados
-- [ ] Cache persistence tests adicionados
-- [ ] `npm test` sem regressão
-- [ ] Cobertura de código >= 85%
-- [ ] Audit logs mostram signals sendo emitidos corretamente
-- [ ] Nenhuma regressão funcional em runtime
+Executar incrementalmente:
 
----
+1. ajustar construtor e pontos de injecao
+2. compilar
+3. migrar um cache por componente
+4. compilar
+5. ampliar teste daquele componente
+6. compilar e testar
 
-## 🚀 PRÓXIMA ETAPA (Pós-KB-027)
+Proibido:
 
-Após FASE 4 estar 100% completa:
-
-1. **FASE 5** — Ativar decisões no Orchestrator
-   - Implementar `decideQueryExpansion()`
-   - Implementar `decideSearchWeights()`
-   - Implementar `decideGraphExpansion()`
-   - Implementar `decideReranking()`
-   - Implementar política de fallback
-
-2. **FASE 6** — Remover fallbacks locais
-   - Remover `DEFAULT_EXPANSION_ENABLED`
-   - Remover `DEFAULT_WEIGHTS`
-   - Remover `RERANK_THRESHOLD`
-   - SearchEngine passa a ser 100% guiado pelo Orchestrator
+- migrar todos os caches de uma vez
+- misturar refactor estrutural com tuning de busca
+- fechar a FASE 3 sem testes de isolamento por sessao
 
 ---
 
-## 📍 COMO ATUALIZAR O CHECKLIST VIVO
+## VALIDACAO OBRIGATORIA
 
-Após cada FASE completada:
+### 1. Inconsistencias
 
-```markdown
-## O que já foi corrigido
-- Abril/2026: KB-027 FASE X concluída. [DESCRIÇÃO BREVE]
+- existe algum cache local ainda sendo a fonte real em runtime?
+- existe divergencia entre documentos indexados e indices consultados?
 
-## O que está em andamento
-- KB-027 FASE Y: [DESCRIÇÃO]
+### 2. Duplicacoes
 
-## O que ainda falta
-- KB-027 FASE Z
-- [...]
-```
+- algum cache passou a existir tanto no SearchCache quanto na instancia local?
+- o singleton global do grafo ainda segura estado relevante?
 
----
+### 3. Melhorias seguras
 
-## 🔍 VALIDAÇÃO OBRIGATÓRIA
+- algum ponto restante pode ser centralizado depois sem mudar comportamento?
 
-Antes de marcar cada FASE como "Concluída":
+### 4. Riscos arquiteturais
 
-```bash
-# 1. Compilação TypeScript
-npx tsc --noEmit
+- ainda existe bypass do Orchestrator em decisoes de busca?
+- ainda existe compartilhamento de estado entre sessoes?
 
-# 2. Testes
-npm test
+### 5. Coerencia de autoridade
 
-# 3. Audit de signals (grep para debug logs)
-grep -r "search_signal_ingested" logs/
+- quem decide query expansion, scoring, graph expansion, reranking e fallback?
+- existe algum segundo decisor introduzido pela migracao?
 
-# 4. Verificar SafeMode está ativo
-grep -r "orchestratorDecision ??" src/search/ | wc -l
-# Deve ser >= 5 (uma por função refatorada)
-```
+### 6. Verificacao de conflitos reais
+
+- Route vs FailSafe
+- Validation vs StopContinue
+- Fallback vs Route
+- Search fallback local vs decisao do Orchestrator
 
 ---
 
-## 📊 MÉTRICAS DE SUCESSO
+## CRITERIO FINAL DE ENCERRAMENTO DO KB-027
 
-| Métrica | Baseline | Alvo (KB-027) |
-|---------|----------|------------------|
-| Decisões autonomas em Search | 15+ | 0 |
-| Caches voláteis desacopladas | 9 | 0 |
-| Signals emitidos por search() | 0 | >= 2 |
-| Integração com Orchestrator | 0 imports | >= 4 decision points |
-| Teste de fallback | N/A | 100% cobertura |
-| Persistência de cache | Nenhuma | SessionManager |
+O KB-027 so pode sair de Em Andamento quando todos os itens abaixo forem verdadeiros:
 
----
-
-**Status**: � FASE 2 Completa — Safe Mode Implementado  
-**Próximo passo**: Implementar FASE 3 (Cache Centralizado) e FASE 4 (Testes)
+- [ ] FASE 3 concluida sem caches locais como fonte primaria
+- [ ] FASE 4 concluida com cobertura de Safe Mode e session-scoped cache
+- [ ] npx tsc --noEmit validado
+- [ ] npm.cmd test validado ou falhas preexistentes isoladas e documentadas
+- [ ] kanban sincronizado com evidencias objetivas
+- [ ] nenhum bypass novo do Orchestrator introduzido
 
 ---
 
-## 📍 PROGRESSO ATUAL (Abril 4, 2026 — Continuação)
+## ORDEM EXECUTAVEL RECOMENDADA
 
-### O que já foi corrigido
-- ✅ Abril/2026: KB-027 FASE 1 completa — SearchSignals criados, ingestão no Orchestrator implementada, i18n adicionado
-- ✅ Abril/2026: KB-027 FASE 2 completa — Safe Mode implementado em 5 tarefas (query expansion, scoring weights, graph expansion, reranking, fallback strategy)
-  - T2.1: `SearchEngine.search()` agora consulta `decideQueryExpansion()` com Safe Mode
-  - T2.2: `SearchEngine.scoreResults()` agora consulta `decideSearchWeights()` com Safe Mode
-  - T2.3: `SemanticGraphBridge.expandWithGraph()` agora consulta `decideGraphExpansion()` com Safe Mode e fallback estratégico
-  - T2.4: `SearchEngine.rerank()` agora consulta `decideReranking()` com Safe Mode
-  - T2.5: `AutoTagger.tagWithLLM()` agora consulta `decideSearchFallbackStrategy()` para tagging com Safe Mode
-  - ✅ `npx tsc --noEmit` sem erros
-  - ✅ `npm test` sem regressão
-
----
-
-## O que está em andamento
-- KB-027 FASE 3: T3.1 COMPLETO - Interface SearchCache criada. T3.2-T3.5 em pausa (requer refatoração arquitetural)
-- KB-027 FASE 4: Testes iniciados - SearchSignals validados com node:test
-
----
-
-## O que ainda falta
-- KB-027 FASE 3: T3.2-T3.5 (Migração de caches — requer injeção de SessionManager em componentes)
-- KB-027 FASE 4: Testes adicionais de SafeMode e Cache Persistence
-- KB-027 FASE 5: Ativar decisões reais no Orchestrator (implementar lógica dos métodos decide*)
-- KB-027 FASE 6: Remover fallbacks locais e consolidar autoridade no Orchestrator
-
----
-
-**Status**: 🟡 FASE 3-4 em Progresso — Infrastructure + Testes Iniciais OK  
-**Próximo passo**: Continuar com T3.2-T3.5 OU saltar para FASE 5 (ativar decisões reais)
+1. Refatorar SearchEngine para aceitar sessao e dependencia de cache.
+2. Refatorar InvertedIndex para operar sobre estado session-scoped coerente.
+3. Remover singleton stateful do caminho principal do SemanticGraphBridge.
+4. Migrar cache do AutoTagger.
+5. Fechar testes de signals, Safe Mode e persistencia por sessao.
+6. Rodar compilacao, testes e sincronizar kanban.

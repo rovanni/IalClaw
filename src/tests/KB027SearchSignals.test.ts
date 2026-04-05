@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SearchEngine, SearchDocument } from '../search/pipeline/searchEngine';
-import { CognitiveOrchestrator } from '../core/orchestrator/CognitiveOrchestrator';
+import { SessionManager } from '../shared/SessionManager';
 
 test('SearchSignals - KB-027 FASE 4', async (suite) => {
     const testSessionId = 'test-session-kb027';
@@ -113,5 +113,101 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
 
         orchestrator.clearSearchSignals();
         assert.equal(orchestrator.getLastSearchSignal(), undefined, 'signal should be cleared');
+    });
+
+    await suite.test('indexDocuments stores document cache in session scope when sessionId is provided', async () => {
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'doc-session-cache',
+                title: 'Session Cache Test',
+                content: 'Document stored in session-scoped cache',
+                metadata: { scope: 'session' }
+            }
+        ];
+
+        await engine.indexDocuments(docs, testSessionId);
+
+        const session = SessionManager.getSession(testSessionId);
+        const cachedDoc = session.search_cache?.documentCache.get('doc-session-cache');
+        const otherSession = SessionManager.getSession('test-session-kb027-other');
+
+        assert.ok(session.search_cache, 'search_cache should be initialized for the session');
+        assert.ok(cachedDoc, 'document should be stored in session-scoped cache');
+        assert.equal(cachedDoc?.title, 'Session Cache Test');
+        assert.equal(otherSession.search_cache?.documentCache.get('doc-session-cache'), undefined, 'cache should not leak to another session');
+    });
+
+    await suite.test('inverted index does not leak documents between sessions', async () => {
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'doc-index-session-1',
+                title: 'Only Session One',
+                content: 'unique term sessiononeonly',
+                metadata: {}
+            }
+        ];
+
+        await engine.indexDocuments(docs, 'kb027-session-one');
+
+        const sessionOneResults = await engine.search('sessiononeonly', {
+            sessionId: 'kb027-session-one',
+            expandSynonyms: false,
+            useRerank: false,
+            useLLM: false
+        });
+
+        const sessionTwoResults = await engine.search('sessiononeonly', {
+            sessionId: 'kb027-session-two',
+            expandSynonyms: false,
+            useRerank: false,
+            useLLM: false
+        });
+
+        assert.ok(sessionOneResults.length > 0, 'session one should find indexed document');
+        assert.equal(sessionTwoResults.length, 0, 'session two should not see session one index data');
+    });
+
+    await suite.test('search engines do not share semantic graph bridge singleton in main path', async () => {
+        const engineOne = new SearchEngine({ useGraphExpansion: false });
+        const engineTwo = new SearchEngine({ useGraphExpansion: false });
+
+        assert.notEqual(engineOne.getGraphBridge(), engineTwo.getGraphBridge(), 'each SearchEngine should own its graph bridge instance');
+    });
+
+    await suite.test('autotagger cache is scoped by session', async () => {
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'doc-autotagger-session',
+                title: 'AutoTagger Session Scope',
+                content: 'cache validation for autotagger session scope',
+                metadata: {}
+            }
+        ];
+
+        await engine.indexDocuments(docs, 'kb027-autotagger-one');
+
+        const sessionOne = SessionManager.getSession('kb027-autotagger-one');
+        const sessionTwo = SessionManager.getSession('kb027-autotagger-two');
+
+        assert.ok((sessionOne.search_cache?.autoTaggerCache.size ?? 0) > 0, 'session one should have autotagger cache entries');
+        assert.equal(sessionTwo.search_cache?.autoTaggerCache.size ?? 0, 0, 'session two should not receive autotagger cache entries');
     });
 });
