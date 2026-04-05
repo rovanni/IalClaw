@@ -22,6 +22,7 @@ import { SkillLoader } from './skills/SkillLoader';
 import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
 import { createLogger } from './shared/AppLogger';
+import { initializeConsoleEncoding } from './shared/ConsoleEncoding';
 import { debugBus } from './shared/DebugBus';
 // Memória é importada via bloco consolidado acima
 import { setLanguage, t } from './i18n';
@@ -29,6 +30,7 @@ import { resolveAppLanguage } from './config/languageConfig';
 import { OnboardingService } from './services/OnboardingService';
 import { isDuplicateMessage } from './utils/messageDedup';
 
+initializeConsoleEncoding();
 
 function parseEnvFile(envPath: string): Record<string, string> {
     if (!fs.existsSync(envPath)) return {};

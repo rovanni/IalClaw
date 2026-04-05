@@ -54,10 +54,10 @@ Objetivo: provar que o KB-027 esta fechado com Safe Mode e cache session-scoped.
 
 ### T4.1 - Consolidar KB027SearchSignals.test.ts
 
-- [ ] cobrir SEARCH_QUERY com assert de payload
-- [ ] cobrir SEARCH_SCORING com assert de pesos
-- [ ] cobrir SEARCH_RERANKER com assert de decisao
-- [ ] cobrir SEARCH_FALLBACK com assert de estrategia
+- [x] cobrir SEARCH_QUERY com assert de payload (originalQuery, expandedTerms, graphExpansion)
+- [x] cobrir SEARCH_SCORING com assert de pesos (titleMatch, contentMatch, tagMatch, semanticBoost)
+- [x] cobrir SEARCH_RERANKER com assert de decisao (shouldRerank=true, confidence>0)
+- [x] cobrir SEARCH_FALLBACK com assert de estrategia (offendingComponent, fallbackStrategy, errorSummary)
 
 ### T4.2 - Safe Mode end-to-end
 

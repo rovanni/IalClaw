@@ -1,6 +1,9 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
+import { initializeConsoleEncoding } from '../shared/ConsoleEncoding';
+
+initializeConsoleEncoding();
 
 function parseEnvFile(envPath: string): Record<string, string> {
     if (!fs.existsSync(envPath)) return {};

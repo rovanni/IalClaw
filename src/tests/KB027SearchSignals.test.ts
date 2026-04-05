@@ -62,6 +62,9 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
         const signal = orchestrator.getLastSearchSignal();
         assert.ok(signal, 'signal should be present');
         assert.equal(signal.type, 'SEARCH_QUERY', 'signal type should be SEARCH_QUERY');
+        assert.equal(signal.originalQuery, 'test', 'originalQuery should match the query string');
+        assert.ok(Array.isArray(signal.expandedTerms), 'expandedTerms should be an array');
+        assert.equal(signal.graphExpansion, false, 'graphExpansion should be false for synonym-only expansion');
         assert.ok(results, 'search should return results');
     });
 
@@ -83,7 +86,7 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
                 metadata: {}
             }
         ];
-        await engine.indexDocuments(docs);
+        await engine.indexDocuments(docs, testSessionId);
 
         const results = await engine.search('test', {
             expandSynonyms: false,
@@ -96,6 +99,10 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
         
         assert.ok(scoringSignal, 'SEARCH_SCORING signal should be present');
         assert.ok(scoringSignal.weights, 'signal should have weights');
+        assert.equal(typeof scoringSignal.weights.titleMatch, 'number', 'weights.titleMatch should be a number');
+        assert.equal(typeof scoringSignal.weights.contentMatch, 'number', 'weights.contentMatch should be a number');
+        assert.equal(typeof scoringSignal.weights.tagMatch, 'number', 'weights.tagMatch should be a number');
+        assert.equal(scoringSignal.semanticBoost, 1.0, 'semanticBoost should be 1.0');
     });
 
     await suite.test('Signals cleared correctly', async () => {
@@ -209,5 +216,114 @@ test('SearchSignals - KB-027 FASE 4', async (suite) => {
 
         assert.ok((sessionOne.search_cache?.autoTaggerCache.size ?? 0) > 0, 'session one should have autotagger cache entries');
         assert.equal(sessionTwo.search_cache?.autoTaggerCache.size ?? 0, 0, 'session two should not receive autotagger cache entries');
+    });
+
+    await suite.test('SEARCH_RERANKER signal emitted after LLM reranking', async () => {
+        // LlmReranker criado com enabled=false: retorna scores dummy sem chamar LLM real
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        const orchestrator = createMockOrchestrator() as any;
+        engine.setOrchestrator(orchestrator);
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'rerank-doc-1',
+                title: 'First Rerank Document',
+                content: 'rerank test content alpha',
+                metadata: {}
+            },
+            {
+                id: 'rerank-doc-2',
+                title: 'Second Rerank Document',
+                content: 'rerank test content beta',
+                metadata: {}
+            }
+        ];
+        await engine.indexDocuments(docs, testSessionId);
+
+        // useRerank: true na busca força entrada no bloco de reranking;
+        // LlmReranker.enabled=false retorna scores dummy sem LLM
+        await engine.search('rerank', {
+            useRerank: true,
+            expandSynonyms: false,
+            sessionId: testSessionId,
+            limit: 10
+        });
+
+        const signals = orchestrator._observedSearchSignals;
+        const rerankerSignal = signals.find((s: any) => s.type === 'SEARCH_RERANKER');
+
+        assert.ok(rerankerSignal, 'SEARCH_RERANKER signal should be present');
+        assert.equal(rerankerSignal.shouldRerank, true, 'shouldRerank should be true');
+        assert.equal(typeof rerankerSignal.confidence, 'number', 'confidence should be a number');
+        assert.ok(rerankerSignal.confidence > 0, 'confidence should be positive');
+    });
+
+    await suite.test('SEARCH_FALLBACK signal emitted when graph expansion fails', async () => {
+        const engine = new SearchEngine({
+            useLLM: false,
+            useRerank: false,
+            useGraphExpansion: false
+        });
+
+        // Mock de graphBridge que está habilitado mas falha na expansão
+        const mockThrowingGraphBridge = {
+            isEnabled: () => true,
+            expandWithGraph: async () => {
+                throw new Error('Graph DB unavailable in test');
+            },
+            syncDocumentRelations: async () => {},
+            calculateGraphScore: () => 0,
+            clearExpansionCache: () => {},
+            clearEnrichmentCache: () => {},
+            getStats: () => ({ expansionCacheSize: 0, enrichmentCacheSize: 0 })
+        };
+        (engine as any).graphBridge = mockThrowingGraphBridge;
+
+        // Orchestrator force-habilita expansão e define estratégia de fallback explícita
+        const signals: any[] = [];
+        const orchestratorWithGraph = {
+            _observedSearchSignals: signals,
+            ingestSearchSignal(_sessionId: string, signal: any) {
+                signals.push(signal);
+            },
+            getLastSearchSignal() {
+                return signals[signals.length - 1];
+            },
+            decideQueryExpansion: () => undefined,
+            decideSearchWeights: () => undefined,
+            decideGraphExpansion: () => ({ enabled: true, maxTerms: 5, boost: 0.1 }),
+            decideReranking: () => undefined,
+            decideSearchFallbackStrategy: (_sessionId: string, _component: string) => 'warn_and_continue' as const
+        };
+        engine.setOrchestrator(orchestratorWithGraph as any);
+
+        const docs: SearchDocument[] = [
+            {
+                id: 'fallback-doc-1',
+                title: 'Fallback Test Document',
+                content: 'fallback expansion failure test',
+                metadata: {}
+            }
+        ];
+        await engine.indexDocuments(docs, testSessionId);
+
+        // Busca deve continuar mesmo com falha no grafo (warn_and_continue)
+        await engine.search('fallback', {
+            expandSynonyms: false,
+            sessionId: testSessionId,
+            limit: 10
+        });
+
+        const fallbackSignal = signals.find((s: any) => s.type === 'SEARCH_FALLBACK');
+
+        assert.ok(fallbackSignal, 'SEARCH_FALLBACK signal should be present');
+        assert.equal(fallbackSignal.offendingComponent, 'expansion', 'offendingComponent should be expansion');
+        assert.equal(fallbackSignal.fallbackStrategy, 'warn_and_continue', 'fallbackStrategy should match orchestrator decision');
+        assert.ok(typeof fallbackSignal.errorSummary === 'string' && fallbackSignal.errorSummary.length > 0, 'errorSummary should be a non-empty string');
     });
 });

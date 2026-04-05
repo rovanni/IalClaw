@@ -26,6 +26,8 @@ const RED = '\x1b[31m';
 const DIM = '\x1b[2m';
 
 require('ts-node/register/transpile-only');
+const { initializeConsoleEncoding } = require('../src/shared/ConsoleEncoding');
+initializeConsoleEncoding();
 const { t, setLanguage } = require('../src/i18n');
 
 const argv = process.argv.slice(2);

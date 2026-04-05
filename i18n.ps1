@@ -1,3 +1,14 @@
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+function Set-IalClawConsoleUtf8 {
+    try { [Console]::InputEncoding = $Utf8NoBom } catch {}
+    try { [Console]::OutputEncoding = $Utf8NoBom } catch {}
+    try { $global:OutputEncoding = $Utf8NoBom } catch {}
+    try { chcp.com 65001 | Out-Null } catch {}
+}
+
+Set-IalClawConsoleUtf8
+
 $Global:IalClawFallback = "pt-BR"
 
 if (Test-Path (Join-Path $PSScriptRoot "config.json")) {
