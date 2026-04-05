@@ -48,8 +48,9 @@ Objetivo deste arquivo:
     - SemanticGraphBridge com caches por sessao e sem singleton no caminho principal em `src/search/graph/semanticGraphBridge.ts`.
     - AutoTagger com cache por sessao em `src/search/llm/autoTagger.ts`.
     - Suite do projeto via `npm.cmd test -- --grep KB027` com saida `All tests passed`.
+    - Suite isolada `node --require ts-node/register --test src/tests/KB027SearchSignals.test.ts` passou com cobertura explicita da T4.2 para query expansion, search weights, graph expansion, reranking e fallback strategy no padrao `orchestratorDecision ?? localDecision`.
   - Pendencias para aprovar:
-    - Cobrir Safe Mode completo e isolamento ampliado na suite de testes (F4).
+    - Fechar T4.3 com persistencia/isolamento ampliado e executar a validacao final da FASE 4.
 
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 

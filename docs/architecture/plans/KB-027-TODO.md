@@ -61,9 +61,9 @@ Objetivo: provar que o KB-027 esta fechado com Safe Mode e cache session-scoped.
 
 ### T4.2 - Safe Mode end-to-end
 
-- [ ] testar query expansion com override do Orchestrator e fallback local
-- [ ] testar search weights com undefined no Orchestrator
-- [ ] testar graph expansion, reranking e fallback strategy no padrao orchestratorDecision ?? localDecision
+- [x] testar query expansion com override do Orchestrator e fallback local
+- [x] testar search weights com undefined no Orchestrator
+- [x] testar graph expansion, reranking e fallback strategy no padrao orchestratorDecision ?? localDecision
 
 ### T4.3 - Persistencia e isolamento por sessao
 
