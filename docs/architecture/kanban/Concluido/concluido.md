@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-027 - Neutralizar Search como subsistema decisorio isolado (Fases 1-6)
+  - Data: 2026-04-05
+  - Evidência: SearchEngine, InvertedIndex, SemanticGraphBridge e AutoTagger passaram a usar `search_cache` por sessão como fonte primária quando há `sessionId`, preservando Safe Mode nas 5 decisões de busca com padrão `orchestratorDecision ?? localDecision`. A suite `src/tests/KB027SearchSignals.test.ts` cobre payloads de signals, override/delegação do Orchestrator, reaproveitamento de cache na mesma sessão, isolamento entre sessões e limpeza por escopo via `clearIndex/resetVolatileState`. Validação com `npx tsc --noEmit` e suite isolada `node --require ts-node/register --test src/tests/KB027SearchSignals.test.ts` sem falhas.
+
 - [x] KB-023 - Externalizar heurísticas táticas remanescentes do AgentLoop
   - Data: 2026-04-04
   - Evidência: trust/reality-check, fallback tático e decisões residuais do loop foram externalizados para signals/facts com decisão ativa no `CognitiveOrchestrator` e aplicação em safe mode (`orchestratorDecision ?? loopDecision`) no `AgentLoop`; estado de delta centralizado em `SessionManager.delta_state`; validação com `npx.cmd tsc --noEmit` e `npm.cmd test` sem falhas.

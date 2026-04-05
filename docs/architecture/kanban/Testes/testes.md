@@ -35,8 +35,8 @@ Objetivo deste arquivo:
     - `source` correto por tipo de tarefa.
     - Em filesystem, 100% dos steps com `tool` preenchido.
 
-- [ ] KB-027 - Neutralizar Search como subsistema decisorio isolado (F3/F4)
-  - Status: validacao parcial atualizada em 5 de abril de 2026 (FASE 3 concluida), pendente fechar F4.
+- [x] KB-027 - Neutralizar Search como subsistema decisorio isolado (F3/F4)
+  - Status: concluido em 5 de abril de 2026 com FASE 3 e FASE 4 validadas.
   - Comportamento esperado:
     - SearchEngine deve usar cache por sessao quando sessionId for informado, com fallback local controlado quando nao houver sessao.
     - Safe mode deve permanecer ativo nas decisoes de busca no padrao `orchestratorDecision ?? localDecision`.
@@ -49,8 +49,10 @@ Objetivo deste arquivo:
     - AutoTagger com cache por sessao em `src/search/llm/autoTagger.ts`.
     - Suite do projeto via `npm.cmd test -- --grep KB027` com saida `All tests passed`.
     - Suite isolada `node --require ts-node/register --test src/tests/KB027SearchSignals.test.ts` passou com cobertura explicita da T4.2 para query expansion, search weights, graph expansion, reranking e fallback strategy no padrao `orchestratorDecision ?? localDecision`.
+    - T4.3 validada na mesma suite com reaproveitamento de cache na mesma sessao, isolamento entre sessoes e `clearIndex/resetVolatileState` respeitando escopo.
+    - `npx tsc --noEmit` passou apos a ampliacao final da suite KB-027.
   - Pendencias para aprovar:
-    - Fechar T4.3 com persistencia/isolamento ampliado e executar a validacao final da FASE 4.
+    - Nenhuma pendencia aberta no escopo do KB-027.
 
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 
@@ -98,4 +100,4 @@ Objetivo deste arquivo:
 - KB-001: fechar quando retries/aborts estiverem governados de forma coerente, sem loop indevido.
 - KB-011: fechar quando short-circuit estiver bloqueado de forma consistente em cenarios operacionais, sem regressao conversacional.
 - KB-012: fechar quando filesystem usar `deterministic_builder` e fallback sem builder usar `legacy_forced_plan` em runtime.
-- KB-027: fechar quando FASE 3 e FASE 4 estiverem completas (sem cache global/local como fonte primaria), com evidencias de compilacao e testes documentadas.
+- KB-027: fechado em 5 de abril de 2026 com FASE 3 e FASE 4 completas, sem cache global/local como fonte primaria e com evidencias de compilacao e testes documentadas.

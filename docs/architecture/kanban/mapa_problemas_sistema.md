@@ -11,9 +11,9 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 - Histórico técnico: docs/architecture/kanban/historico/checklist_vivo.md
 
 ## Radar de críticos (snapshot 2026-04-04)
-- Persistem: KB-003, KB-027
+- Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-017, KB-024
-- Resolvidos: KB-002, KB-020, KB-021, KB-022, KB-023, KB-045
+- Resolvidos: KB-002, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045
 
 
 Observação:
@@ -128,10 +128,10 @@ Observação:
 
 ### src/search
 - Colunas e prioridades no quadro:
-  - Crítico: KB-027
+  - Concluído: KB-027
 - Problemas mapeados:
-  - pipeline de busca com decisÃ£o semântica própria
-  - múltiplos caches/índices fora da sessão
+  - pipeline de busca com decisão semântica própria → mitigado com governança por signals e Safe Mode no Orchestrator
+  - múltiplos caches/índices fora da sessão → resolvido com `search_cache` por sessão
 - Cards relacionados:
   - KB-027
 

@@ -1,8 +1,8 @@
 # KB-027 TODO - O que falta para fechar
 
 Data: 5 de abril de 2026
-Status do projeto: 85% completo | 15% pendente
-Ultimo atualizado: apos replanejamento de fechamento
+Status do projeto: 100% completo | KB-027 fechado
+Ultimo atualizado: fechamento da FASE 4
 
 ---
 
@@ -67,15 +67,15 @@ Objetivo: provar que o KB-027 esta fechado com Safe Mode e cache session-scoped.
 
 ### T4.3 - Persistencia e isolamento por sessao
 
-- [ ] mesma sessao reaproveita cache
-- [ ] sessoes diferentes nao compartilham estado
-- [ ] clear/reset respeitam o escopo certo
+- [x] mesma sessao reaproveita cache
+- [x] sessoes diferentes nao compartilham estado
+- [x] clear/reset respeitam o escopo certo
 
 ### Validacao da FASE 4
 
-- [ ] npx tsc --noEmit
-- [ ] npm.cmd test ou suites equivalentes
-- [ ] evidencias registradas no kanban
+- [x] npx tsc --noEmit
+- [x] npm.cmd test ou suites equivalentes
+- [x] evidencias registradas no kanban
 
 ---
 
@@ -91,6 +91,6 @@ Objetivo: provar que o KB-027 esta fechado com Safe Mode e cache session-scoped.
 ## Encerramento do KB-027
 
 - [x] FASE 3 concluida
-- [ ] FASE 4 concluida
+- [x] FASE 4 concluida
 - [x] kanban sincronizado
 - [x] evidencias objetivas anexadas
