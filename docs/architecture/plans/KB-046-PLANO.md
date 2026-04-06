@@ -1,7 +1,7 @@
 # PLANO DE CORRECAO - KB-046
 
 Data: 6 de abril de 2026
-Status: Em andamento
+Status: Concluido
 Risco: Medio
 Escopo: modularizacao governada do CognitiveOrchestrator sem alterar comportamento
 
@@ -385,8 +385,8 @@ Ao concluir a rodada atual:
 - [x] registrar rastreio em `docs/architecture/kanban/Em_Andamento/em_andamento.md`
 - [x] registrar evidencias em `docs/architecture/kanban/Testes/testes.md`
 - [x] atualizar status em `docs/architecture/kanban/mapa_problemas_sistema.md`
-- [ ] registrar conclusao em `docs/architecture/kanban/Concluido/concluido.md`
-- [ ] remover o card de `Em_Andamento` quando a rodada estiver fechada
+- [x] registrar conclusao em `docs/architecture/kanban/Concluido/concluido.md`
+- [x] remover o card de `Em_Andamento` quando a rodada estiver fechada
 
 ---
 
@@ -596,3 +596,122 @@ Critero de fechamento desta rodada:
 - nenhum gap documental restante
 - nenhuma duplicacao conhecida aberta no escopo imediato desta extracao
 - proxima fronteira de modularizacao definida com risco controlado
+
+---
+
+## REGISTRO DE VALIDACAO CRITICA - FASE 6
+
+Data: 6 de abril de 2026
+Status: Aprovado
+
+Confirmacao de equilibrio arquitetural obtido nesta rodada:
+
+- modularizacao preservada sem deslocamento de authority
+- fluxo principal recomposto para leitura semantica e navegacao humana
+- fragmentacao perceptiva reduzida sem alterar heuristicas
+
+Validacao consolidada da Fase 6:
+
+- correcao de ruido estrutural em JSDoc residual
+- reagrupamento de metodos `decide*` antes de `decide()` como regra mental unica
+- introducao de banners semanticos para transformar o arquivo em mapa navegavel
+- recuperacao de linearidade do fluxo: ingestao -> decisoes -> fluxo principal -> governanca -> execucao final
+
+Regra operacional reforcada para as proximas rodadas:
+
+- interromper micro-extracoes quando nao houver ganho de legibilidade do fluxo principal
+- so extrair novamente quando a extracao reduzir carga cognitiva percebida
+- manter prioridade em refinamento semantico local antes de novas fragmentacoes estruturais
+
+Conclusao desta validacao:
+
+- arquitetura boa nesta etapa passa a ser tratada como equilibrio entre separacao tecnica e usabilidade do codigo para manutencao humana
+
+---
+
+## ESTABILIZACAO POS-FECHAMENTO (LEITURA FRIA)
+
+Data: 6 de abril de 2026
+Objetivo: validar legibilidade real do fluxo principal apos fechamento do KB-046
+
+Resultado da leitura fria:
+
+- fluxo principal permanece legivel e navegavel de ponta a ponta
+- ordem semantica dos blocos continua previsivel para manutencao
+- autoridade e safe mode permanecem consistentes
+
+Friccoes identificadas e corrigidas sem alterar comportamento:
+
+- comentarios desatualizados sobre modo passivo em trechos ja governados ativamente
+- desalinhamento de indentacao em estado interno de auditoria (`_orchestratorAppliedDecisions`)
+- condicao morta removida em `auditSignalConsistency(...)` (`if (!signals)`)
+- contrato de comentario de `decideToolSelection(...)` alinhado ao comportamento real em safe mode
+
+Conclusao operacional:
+
+- nenhuma nova extracao estrutural justificada nesta rodada
+- manter somente micro-ajustes semanticos locais quando reduzirem atrito de leitura
+
+---
+
+## VALIDACAO COMPORTAMENTAL POS-FASE 6
+
+Data: 6 de abril de 2026
+Status: Implementado de forma controlada
+
+Achados confirmados:
+
+- conflito de precedencia potencial entre flow start e pending action
+- consumo antecipado de input gap com possibilidade de descarte antes do uso efetivo
+
+Classificacao dos achados:
+
+- flow vs pending: conflito de comportamento (gravidade media-alta)
+- input gap: politica de estado cross-turn (gravidade media)
+
+Decisoes arquiteturais propostas:
+
+- precedencia oficial: pending action deve ter prioridade sobre flow start
+- politica de consumo de signal: input gap deve ser consumido apenas quando efetivamente usado no caminho decisorio
+
+Matriz de precedencia recomendada para `decide(...)`:
+
+1. recovery
+2. flow ativo
+3. pending action
+4. flow start
+5. normal decision hub
+
+Politica recomendada para input gap:
+
+- ler no inicio do ciclo para contexto
+- consumir apenas no ramo que realmente usar o signal
+- manter o signal intacto quando houver retorno antecipado por recovery/flow/pending
+
+Regras de implementacao para rodada futura (fora do KB-046):
+
+- aplicar mudanca em diff pequeno e reversivel
+- nao alterar heuristicas de classificacao/autonomia
+- validar compatibilidade com safe mode
+- atualizar testes de precedencia e ciclo de signal
+
+Implementacao aplicada (6 de abril de 2026):
+
+## Fase 7: Estabilização e Auditoria (Concluída ✅)
+
+A fase de estabilização validou a integridade da arquitetura "Single Brain" após a refatoração modular.
+
+### 🧪 Testes de Integração (`KB046_stabilization.test.ts`)
+Foram executados 4 cenários críticos com 100% de sucesso:
+1.  **Precedência Geral**: Confirmada a hierarquia `Recovery > Flow > Pending > Flow Start`.
+2.  **Escape de Flow (Topic Shift)**: O Orchestrator identifica corretamente intenções de parada e mudança de assunto, interrompendo o fluxo guiado para dar lugar à nova intenção.
+3.  **Gestão de Estado (Input Gap)**: O sinal de gap agora é **preservado** em interações puramente informativas (`LLM`/`ASK`) e **consumido** apenas quando uma ação executável (`TOOL`/`CONFIRM`) o utiliza.
+4.  **Pending vs Flow**: Confirmado que ações pendentes bloqueiam o início de novos flows, garantindo a conclusão de tarefas críticas.
+
+### 🔍 Resultados da Auditoria (Blind Reading)
+- **Legibilidade**: O método `decide()` tornou-se linear e auditável. Qualquer desenvolvedor pode agora seguir o caminho de decisão apenas lendo os banners semânticos.
+- **Acoplamento**: A lógica de construção de payloads foi 100% isolada em builders, mantendo o Orchestrator focado apenas na **estratégia**.
+- **Robustez**: Pequenas melhorias em `ActionRouter` (adição de keywords de pesquisa) e `IntentionResolver` (melhor detecção de perguntas) foram aplicadas para suportar o novo rigor decisório.
+
+> [!IMPORTANT]
+> O **Gate KB-046 está formalmente FECHADO**. O sistema está estável e pronto para a próxima evolução de domínio (KB-047 ou KB-045).

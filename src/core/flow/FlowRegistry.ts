@@ -86,25 +86,4 @@ export class FlowRegistry {
             description: registration.description
         }));
     }
-
-    public static matchByInput(input: string): string | undefined {
-        const normalized = input.toLowerCase();
-        const definitions = this.listDefinitions()
-            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-        for (const definition of definitions) {
-            const triggerMatched = (definition.triggers || []).some((trigger) => normalized.includes(trigger.toLowerCase()));
-            if (triggerMatched) {
-                return definition.id;
-            }
-
-            const tags = (definition.tags || []).filter(tag => tag.trim().length > 0);
-            const tagScore = tags.reduce((score, tag) => score + (normalized.includes(tag.toLowerCase()) ? 1 : 0), 0);
-            if (tags.length > 0 && tagScore >= Math.min(2, tags.length)) {
-                return definition.id;
-            }
-        }
-
-        return undefined;
-    }
 }

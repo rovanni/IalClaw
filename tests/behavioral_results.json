@@ -1,0 +1,77 @@
+[
+  {
+    "scenario": 1,
+    "decision": {
+      "strategy": "tool",
+      "confidence": 0.99,
+      "reason": "tool_execution",
+      "capabilityAwarePlan": {
+        "requiredCapabilities": [],
+        "missingCapabilities": [],
+        "hasGap": false,
+        "isExecutable": true,
+        "finalDecisionSource": "orchestrator"
+      }
+    }
+  },
+  {
+    "scenario": 2,
+    "decision": {
+      "strategy": "llm",
+      "confidence": 0.95,
+      "reason": "direct_response",
+      "capabilityAwarePlan": {
+        "requiredCapabilities": [],
+        "missingCapabilities": [],
+        "hasGap": false,
+        "isExecutable": true,
+        "finalDecisionSource": "orchestrator"
+      }
+    }
+  },
+  {
+    "scenario": 3,
+    "decision": {
+      "strategy": "llm",
+      "confidence": 0.5,
+      "reason": "direct_response",
+      "capabilityAwarePlan": {
+        "requiredCapabilities": [],
+        "missingCapabilities": [],
+        "hasGap": false,
+        "isExecutable": true,
+        "finalDecisionSource": "orchestrator"
+      }
+    }
+  },
+  {
+    "scenario": 4,
+    "decision": {
+      "strategy": "llm",
+      "confidence": 0.475,
+      "reason": "direct_response",
+      "capabilityAwarePlan": {
+        "requiredCapabilities": [],
+        "missingCapabilities": [],
+        "hasGap": false,
+        "isExecutable": true,
+        "finalDecisionSource": "orchestrator"
+      }
+    }
+  },
+  {
+    "scenario": 5,
+    "decision": {
+      "strategy": "llm",
+      "confidence": 0.475,
+      "reason": "direct_response",
+      "capabilityAwarePlan": {
+        "requiredCapabilities": [],
+        "missingCapabilities": [],
+        "hasGap": false,
+        "isExecutable": true,
+        "finalDecisionSource": "orchestrator"
+      }
+    }
+  }
+]

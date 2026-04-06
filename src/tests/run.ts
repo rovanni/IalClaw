@@ -24,6 +24,7 @@ import { Flow } from '../core/flow/types';
 import { IntentClassifier } from '../core/intent/IntentClassifier';
 import { CognitiveActionExecutor } from '../core/orchestrator/CognitiveActionExecutor';
 import { CognitiveOrchestrator, CognitiveStrategy } from '../core/orchestrator/CognitiveOrchestrator';
+import { buildDecisionPrecedenceContext } from '../core/orchestrator/decisions/precedence/buildDecisionPrecedenceContext';
 import { ExecutionPlan } from '../core/planner/types';
 import { AgentLoop } from '../engine/AgentLoop';
 import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
@@ -725,6 +726,104 @@ async function run() {
         assert.equal(session.flow_state?.flowId, 'html_slides');
         assert.ok(FlowRegistry.get(session.flow_state!.flowId));
     });
+
+    await SessionManager.runWithSession('kb-046-pending-has-priority-over-flow-start-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        const memoryStub = {
+            saveMessage: () => undefined,
+            searchByContent: () => []
+        } as any;
+
+        setPendingAction(session, {
+            type: 'install_skill',
+            payload: { skillName: 'pptx' }
+        });
+
+        const orchestrator = new CognitiveOrchestrator(memoryStub, new FlowManager());
+        const decision = await orchestrator.decide({
+            sessionId: session.conversation_id,
+            input: 'sim, pode continuar e criar slides em html sobre arquitetura de software'
+        });
+
+        assert.equal(decision.strategy, CognitiveStrategy.EXECUTE_PENDING);
+        assert.notEqual(decision.strategy, CognitiveStrategy.START_FLOW);
+        assert.ok(decision.pendingActionId);
+    });
+
+    await SessionManager.runWithSession('kb-046-input-gap-preserved-on-early-return-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        (session as any).last_input_gap = {
+            capability: 'browser_execution',
+            reason: 'missing_capability',
+            severity: 'medium'
+        };
+
+        setPendingAction(session, {
+            type: 'install_skill',
+            payload: { skillName: 'pptx' }
+        });
+
+        const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+        const decision = await orchestrator.decide({
+            sessionId: session.conversation_id,
+            input: 'sim, pode instalar'
+        });
+
+        assert.equal(decision.strategy, CognitiveStrategy.EXECUTE_PENDING);
+        assert.ok((session as any).last_input_gap, 'input gap should remain when decide exits early');
+        assert.equal((session as any).last_input_gap.capability, 'browser_execution');
+    });
+
+    await SessionManager.runWithSession('kb-046-input-gap-consumed-when-used-in-normal-path-test', async () => {
+        const session = SessionManager.getCurrentSession()!;
+        (session as any).last_input_gap = {
+            capability: 'browser_execution',
+            reason: 'missing_capability',
+            severity: 'medium'
+        };
+
+        const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+        await orchestrator.decide({
+            sessionId: session.conversation_id,
+            input: 'o que voce tem na sua memoria sobre mim?'
+        });
+
+        assert.equal((session as any).last_input_gap, undefined);
+    });
+
+    const precedenceWithPending = buildDecisionPrecedenceContext({
+        hasReactiveState: false,
+        flowManagerInFlow: false,
+        isInGuidedFlow: false,
+        pendingActionExists: true,
+        intent: 'EXECUTE',
+        isIntentRelatedToTopic: true
+    });
+    assert.equal(precedenceWithPending.hasPendingAction, true);
+    assert.equal(precedenceWithPending.canEvaluateFlowStart, true);
+
+    const precedenceFlowEscape = buildDecisionPrecedenceContext({
+        hasReactiveState: false,
+        flowManagerInFlow: true,
+        isInGuidedFlow: false,
+        pendingActionExists: false,
+        intent: 'STOP',
+        isIntentRelatedToTopic: false
+    });
+    assert.equal(precedenceFlowEscape.hasActiveFlow, true);
+    assert.equal(precedenceFlowEscape.isFlowEscape, true);
+
+    const precedenceWithReactiveState = buildDecisionPrecedenceContext({
+        hasReactiveState: true,
+        flowManagerInFlow: true,
+        isInGuidedFlow: true,
+        pendingActionExists: true,
+        intent: 'EXECUTE',
+        isIntentRelatedToTopic: true
+    });
+    assert.equal(precedenceWithReactiveState.hasPendingAction, false);
+    assert.equal(precedenceWithReactiveState.canEvaluateFlowStart, false);
+    assert.equal(precedenceWithReactiveState.hasActiveFlow, false);
 
     FlowRegistry.registerDefinition({
         id: 'registry_test_flow_a',

@@ -63,6 +63,7 @@ import {
     buildRouteAutonomyAuthorityResolutionPayload
 } from './decisions/route/buildRouteAutonomyDebugPayloads';
 import { decideRetryAfterFailure as decideRetryAfterFailureDecision } from './decisions/retry/decideRetryAfterFailure';
+import { buildDecisionPrecedenceContext } from './decisions/precedence/buildDecisionPrecedenceContext';
 import type { ActiveDecisionSnapshot, ActiveDecisionsResult } from './types/ActiveDecisionsTypes';
 import { CapabilityFallbackDecisionContext } from './types/CapabilityFallbackTypes';
 import type { IngestedSignalSummary } from './types/IngestSignalsTypes';
@@ -73,6 +74,8 @@ import type { CapabilityAwarePlan, PlanningStrategyContext } from './types/Plann
 import type { ObservedSignalLogEntry, ObservedStopSignalLogEntry } from './types/ObservedSignalLogTypes';
 import type { SignalConflictId, SignalConflictSeverity } from './types/SignalConflictTypes';
 import type { StopContinueGovernanceAuditContext } from './types/StopContinueGovernanceTypes';
+import { decideFlowStart as decideFlowStartDecision } from './decisions/flow/decideFlowStart';
+import { FlowStartDecision } from './types/FlowStartTypes';
 
 
 export enum CognitiveStrategy {
@@ -151,10 +154,9 @@ export class CognitiveOrchestrator {
     private failSafeModule = new FailSafeModule();
     private stopContinueModule = new StopContinueModule();
 
-    // ─── Cognitive Signals State (Passive Observation) ───────────────────
-    // Armazena os signals observados do AgentLoop em modo passivo.
-    // TODO: Quando o CognitiveOrchestrator assumir as decisões, usará esses signals
-    // para tomar decisões reais em vez de o AgentLoop decidir localmente.
+    // ─── Cognitive Signals State (Signal Ingestion + Active Governance) ───
+    // Armazena sinais observados para auditoria e decisões ativas em safe mode.
+    // O Orchestrator continua autoridade final apenas quando explicitamente aplicado.
     private observedSignals: Partial<CognitiveSignalsState> = {};
     private observedSelfHealingSignal?: SelfHealingSignal;
     private observedRepairStrategySignal?: RepairStrategySignal;
@@ -163,11 +165,11 @@ export class CognitiveOrchestrator {
     private routeVsFailSafeConflictLoggedInCycle = false;
     private lastCapabilityAwarePlanBySession = new Map<string, CapabilityAwarePlan>();
 
-        // ─── Orchestrator Applied Decisions (para auditSignalConsistency) ─────────
-        // Rastreia o que cada decide*() retornou no ciclo atual para permitir
-        // comparação Loop vs Orchestrator na auditoria cruzada.
-        // Reset a cada ingestSignalsFromLoop() — garante que não há estado stale.
-        private _orchestratorAppliedDecisions: Partial<CognitiveSignalsState> = {};
+    // ─── Orchestrator Applied Decisions (para auditSignalConsistency) ─────────
+    // Rastreia o que cada decide*() retornou no ciclo atual para permitir
+    // comparação Loop vs Orchestrator na auditoria cruzada.
+    // Reset a cada ingestSignalsFromLoop() — garante que não há estado stale.
+    private _orchestratorAppliedDecisions: Partial<CognitiveSignalsState> = {};
 
     constructor(
         private memoryService: CognitiveMemory,
@@ -265,8 +267,8 @@ export class CognitiveOrchestrator {
         this.observedSignals = { ...signals };
         this.routeVsFailSafeConflictLoggedInCycle = false;
 
-            // Reseta decisões aplicadas do ciclo anterior para evitar estado stale na auditoria
-            this._orchestratorAppliedDecisions = {};
+        // Reseta decisões aplicadas do ciclo anterior para evitar estado stale na auditoria
+        this._orchestratorAppliedDecisions = {};
 
         // ─── Log each signal type for audit trail ───────────────────────
         if (signals.stop) {
@@ -490,10 +492,6 @@ export class CognitiveOrchestrator {
 
     public auditSignalConsistency(sessionId: string): void {
         const signals = this.getObservedSignals(sessionId);
-
-        if (!signals) {
-            return;
-        }
 
         const selfHealing = this.observedSelfHealingSignal;
         const stopContinue = signals.stop;
@@ -1295,20 +1293,22 @@ export class CognitiveOrchestrator {
         const reactiveState = cognitiveState.reactiveState;
         const inputGap = currentSession.last_input_gap;
 
-        // Limpa sinal de gap se existir (consumo imediato)
-        if (inputGap) {
-            const gapCapability = inputGap.capability;
-            delete currentSession.last_input_gap;
-            this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para decisão', { capability: gapCapability });
-        }
-
         const match = IntentionResolver.resolve(text);
         const intent = match.type;
+        const flowState = this.flowManager.getState() ?? cognitiveState.guidedFlowState;
+        const precedence = buildDecisionPrecedenceContext({
+            hasReactiveState: !!reactiveState,
+            flowManagerInFlow: this.flowManager.isInFlow(),
+            isInGuidedFlow: !!cognitiveState.isInGuidedFlow,
+            pendingActionExists: !!pendingAction,
+            intent,
+            isIntentRelatedToTopic: IntentionResolver.isIntentRelatedToTopic(text, flowState?.topic || undefined)
+        });
 
         // ── 2. HIERARQUIA DE PRECEDÊNCIA (Production-Level) ─────────────────
 
         // --- 2.1. RECOVERY (MÁXIMA PRIORIDADE) ---
-        if (reactiveState) {
+        if (precedence.hasReactiveState) {
             this.logger.info('precedence_recovery', '[ORCHESTRATOR] Prioridade: Recovery');
 
             if (intent === 'STOP' || intent === 'DECLINE') {
@@ -1336,14 +1336,8 @@ export class CognitiveOrchestrator {
 
         // --- 2.2. FLOW (GUIADO) ---
         // KB-021: usa cognitiveState (sessão) como fonte de verdade; flowManager como fallback em memória
-        if ((this.flowManager.isInFlow() || cognitiveState.isInGuidedFlow) && !reactiveState) {
-            const flowState = this.flowManager.getState() ?? cognitiveState.guidedFlowState;
-            const topic = flowState?.topic;
-
-            const isRelated = IntentionResolver.isIntentRelatedToTopic(text, topic || undefined);
-            const isEscape = (intent === 'STOP' || intent === 'QUESTION' || intent === 'META') && !isRelated;
-
-            if (isEscape) {
+        if (precedence.hasActiveFlow) {
+            if (precedence.isFlowEscape) {
                 this.logger.info('precedence_flow_interrupt', '[ORCHESTRATOR] Flow interrompido por topic shift');
                 return {
                     strategy: CognitiveStrategy.INTERRUPT_FLOW,
@@ -1361,22 +1355,8 @@ export class CognitiveOrchestrator {
             };
         }
 
-        const flowIdToStart = !reactiveState ? this.decideFlowStart(sessionId, text) : undefined;
-        if (flowIdToStart) {
-            this.logger.info('precedence_flow_start', '[ORCHESTRATOR] Prioridade: Início de Flow', {
-                sessionId,
-                flowId: flowIdToStart
-            });
-            return {
-                strategy: CognitiveStrategy.START_FLOW,
-                confidence: 0.9,
-                reason: 'flow_start_requested',
-                flowId: flowIdToStart
-            };
-        }
-
         // --- 2.3. PENDING ACTION (CONFIRMAÇÃO) ---
-        if (pendingAction && !reactiveState) {
+        if (precedence.hasPendingAction && pendingAction) {
             const pendingActionId = pendingAction.id;
             this.logger.info('precedence_pending', '[ORCHESTRATOR] Prioridade: Pending Action');
 
@@ -1393,7 +1373,23 @@ export class CognitiveOrchestrator {
             }
         }
 
-        // --- 2.4. NORMAL (DECISION HUB) ---
+        // --- 2.4. FLOW START (nova intenção) ---
+        // Pending action tem prioridade sobre início de flow para evitar abandono de estado crítico aberto.
+        const flowIdToStart = precedence.canEvaluateFlowStart ? this.decideFlowStart(sessionId, text) : undefined;
+        if (flowIdToStart) {
+            this.logger.info('precedence_flow_start', '[ORCHESTRATOR] Prioridade: Início de Flow', {
+                sessionId,
+                flowId: flowIdToStart
+            });
+            return {
+                strategy: CognitiveStrategy.START_FLOW,
+                confidence: 0.9,
+                reason: 'flow_start_requested',
+                flowId: flowIdToStart
+            };
+        }
+
+        // --- 2.5. NORMAL (DECISION HUB) ---
         this.logger.info('precedence_normal', '[ORCHESTRATOR] Prioridade: Processamento Normal');
 
         if (cognitiveInput.intent?.mode === 'EXPLORATION') {
@@ -1414,6 +1410,7 @@ export class CognitiveOrchestrator {
         const memoryHits = await this.safeMemoryQuery(text);
 
         const capabilityGap = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
+
         const capabilityAwarePlan = this.decidePlanningStrategy({
             sessionId,
             taskType: classification.type,
@@ -1470,6 +1467,13 @@ export class CognitiveOrchestrator {
                 reason: capabilityGap.hasGap ? 'capability_gap_detected' : 'high_risk_confirmation',
                 capabilityAwarePlan
             });
+
+            // Consome o gap se ele foi o motivo da confirmação
+            if (inputGap && capabilityGap.hasGap) {
+                delete currentSession.last_input_gap;
+                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para confirmação', { capability: inputGap.capability });
+            }
+
             return {
                 strategy: CognitiveStrategy.CONFIRM,
                 confidence: aggregatedConfidence.score,
@@ -1486,6 +1490,13 @@ export class CognitiveOrchestrator {
                 reason: 'hybrid_informative_executable',
                 capabilityAwarePlan
             });
+
+            // Consome o gap se chegamos à decisão híbrida (mesmo que parcial)
+            if (inputGap) {
+                delete currentSession.last_input_gap;
+                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para decisão híbrida', { capability: inputGap.capability });
+            }
+
             return {
                 strategy: CognitiveStrategy.HYBRID,
                 confidence: 0.9,
@@ -1502,6 +1513,13 @@ export class CognitiveOrchestrator {
                 reason: 'tool_execution',
                 capabilityAwarePlan
             });
+
+            // Consome o gap se chegamos à execução de ferramenta (assumindo que o gap foi resolvido ou ignorado deliberadamente pela ferramenta)
+            if (inputGap) {
+                delete currentSession.last_input_gap;
+                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para execução de ferramenta', { capability: inputGap.capability });
+            }
+
             return {
                 strategy: CognitiveStrategy.TOOL,
                 confidence: routeDecision.confidence,
@@ -1526,17 +1544,36 @@ export class CognitiveOrchestrator {
     }
 
     public decideFlowStart(sessionId: string, text: string): string | undefined {
-        // TODO(KB-045): migrar a deteccao de inicio de flow para decisao explicita do Orchestrator sem heuristica local no executor.
-        const definitions = FlowRegistry.listDefinitions();
-        const matchedFlowId = FlowRegistry.matchByInput(text);
-
-        this.logger.info('flow_start_evaluation', '[ORCHESTRATOR] Avaliando início de flow', {
+        const availableFlows = FlowRegistry.listDefinitions();
+        
+        const decision: FlowStartDecision = decideFlowStartDecision({
             sessionId,
-            availableFlows: definitions.map((definition) => definition.id),
-            matchedFlowId
+            input: text,
+            availableFlows
         });
 
-        return matchedFlowId;
+        if (decision.flowId) {
+            this.logger.info('flow_start_active_decision', '[ORCHESTRATOR ACTIVE] Início de flow decidido', {
+                sessionId,
+                flowId: decision.flowId,
+                confidence: decision.confidence,
+                reason: decision.reason,
+                match: decision.match
+            });
+
+            emitDebug('flow_start_decision', {
+                sessionId,
+                flowId: decision.flowId,
+                confidence: decision.confidence,
+                reason: decision.reason,
+                match: decision.match,
+                candidates: decision.candidates
+            });
+
+            return decision.flowId;
+        }
+
+        return undefined;
     }
 
     private async safeMemoryQuery(input: string) {
@@ -1896,11 +1933,11 @@ export class CognitiveOrchestrator {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * KB-024 FASE KB-024.1: observar signal explicito de selecao de tool sem ativar
-     * nova autoridade decisoria nesta etapa.
-     *
-     * O contrato permanece em safe mode: o loop consulta este ponto, mas a decisao final
-     * continua local ate a etapa seguinte de migracao formal para o Orchestrator.
+        * KB-024: governanca de selecao de tool em safe mode.
+        *
+        * O loop consulta este ponto e o Orchestrator pode recomendar ferramenta
+        * quando houver sinal forte (exploration/positive candidate). Sem recomendacao,
+        * retorna undefined para delegar ao loop local.
      */
     public decideToolSelection(context: {
         sessionId: string;

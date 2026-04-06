@@ -100,8 +100,8 @@ Objetivo deste arquivo:
   - Pendencias para aprovar:
     - Nenhuma pendencia aberta no escopo do KB-027.
 
-- [ ] KB-046 - Modularizacao governada do CognitiveOrchestrator
-  - Status: em andamento em 6 de abril de 2026.
+- [x] KB-046 - Modularizacao governada do CognitiveOrchestrator
+  - Status: concluido em 6 de abril de 2026.
   - Comportamento esperado:
     - modularizacao sem alteracao de comportamento no `CognitiveOrchestrator`.
     - `CapabilityAwarePlan` e `PlanningStrategyContext` devem ter fonte unica compartilhada.
@@ -143,10 +143,14 @@ Objetivo deste arquivo:
     - risco arquitetural adicional registrado no plano: fragmentacao sem reducao equivalente da complexidade percebida do fluxo principal.
     - proxima rodada redefinida no plano como Fase 2 de recomposicao do fluxo do `CognitiveOrchestrator`, interrompendo novas micro-extracoes de builders enquanto a legibilidade do arquivo principal nao melhorar.
     - validacao formal registrada no plano com secoes de inconsistencias, conflitos e autoridade.
+    - validacao critica adicional da Fase 6 registrada no plano: equilibrio entre modularizacao, autoridade e legibilidade humana do fluxo principal.
+    - Fase 6 consolidada com 4 evidencias arquiteturais: remocao de ruido residual em JSDoc, reagrupamento semantico de `decide*` antes de `decide()`, banners de navegacao por dominio e recuperacao da linearidade de leitura do fluxo.
+    - regra operacional reforcada: interromper micro-extracoes quando nao houver ganho real de legibilidade no arquivo principal.
     - `npx.cmd tsc --noEmit` executado sem diagnosticos em 6 de abril de 2026.
+    - regressao comportamental coberta em `src/tests/run.ts` com 3 cenarios KB-046: (1) prioridade `pending > flow start`, (2) preservacao de `last_input_gap` em retorno antecipado, (3) consumo de `last_input_gap` apenas quando usado no ramo normal.
+    - `npm.cmd test` executado em 6 de abril de 2026 com fechamento em `All tests passed`.
   - Pendencias para aprovar:
-    - registrar fechamento do card quando a modularizacao global do arquivo for concluida no kanban final.
-    - executar a Fase 2 de recomposicao do fluxo por blocos semanticos, conforme redefinido no plano.
+    - nenhuma no escopo do KB-046.
 
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 

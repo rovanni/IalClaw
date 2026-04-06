@@ -1,0 +1,51 @@
+[
+  {
+    "step": "Saudação Inicial",
+    "input": "Olá, bom dia!",
+    "strategy": "llm",
+    "reason": "direct_response",
+    "candidates": [],
+    "confidence": 1
+  },
+  {
+    "step": "Ambiguidade: match de múltiplas tags",
+    "input": "Quero algo com slides e powerpoint",
+    "strategy": "start_flow",
+    "flowId": "presentation_expert",
+    "reason": "flow_start_requested",
+    "candidates": [],
+    "confidence": 0.9
+  },
+  {
+    "step": "Trigger Específico",
+    "input": "apresentacao html",
+    "strategy": "flow",
+    "reason": "active_flow_continuity",
+    "candidates": [],
+    "confidence": 0.9
+  },
+  {
+    "step": "Interrupção/Mudança de Intenção",
+    "input": "Espera, na verdade organiza meus arquivos",
+    "strategy": "flow",
+    "reason": "active_flow_continuity",
+    "candidates": [],
+    "confidence": 0.9
+  },
+  {
+    "step": "Retorno ao Contexto",
+    "input": "Não, esquece. Vamos voltar aos slides.",
+    "strategy": "flow",
+    "reason": "active_flow_continuity",
+    "candidates": [],
+    "confidence": 0.9
+  },
+  {
+    "step": "Interação de Step do Flow",
+    "input": "Título vai ser \"Projeto Claw\"",
+    "strategy": "flow",
+    "reason": "active_flow_continuity",
+    "candidates": [],
+    "confidence": 0.9
+  }
+]

@@ -1,5 +1,13 @@
 # Concluído
 
+- [x] KB-047 - Governança de início de flows (Flow Start) centralizada
+  - Data: 2026-04-06
+  - Evidência: `matchByInput` removido do `FlowRegistry`. Lógica de decisão centralizada em `decideFlowStart.ts`. `CognitiveOrchestrator` agora é o único responsável por identificar e disparar novos flows, emitindo sinais de debug com detalhes do matching. Precedência corrigida para garantir que `Pending Action` tenha prioridade sobre o início de novos contextos. `tests/KB047_flow_start_governance.test.ts` validado com 100% de sucesso.
+
+- [x] KB-046 - Modularizacao governada do CognitiveOrchestrator
+  - Data: 2026-04-06
+  - Evidencia: contratos compartilhados consolidados em fonte unica, duplicacao removida e compilacao validada com `npx.cmd tsc --noEmit`. Fase 6 concluida com recomposicao semantica do fluxo principal, recuperando navegabilidade e legibilidade sem alterar authority, heuristicas ou safe mode. Resultado final: complexidade estrutural reduzida, fluxo principal recomposto, fragmentacao controlada e nova diretriz institucionalizada de nao realizar micro-extracoes sem ganho real de legibilidade.
+
 - [x] KB-017 - Externalizar capabilityFallback para signal puro
   - Data: 2026-04-05
   - Evidência: decisão local de capability fallback removida do `AgentExecutor`; resolução passou a depender somente de `CognitiveOrchestrator.decideCapabilityFallback(...)`, eliminando mini-brain residual no executor. Testes em `src/tests/run.ts` validam payload factual sem `strategy`, caminho governado e delegação segura quando o Orchestrator retorna `undefined`. Execução de `npm test` finalizou com `All tests passed`.

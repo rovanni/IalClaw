@@ -1,0 +1,45 @@
+﻿[2m2026-04-06T16:55:21.033-03:00[0m [36mÔä╣´©Å INFO[0m FlowRegistry:flow_registered - Flow html_slides registered successfully.
+­ƒº¬ Iniciando Testes de Estabiliza├º├úo - KB-046 (REVISADO)
+
+[2m2026-04-06T16:55:21.574-03:00[0m [36mÔä╣´©Å INFO[0m [33m[2/5][0m - OllamaProvider:provider_initialized - [2/5] Provider Ollama inicializado. [2m(host=0.0.0.0)[0m
+Teste 1: Pending Action vs Flow Start
+[2m2026-04-06T16:55:21.576-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_pending - [ORCHESTRATOR] Prioridade: Pending Action
+Ô£à OK: Pending Action venceu Flow Start.
+
+Teste 2: Flow Escape (Topic Shift)
+[2m2026-04-06T16:55:21.577-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_flow - [ORCHESTRATOR] Prioridade: Flow Ativo
+node.exe : ÔØî FAIL: Esperado INTERRUPT_FLOW, 
+obteve flow
+No linha:1 caractere:1
++ & "C:\Program Files\nodejs/node.exe" 
+"C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( 
+   ÔØî FAIL: Esper...OW, obteve flow:String)  
+   [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandEr 
+   ror
+ 
+
+Teste 3: Consumo de Input Gap (PRESERVA├ç├âO)
+[2m2026-04-06T16:55:21.579-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow
+[2m2026-04-06T16:55:21.580-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_normal - [ORCHESTRATOR] Prioridade: Processamento Normal
+ÔØî FAIL: Input Gap foi consumido 
+indevidamente.
+[2m2026-04-06T16:55:21.588-03:00[0m [36mÔä╣´©Å INFO[0m ClassificationMemory:memory_store - Nova classifica├º├úo aprendida
+[2m2026-04-06T16:55:21.588-03:00[0m [36mÔä╣´©Å INFO[0m TaskClassifier:classification_heuristic - Classifica├º├úo por heur├¡stica
+[2m2026-04-06T16:55:21.591-03:00[0m [36mÔä╣´©Å INFO[0m CapabilityResolver:capability_signal_received - [RESOLVER] Sinal externo recebido
+[2m2026-04-06T16:55:21.602-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:consuming_input_gap - [ORCHESTRATOR] Consumindo sinal de gap para confirma├º├úo
+
+Teste 3.1: Consumo de Input Gap (USO EFETIVO)
+[2m2026-04-06T16:55:21.604-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow
+[2m2026-04-06T16:55:21.604-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_normal - [ORCHESTRATOR] Prioridade: Processamento Normal
+[2m2026-04-06T16:55:21.608-03:00[0m [36mÔä╣´©Å INFO[0m TaskClassifier:classification_fallback - Classifica├º├úo por fallback
+Ô£à OK: Input Gap CONSUMIDO (chegou no uso efetivo).
+
+Teste 4: Hierarquia de Preced├¬ncia (Recovery > Flow)
+[2m2026-04-06T16:55:21.610-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_recovery - [ORCHESTRATOR] Prioridade: Recovery
+Ô£à OK: Recovery venceu Flow.
+
+­ƒÅü Testes de Estabiliza├º├úo Finalizados.

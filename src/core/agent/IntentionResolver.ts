@@ -40,7 +40,7 @@ export class IntentionResolver {
             return { type: 'META', confidence: 0.9 };
         }
 
-        if (hasQuestionMark || /^(o que|como|qual|quais|quem|onde|quando|por que|porque|você|voce|podia|poderia|seria|que)\b/i.test(normalized)) {
+        if (hasQuestionMark || /^(o que|como|qual|quais|quem|onde|quando|por que|porque|você|voce|podia|poderia|seria|que|pode|quer)\b/i.test(normalized)) {
             return { type: 'QUESTION', confidence: 0.85 };
         }
 

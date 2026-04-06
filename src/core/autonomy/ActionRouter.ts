@@ -50,7 +50,7 @@ export class ActionRouter {
         'mover', 'move', 'mova', 'renomear', 'rename',
         'deletar', 'delete', 'deleta', 'remover', 'remove', 'remova', 'rm',
         'criar', 'create', 'cria', 'gerar', 'generate', 'gera', 'write', 'escrever', 'escreve', 'salvar', 'save', 'salva',
-        'buscar', 'search', 'localizar', 'find', 'procurar',
+        'buscar', 'search', 'localizar', 'find', 'procurar', 'pesquisar', 'pesquise',
         'listar', 'list', 'ls',
         'converter', 'convert', 'transformar', 'transform',
         'executar', 'run', 'rodar', 'apply', 'aplicar',
@@ -221,9 +221,9 @@ export class ActionRouter {
     }
 
     /**
-         * Detecta se o input exige ação no mundo real (uso de tools).
-         * Usa abordagem híbrida: verbo forte + objeto alvo.
-         */
+          * Detecta se o input exige ação no mundo real (uso de tools).
+          * Usa abordagem híbrida: verbo forte + objeto alvo.
+          */
     private requiresToolExecution(input: string): boolean {
         // Verificar padrões regex (mais forte)
         if (this.ACTION_PATTERNS.some(pattern => pattern.test(input))) {

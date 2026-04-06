@@ -36,11 +36,7 @@
 - Fonte unica de validacao: `docs/architecture/kanban/Testes/testes.md`
 
 ### 2) Em andamento e pendente de correcao/implementacao
-- KB-046 - Modularizacao governada do CognitiveOrchestrator
-  - Origem: extracao incremental em `src/core/orchestrator`
-  - Risco: Medio
-  - Status: Fase 1 de modularizacao estrutural consolidada com contratos compartilhados e builders puros extraidos. A partir desta rodada, o foco muda para Fase 2 de recomposicao do fluxo do `CognitiveOrchestrator`, porque novas micro-extracoes passaram a aumentar a fragmentacao perceptiva sem reduzir a complexidade cognitiva do arquivo principal. Proximo passo: reorganizar o fluxo em blocos semanticos maiores e mais legiveis, sem alterar authority, heuristicas nem safe mode. `npx.cmd tsc --noEmit` segue limpo.
-  - Validacao detalhada: ver `docs/architecture/kanban/Testes/testes.md`.
+- Nenhum card nesta faixa no momento.
 - Regra de entrada: mover para esta faixa apenas quando houver implementacao aberta sem evidencia minima em runtime.
 
 ## Criterios operacionais (alinhados ao template)

@@ -1,0 +1,39 @@
+﻿node.exe : D:\IA\IalClaw\node_modules\ts-node\src\index.ts:859
+No linha:1 caractere:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\IA\IalClaw\n...rc\index.ts:859:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: Ô¿» Unable to compile TypeScript:
+tests/KB046_stabilization.test.ts(25,20): error TS2551: Property 'createSession' does not exist on type 'typeof SessionManager'. Did you mean 'getSession'?
+tests/KB046_stabilization.test.ts(34,9): error TS2322: Type '"tool_execution"' is not assignable to type '"install_skill" | "install_capability"'.
+tests/KB046_stabilization.test.ts(56,20): error TS2551: Property 'updateCognitiveState' does not exist on type 'typeof SessionManager'. Did you mean 
+'getCognitiveState'?
+tests/KB046_stabilization.test.ts(73,17): error TS2339: Property 'stopFlow' does not exist on type 'FlowManager'.
+tests/KB046_stabilization.test.ts(74,20): error TS2551: Property 'updateCognitiveState' does not exist on type 'typeof SessionManager'. Did you mean 
+'getCognitiveState'?
+tests/KB046_stabilization.test.ts(77,9): error TS2353: Object literal may only specify known properties, and 'sessionId' does not exist in type '{ 
+capability: string; reason: string; }'.
+tests/KB046_stabilization.test.ts(112,20): error TS2551: Property 'updateCognitiveState' does not exist on type 'typeof SessionManager'. Did you mean 
+'getCognitiveState'?
+
+    at createTSError (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1943:10
+    at Object.require.extensions.<computed> [as .ts] (D:\IA\IalClaw\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19) {
+  diagnosticCodes: [
+    2551, 2322,
+    2551, 2339,
+    2551, 2353,
+    2551
+  ]
+}

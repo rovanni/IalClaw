@@ -10,12 +10,11 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 - Plano de correção estrutural: docs/architecture/plans/ProposedChanges.md
 - Histórico técnico: docs/architecture/kanban/historico/checklist_vivo.md
 
-## Radar de críticos (snapshot 2026-04-05)
+## Radar de críticos (snapshot 2026-04-06)
 - Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-024
-- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045
+- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046
 - Em monitoramento runtime (em andamento): KB-011, KB-012
-- Em governanca estrutural (em andamento): KB-046
 
 
 Observação:
@@ -75,14 +74,16 @@ Observação:
 
 ### src/core/orchestrator
 - Colunas e prioridades no quadro:
-  - Medio: KB-046
+  - Concluido: KB-046
 - Problemas mapeados:
   - modularizacao do `CognitiveOrchestrator` sem plano formal quebrava o gate documental do template
   - `CapabilityAwarePlan` e `PlanningStrategyContext` estavam duplicados entre o Orchestrator e o modulo de decisao de planning
-  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts`, `src/core/orchestrator/types/IngestSignalsTypes.ts`, `src/core/orchestrator/types/SignalConflictTypes.ts`, `src/core/orchestrator/types/StopContinueGovernanceTypes.ts` e `src/core/orchestrator/types/ObservedSignalLogTypes.ts`
+  - mitigacao concluida: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts`, `src/core/orchestrator/types/IngestSignalsTypes.ts`, `src/core/orchestrator/types/SignalConflictTypes.ts`, `src/core/orchestrator/types/StopContinueGovernanceTypes.ts` e `src/core/orchestrator/types/ObservedSignalLogTypes.ts`
   - detector factual de conflitos de `auditSignalConsistency(...)` extraido para helper puro, mantendo no Orchestrator a emissao de auditoria e o controle do ciclo
   - payloads observacionais de `applyStopContinueGovernance(...)` extraidos para helpers puros, mantendo no Orchestrator a governanca contextual e a autoridade final
   - logs observacionais de `ingestSignalsFromLoop(...)` extraidos para builder puro, reduzindo verbosidade inline sem mover ingestao nem autoridade
+  - validacao critica da Fase 6 confirmou recomposicao semantica do fluxo principal: legibilidade e navegacao recuperadas sem deslocar authority nem alterar heuristicas
+  - continuidade controlada definida: bloquear novas micro-extracoes quando nao houver ganho real de leitura, priorizando refinamento semantico local
 - Cards relacionados:
   - KB-046
 
