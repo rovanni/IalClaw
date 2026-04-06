@@ -801,7 +801,7 @@ async function run() {
         isIntentRelatedToTopic: true
     });
     assert.equal(precedenceWithPending.hasPendingAction, true);
-    assert.equal(precedenceWithPending.canEvaluateFlowStart, true);
+    assert.equal(precedenceWithPending.canEvaluateFlowStart, false);
 
     const precedenceFlowEscape = buildDecisionPrecedenceContext({
         hasReactiveState: false,

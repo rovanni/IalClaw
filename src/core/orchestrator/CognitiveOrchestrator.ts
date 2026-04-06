@@ -107,6 +107,7 @@ export interface CognitiveDecision {
     toolProposal?: any;
     resolutionProposal?: ResolutionProposal;
     interruptionReason?: string;
+    usedInputGap?: boolean;
 
     // Metadados para diagnóstico (opcionais)
     route?: any;
@@ -1444,6 +1445,7 @@ export class CognitiveOrchestrator {
         });
 
         // ── 3. MAPEAMENTO FINAL DE ESTRATÉGIA ───────────────────────────────
+        let decision: CognitiveDecision;
 
         if (autonomyDecision === AutonomyDecision.ASK) {
             this.emitFinalDecisionRecommended({
@@ -1452,95 +1454,64 @@ export class CognitiveOrchestrator {
                 reason: 'low_confidence_fallback',
                 capabilityAwarePlan
             });
-            return {
+            decision = {
                 strategy: CognitiveStrategy.ASK,
                 confidence: aggregatedConfidence.score,
                 reason: t('agent.orchestrator.ask.low_confidence_fallback'),
-                capabilityAwarePlan
+                capabilityAwarePlan,
+                // No low confidence fallback, we don't necessarily "consume" the gap yet
+                // unless we have specific logic saying so. For now, following user advice:
+                // only when explicitly influencing the result.
+                usedInputGap: false 
             };
-        }
-
-        if (autonomyDecision === AutonomyDecision.CONFIRM) {
-            this.emitFinalDecisionRecommended({
-                sessionId,
-                strategy: CognitiveStrategy.CONFIRM,
-                reason: capabilityGap.hasGap ? 'capability_gap_detected' : 'high_risk_confirmation',
-                capabilityAwarePlan
-            });
-
-            // Consome o gap se ele foi o motivo da confirmação
-            if (inputGap && capabilityGap.hasGap) {
-                delete currentSession.last_input_gap;
-                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para confirmação', { capability: inputGap.capability });
-            }
-
-            return {
+        } else if (autonomyDecision === AutonomyDecision.CONFIRM) {
+            decision = {
                 strategy: CognitiveStrategy.CONFIRM,
                 confidence: aggregatedConfidence.score,
                 reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
                 capabilityGap,
-                capabilityAwarePlan
+                capabilityAwarePlan,
+                usedInputGap: !!inputGap && capabilityGap.hasGap
             };
-        }
-
-        if (routeDecision.nature === TaskNature.HYBRID) {
-            this.emitFinalDecisionRecommended({
-                sessionId,
-                strategy: CognitiveStrategy.HYBRID,
-                reason: 'hybrid_informative_executable',
-                capabilityAwarePlan
-            });
-
-            // Consome o gap se chegamos à decisão híbrida (mesmo que parcial)
-            if (inputGap) {
-                delete currentSession.last_input_gap;
-                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para decisão híbrida', { capability: inputGap.capability });
-            }
-
-            return {
+        } else if (routeDecision.nature === TaskNature.HYBRID) {
+            decision = {
                 strategy: CognitiveStrategy.HYBRID,
                 confidence: 0.9,
                 reason: "hybrid_informative_executable",
                 toolProposal: this.suggestHybridTool(text, classification.type),
-                capabilityAwarePlan
+                capabilityAwarePlan,
+                usedInputGap: !!inputGap
             };
-        }
-
-        if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
-            this.emitFinalDecisionRecommended({
-                sessionId,
-                strategy: CognitiveStrategy.TOOL,
-                reason: 'tool_execution',
-                capabilityAwarePlan
-            });
-
-            // Consome o gap se chegamos à execução de ferramenta (assumindo que o gap foi resolvido ou ignorado deliberadamente pela ferramenta)
-            if (inputGap) {
-                delete currentSession.last_input_gap;
-                this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap para execução de ferramenta', { capability: inputGap.capability });
-            }
-
-            return {
+        } else if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
+            decision = {
                 strategy: CognitiveStrategy.TOOL,
                 confidence: routeDecision.confidence,
                 reason: "tool_execution",
-                capabilityAwarePlan
+                capabilityAwarePlan,
+                usedInputGap: !!inputGap
+            };
+        } else {
+            decision = {
+                strategy: CognitiveStrategy.LLM,
+                confidence: routeDecision.confidence,
+                reason: "direct_response",
+                capabilityAwarePlan,
+                // KB-046: O gap deve ser consumido se chegamos ao LLM em um "normal path"
+                // onde avaliamos as capacidades e elas NÃO apresentaram gap bloqueador.
+                usedInputGap: !!inputGap && !capabilityGap.hasGap
             };
         }
 
-        this.emitFinalDecisionRecommended({
-            sessionId,
-            strategy: CognitiveStrategy.LLM,
-            reason: 'direct_response',
-            capabilityAwarePlan
-        });
+        // ── 4. CONSOLIDAÇÃO DE EFEITOS (Single Brain) ────────────────────────
+        if (decision.usedInputGap) {
+            delete currentSession.last_input_gap;
+            this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap utilizado na decisão.', { 
+                capability: inputGap?.capability,
+                reason: decision.reason
+            });
+        }
 
-        return {
-            strategy: CognitiveStrategy.LLM,
-            confidence: routeDecision.confidence,
-            reason: "direct_response",
-            capabilityAwarePlan
-        };
+        return decision;
     }
 
     public decideFlowStart(sessionId: string, text: string): string | undefined {
