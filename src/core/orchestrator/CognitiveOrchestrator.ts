@@ -14,13 +14,14 @@ import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceSc
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
 import { t } from '../../i18n';
-import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FallbackStrategySignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal, RepairStrategySignal } from '../../engine/AgentLoopTypes';
+import { CognitiveSignalsState, RouteAutonomySignal, StopContinueSignal, StepValidationSignal, ToolFallbackSignal, FallbackStrategySignal, FailSafeSignal, LlmRetrySignal, ReclassificationSignal, PlanAdjustmentSignal, RealityCheckSignal, RepairStrategySignal, ToolSelectionSignal } from '../../engine/AgentLoopTypes';
 import { SelfHealingSignal } from '../executor/AgentExecutor';
 import { emitDebug } from '../../shared/DebugBus';
 import { FailSafeModule } from './modules/FailSafeModule';
 import { StopContinueDeltaContext, StopContinueDeltaEvaluationResult, StopContinueExecutionContext, StopContinueModule } from './modules/StopContinueModule';
 import { IntentResult } from '../intent/IntentResult';
 import { PlanRuntimeSignals } from '../../capabilities/stepCapabilities';
+import { CapabilityFallback, CapabilityFallbackDecision } from '../../capabilities/capabilityFallback';
 import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecision';
 import { SearchSignal } from '../../shared/signals/SearchSignals';
 
@@ -320,6 +321,17 @@ export class CognitiveOrchestrator {
                 threshold: signals.fallbackStrategy.threshold,
                 toolCallsCount: signals.fallbackStrategy.toolCallsCount,
                 hasPendingSteps: signals.fallbackStrategy.hasPendingSteps
+            });
+        }
+
+        if (signals.toolSelection) {
+            this.logger.info('signal_tool_selection_observed', t('agent.kb024.tool_selection_signal_observed'), {
+                sessionId,
+                stepType: signals.toolSelection.stepType,
+                candidateTools: signals.toolSelection.candidateTools,
+                recommendedTool: signals.toolSelection.recommendedTool,
+                reason: signals.toolSelection.reason,
+                shouldExplore: signals.toolSelection.shouldExplore
             });
         }
 
@@ -838,9 +850,6 @@ export class CognitiveOrchestrator {
         const routeSignal = this.observedSignals.route;
 
         if (!routeSignal) {
-            this.logger.debug('no_route_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum RouteAutonomySignal observado para decisão ativa', {
-                sessionId
-            });
             return undefined;
         }
 
@@ -854,44 +863,31 @@ export class CognitiveOrchestrator {
             selfHealing: this.observedSelfHealingSignal
         });
 
-        let authorityOverride: RouteAutonomySignal | undefined;
-        if (authorityDecision.override === false) {
-            authorityOverride = undefined;
-        } else {
-            authorityOverride = routeSignal;
-        }
-
-        const finalDecision = authorityOverride ?? routeSignal;
-
         emitDebug('signal_authority_resolution', {
             type: 'signal_authority_resolution',
             sessionId,
             decisionPoint: 'route_autonomy',
             authorityDecision,
             overriddenSignals: [],
-            finalDecision: finalDecision ? {
-                recommendedStrategy: finalDecision.recommendedStrategy,
-                route: finalDecision.route,
-                reason: finalDecision.reason
-            } : undefined
+            finalDecision: {
+                route: routeSignal.route,
+                autonomyDecision: routeSignal.autonomyDecision,
+                requiresUserInput: routeSignal.requiresUserInput,
+                confidence: routeSignal.confidence
+            }
         });
 
-        this.logger.info('route_autonomy_active_decision', '[ORCHESTRATOR ACTIVE] Route autonomy decision applied', {
+        this.logger.info('route_active_decision', '[ORCHESTRATOR ACTIVE] RouteAutonomy aplicada', {
             sessionId,
-            source: 'loop_signal_applied_by_orchestrator',
-            strategy: routeSignal.recommendedStrategy,
             route: routeSignal.route,
-            reason: routeSignal.reason,
-            confidence: routeSignal.confidence,
-            requiresUserConfirmation: routeSignal.requiresUserConfirmation,
-            requiresUserInput: routeSignal.requiresUserInput,
             autonomyDecision: routeSignal.autonomyDecision,
-            suggestedTool: routeSignal.suggestedTool
+            requiresUserInput: routeSignal.requiresUserInput,
+            confidence: routeSignal.confidence,
+            source: 'loop_signal_applied_by_orchestrator'
         });
 
-        this._orchestratorAppliedDecisions.route = finalDecision;
-
-        return finalDecision ?? undefined;
+        this._orchestratorAppliedDecisions.route = routeSignal;
+        return routeSignal;
     }
 
     /**
@@ -899,8 +895,6 @@ export class CognitiveOrchestrator {
      *
      * Regras obrigatorias desta etapa (ETAPA 7):
      * - NAO recalcular heuristicas de ativacao (buildFailSafeSignal permanece no AgentLoop)
-        this._orchestratorAppliedDecisions.route = routeSignal ?? undefined;
-        return routeSignal ?? undefined;
      * - Apenas ler e aplicar o signal ja produzido pelo AgentLoop
      * - Safe mode: sem signal => undefined (loop permanece decisor)
      * - FailSafe tem PRIORIDADE sobre RouteAutonomy (apenas auditado aqui, nao resolvido)
@@ -1084,6 +1078,55 @@ export class CognitiveOrchestrator {
 
         this._orchestratorAppliedDecisions.fallbackStrategy = fallbackStrategySignal;
         return fallbackStrategySignal.shouldApplyHint;
+    }
+
+    /**
+     * ACTIVE MODE (KB-017): decide fallback de capability a partir de facts.
+     *
+     * Regras desta etapa:
+     * - Nao recalcular disponibilidade de capability
+     * - Nao embutir estrategia no modulo de capability
+     * - Decisao central no Orchestrator
+     * - Safe mode no executor: undefined => decisao local
+     */
+    public decideCapabilityFallback(context: {
+        sessionId: string;
+        signal: CapabilityFallback;
+    }): CapabilityFallbackDecision | undefined {
+        const { sessionId, signal } = context;
+
+        if (!signal?.capability) {
+            this.logger.debug('no_capability_fallback_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum CapabilityFallback facts disponivel para decisao ativa', {
+                sessionId
+            });
+            return undefined;
+        }
+
+        if (signal.context.suggestedDegradation) {
+            return {
+                action: 'degrade',
+                priority: signal.severity,
+                capability: signal.capability,
+                reason: 'degradation_available',
+                suggestedDegradation: signal.context.suggestedDegradation
+            };
+        }
+
+        if (signal.retryPossible) {
+            return {
+                action: 'retry',
+                priority: signal.severity,
+                capability: signal.capability,
+                reason: 'retry_possible'
+            };
+        }
+
+        return {
+            action: 'abort',
+            priority: 'high',
+            capability: signal.capability,
+            reason: 'capability_unavailable_no_safe_degradation'
+        };
     }
 
     /**
@@ -2110,6 +2153,71 @@ export class CognitiveOrchestrator {
             this.logger.error('decide_fallback_strategy_error', error, '[KB-027] Erro em decideSearchFallbackStrategy', { sessionId });
             return undefined;
         }
+    }
+
+    /**
+     * KB-024 FASE KB-024.1: observar signal explicito de selecao de tool sem ativar
+     * nova autoridade decisoria nesta etapa.
+     *
+     * O contrato permanece em safe mode: o loop consulta este ponto, mas a decisao final
+     * continua local ate a etapa seguinte de migracao formal para o Orchestrator.
+     */
+    public decideToolSelection(context: {
+        sessionId: string;
+        signal: ToolSelectionSignal;
+    }): ToolSelectionSignal | undefined {
+        const { sessionId, signal } = context;
+
+        this.logger.debug('tool_selection_decision_deferred', t('agent.kb024.tool_selection_decision_deferred'), {
+            sessionId,
+            stepType: signal.stepType,
+            highestPositiveCandidate: signal.highestPositiveCandidate,
+            explorationCandidate: signal.explorationCandidate,
+            shouldExplore: signal.shouldExplore,
+            source: 'passive_signal_only'
+        });
+
+        // ETAPA KB-024.2: Ativar autoridade real de selecao de tool
+        // Regra: exploration > positive > nothing
+        // Safe mode com retry em AgentLoop se retornar undefined
+
+        const recommendation: ToolSelectionSignal = {
+            ...signal,
+            recommendedTool: undefined,
+            reason: 'no_positive_score'
+        };
+
+        if (signal.shouldExplore && signal.explorationCandidate) {
+            recommendation.recommendedTool = signal.explorationCandidate;
+            recommendation.reason = 'exploration';
+            this.logger.info('tool_selection_active_decision', t('agent.kb024.orchestrator_tool_selection_exploration'), {
+                sessionId,
+                stepType: signal.stepType,
+                recommendedTool: recommendation.recommendedTool,
+                rate: signal.explorationRate.toFixed(2)
+            });
+            return recommendation;
+        }
+
+        if (signal.highestPositiveCandidate) {
+            recommendation.recommendedTool = signal.highestPositiveCandidate;
+            recommendation.reason = signal.hasContextualPositiveCandidate ? 'contextual_confidence' : 'positive_score';
+            this.logger.info('tool_selection_active_decision', t('agent.kb024.orchestrator_tool_selection_positive'), {
+                sessionId,
+                stepType: signal.stepType,
+                recommendedTool: recommendation.recommendedTool,
+                reason: recommendation.reason
+            });
+            return recommendation;
+        }
+
+        this.logger.debug('tool_selection_active_decision', t('agent.kb024.orchestrator_tool_selection_no_positive'), {
+            sessionId,
+            stepType: signal.stepType,
+            candidateTools: signal.candidateTools
+        });
+
+        return undefined;
     }
 
     /**

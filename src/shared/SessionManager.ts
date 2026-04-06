@@ -53,6 +53,41 @@ export interface SessionDeltaState {
     updatedAt: number;
 }
 
+export interface SessionExecutionMemoryEntry {
+    stepType: string;
+    tool: string;
+    success: boolean;
+    context: string;
+    timestamp: number;
+}
+
+export interface SessionExecutionMemoryState {
+    entries: SessionExecutionMemoryEntry[];
+    updatedAt: number;
+}
+
+export interface SessionExecutionMemoryToolScore {
+    tool: string;
+    score: number;
+    successes: number;
+    failures: number;
+}
+
+export interface SessionExecutionMemoryToolConfidence {
+    confidence: number;
+    isContextual: boolean;
+}
+
+export interface SessionExecutionMemorySelectionSnapshot {
+    stepType: string;
+    candidateTools: string[];
+    scores: SessionExecutionMemoryToolScore[];
+    contextualConfidenceByTool: Record<string, number>;
+    bestConfidence: number;
+    decisionConfidence: number;
+    updatedAt: number;
+}
+
 /**
  * KB-027 FASE 3: Cache centralizado para Search
  * Substitui 9 Maps desacopladas em SearchEngine, InvertedIndex, SemanticGraphBridge e AutoTagger
@@ -110,6 +145,7 @@ export interface SessionContext {
     flow_state?: FlowState;
     task_context?: TaskContextData; // Estado operacional contínuo da tarefa
     delta_state?: SessionDeltaState;
+    execution_memory_state?: SessionExecutionMemoryState;
     search_cache?: SearchCache; // KB-027 FASE 3: Cache centralizado para Search
 }
 
@@ -378,6 +414,214 @@ export class SessionManager {
             updatedAt: Date.now()
         };
         return session.delta_state;
+    }
+
+    static getExecutionMemoryState(session: SessionContext): SessionExecutionMemoryState {
+        if (!session.execution_memory_state) {
+            session.execution_memory_state = {
+                entries: [],
+                updatedAt: Date.now()
+            };
+        }
+
+        return session.execution_memory_state;
+    }
+
+    static setExecutionMemoryState(
+        session: SessionContext,
+        entries: SessionExecutionMemoryEntry[]
+    ): SessionExecutionMemoryState {
+        const state = this.getExecutionMemoryState(session);
+        state.entries = entries;
+        state.updatedAt = Date.now();
+        return state;
+    }
+
+    static appendExecutionMemoryEntry(
+        session: SessionContext,
+        entry: SessionExecutionMemoryEntry,
+        maxEntries: number
+    ): SessionExecutionMemoryState {
+        const state = this.getExecutionMemoryState(session);
+        state.entries.push(entry);
+
+        if (state.entries.length > maxEntries) {
+            state.entries = state.entries.slice(-maxEntries);
+        }
+
+        state.updatedAt = Date.now();
+        return state;
+    }
+
+    static resetExecutionMemoryState(session: SessionContext): SessionExecutionMemoryState {
+        session.execution_memory_state = {
+            entries: [],
+            updatedAt: Date.now()
+        };
+        return session.execution_memory_state;
+    }
+
+    static getExecutionMemoryToolScores(
+        session: SessionContext,
+        stepType: string,
+        maxAgeMs: number
+    ): SessionExecutionMemoryToolScore[] {
+        const state = this.getExecutionMemoryState(session);
+        const now = Date.now();
+        const recentMemory = state.entries.filter(
+            (entry) => entry.stepType === stepType && now - entry.timestamp < maxAgeMs
+        );
+
+        const toolStats = new Map<string, { success: number; failure: number }>();
+
+        for (const entry of recentMemory) {
+            const stats = toolStats.get(entry.tool) || { success: 0, failure: 0 };
+            if (entry.success) {
+                stats.success++;
+            } else {
+                stats.failure++;
+            }
+            toolStats.set(entry.tool, stats);
+        }
+
+        const scores: SessionExecutionMemoryToolScore[] = [];
+        toolStats.forEach((stats, tool) => {
+            scores.push({
+                tool,
+                score: stats.success - stats.failure,
+                successes: stats.success,
+                failures: stats.failure
+            });
+        });
+
+        return scores.sort((a, b) => b.score - a.score);
+    }
+
+    static getExecutionMemoryToolConfidence(
+        session: SessionContext,
+        stepType: string,
+        tool: string,
+        maxAgeMs: number,
+        minSamples: number
+    ): SessionExecutionMemoryToolConfidence {
+        const state = this.getExecutionMemoryState(session);
+        const now = Date.now();
+        const recentMemory = state.entries.filter(
+            (entry) => entry.stepType === stepType && entry.tool === tool && now - entry.timestamp < maxAgeMs
+        );
+
+        if (recentMemory.length >= minSamples) {
+            const successes = recentMemory.filter((entry) => entry.success).length;
+            return {
+                confidence: successes / recentMemory.length,
+                isContextual: true
+            };
+        }
+
+        const globalMemory = state.entries.filter(
+            (entry) => entry.tool === tool && now - entry.timestamp < maxAgeMs
+        );
+
+        if (globalMemory.length >= minSamples) {
+            const successes = globalMemory.filter((entry) => entry.success).length;
+            return {
+                confidence: successes / globalMemory.length,
+                isContextual: false
+            };
+        }
+
+        return {
+            confidence: 0,
+            isContextual: false
+        };
+    }
+
+    static getExecutionMemoryDecisionConfidence(
+        session: SessionContext,
+        stepType: string,
+        scores: Array<{
+            tool: string;
+            successes: number;
+            failures: number;
+        }>,
+        maxAgeMs: number,
+        minSamples: number
+    ): number {
+        if (scores.length === 0) {
+            return 0;
+        }
+
+        const bestScore = scores[0];
+        if (!bestScore) {
+            return 0;
+        }
+
+        const { confidence } = this.getExecutionMemoryToolConfidence(
+            session,
+            stepType,
+            bestScore.tool,
+            maxAgeMs,
+            minSamples
+        );
+
+        if (confidence > 0) {
+            return confidence;
+        }
+
+        const totalAttempts = bestScore.successes + bestScore.failures;
+        if (totalAttempts === 0) {
+            return 0;
+        }
+
+        return bestScore.successes / totalAttempts;
+    }
+
+    static getExecutionMemorySelectionSnapshot(
+        session: SessionContext,
+        params: {
+            stepType: string;
+            candidateTools: string[];
+            maxAgeMs: number;
+            minSamples: number;
+        }
+    ): SessionExecutionMemorySelectionSnapshot {
+        const scores = this.getExecutionMemoryToolScores(session, params.stepType, params.maxAgeMs);
+        const contextualConfidenceByTool: Record<string, number> = {};
+        let bestConfidence = 0;
+
+        for (const candidate of params.candidateTools) {
+            const { confidence } = this.getExecutionMemoryToolConfidence(
+                session,
+                params.stepType,
+                candidate,
+                params.maxAgeMs,
+                params.minSamples
+            );
+            contextualConfidenceByTool[candidate] = confidence;
+
+            const scoreEntry = scores.find((score) => score.tool === candidate);
+            if (scoreEntry && scoreEntry.score > 0 && confidence > bestConfidence) {
+                bestConfidence = confidence;
+            }
+        }
+
+        return {
+            stepType: params.stepType,
+            candidateTools: [...params.candidateTools],
+            scores,
+            contextualConfidenceByTool,
+            bestConfidence,
+            decisionConfidence: bestConfidence > 0
+                ? bestConfidence
+                : this.getExecutionMemoryDecisionConfidence(
+                    session,
+                    params.stepType,
+                    scores,
+                    params.maxAgeMs,
+                    params.minSamples
+                ),
+            updatedAt: Date.now()
+        };
     }
 
     /**

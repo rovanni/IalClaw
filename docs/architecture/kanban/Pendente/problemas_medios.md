@@ -86,13 +86,6 @@
   - Critério de pronto: idioma e ciclo de vida do sistema deixam de ficar fragmentados
 
 
-- [ ] KB-038 - Fase A (derivada de KB-037): Extrair StepResultValidator do AgentLoop sem mudar comportamento
-  - Origem: KB-037 (mapeamento de modularização)
-  - Risco: Médio
-  - dependência: nenhuma
-  - Ordem sugerida: 1
-  - Critério de pronto: validacao de step isolada em modulo dedicado, mantendo contratos de sinal e decisao final no Orchestrator
-
 - [ ] KB-039 - Fase B (derivada de KB-037): Extrair ToolFallbackAdvisor do AgentLoop como recomendador puro
   - Origem: KB-037 (mapeamento de modularização)
   - Risco: Médio

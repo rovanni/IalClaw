@@ -28,11 +28,6 @@
   - Data: 2026-04-04
   - Evidência: stepCapabilities agora extrai apenas PlanRuntimeSignals; decisão de skip/runtime centralizada no CognitiveOrchestrator via decidePlanRuntimeMode; fallback legado removido do AgentExecutor.
 
-- [x] KB-022 - Follow-up Skill Flow Single Brain
-
-  - Data: 2026-04-04
-  - Evidência: src/core/AgentController.ts (runWithSkill) migrou decisões ativas para applyActiveDecisions e passou a auditar consistência com auditSignalConsistency após ingestão/aplicação
-
 - [x] KB-022 - Remover split-brain de AgentController e AgentRuntime
   - Data: 2026-04-04
   - Evidência: AgentRuntime não instancia mais CognitiveOrchestrator local; AgentController extraiu context building/system prompt e consolidou ACTIVE DECISIONs via applyActiveDecisions no Orchestrator

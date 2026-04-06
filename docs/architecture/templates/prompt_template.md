@@ -83,7 +83,7 @@ Após qualquer alteração, os ficheiros nas pastas físicas devem ser atualizad
 1. Pendente: Remover o card de docs/architecture/kanban/Pendente/problemas_*.md.
 2. Andamento: Manter o rastro em docs/architecture/kanban/Em_Andamento/em_andamento.md.
 3. Testes: Registar evidências em docs/architecture/kanban/Testes/testes.md.
-4. Concluído: Remover o card de docs/architecture/kanban/Concluido/concluido.md.
+4. Concluído: Registrar o card em docs/architecture/kanban/Concluido/concluido.md quando o gate final for aprovado.
 5. Mapa: Atualizar o status em docs/architecture/kanban/mapa_problemas_sistema.md.
 
 ---

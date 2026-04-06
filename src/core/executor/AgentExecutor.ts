@@ -21,7 +21,7 @@ import { DiffOperation, validateDiffOperations } from '../../tools/workspaceDiff
 import { estimateChangeSize, resolveExecutionMode, selectDiffStrategy, selectValidationMode } from './diffStrategy';
 import { getContext } from '../../shared/TraceContext';
 import { getRequiredCapabilities } from '../../capabilities/taskCapabilities';
-import { handleCapabilityFallback } from '../../capabilities/capabilityFallback';
+import { CapabilityFallback, CapabilityFallbackDecision, handleCapabilityFallback } from '../../capabilities/capabilityFallback';
 import { skillManager } from '../../capabilities';
 import { SkillPolicy } from '../../capabilities/SkillManager';
 import { agentConfig } from './AgentConfig';
@@ -160,7 +160,8 @@ export class AgentExecutor {
                     error: capabilityCheck.error || 'Capacidade obrigatoria indisponivel.',
                     error_type: 'missing_capability',
                     capability: capabilityCheck.capability,
-                    fallback: capabilityCheck.fallback
+                    fallback: capabilityCheck.fallback,
+                    fallbackDecision: capabilityCheck.fallbackDecision
                 };
             }
 
@@ -844,7 +845,8 @@ export class AgentExecutor {
                         error: browserCapability.error,
                         error_type: 'missing_capability',
                         capability: 'browser_execution',
-                        fallback
+                        fallback,
+                        fallbackDecision: browserCapability.fallbackDecision
                     };
                 }
             }
@@ -1483,7 +1485,8 @@ JSON valido`
     private async ensureBrowserCapability(session: Session, goal: string): Promise<{
         available: boolean;
         error?: string;
-        fallback?: ReturnType<typeof handleCapabilityFallback>;
+        fallback?: CapabilityFallback;
+        fallbackDecision?: CapabilityFallbackDecision;
     }> {
         const required = getRequiredCapabilities({
             type: 'browser_validation'
@@ -1495,13 +1498,15 @@ JSON valido`
 
             if (!available) {
                 const fallback = handleCapabilityFallback(capability);
+                const fallbackDecision = this.resolveCapabilityFallbackDecision(session, fallback);
 
                 if (capability === 'browser_execution') {
                     if (overridePolicy === 'auto-install') {
                         return {
                             available: false,
                             error: 'Nao foi possivel instalar automaticamente o suporte a browser (Puppeteer) neste ambiente.',
-                            fallback
+                            fallback,
+                            fallbackDecision
                         };
                     }
 
@@ -1515,14 +1520,16 @@ Posso continuar em modo degradado sem validacao em browser, ou voce pode autoriz
 
 Se quiser autorizar, responda:
 "pode instalar o puppeteer"`,
-                        fallback
+                        fallback,
+                        fallbackDecision
                     };
                 }
 
                 return {
                     available: false,
                     error: `Capacidade obrigatoria indisponivel: ${capability}`,
-                    fallback
+                    fallback,
+                    fallbackDecision
                 };
             }
         }
@@ -1538,7 +1545,8 @@ Se quiser autorizar, responda:
         ok: boolean;
         capability?: string;
         error?: string;
-        fallback?: ReturnType<typeof handleCapabilityFallback>;
+        fallback?: CapabilityFallback;
+        fallbackDecision?: CapabilityFallbackDecision;
     }> {
         if (step.tool === 'workspace_run_project' && !requiresDOM(step)) {
             debugBus.emit('browser_skipped', {
@@ -1571,10 +1579,12 @@ Se quiser autorizar, responda:
 
             if (!available) {
                 const fallback = handleCapabilityFallback(capability as any);
+                const fallbackDecision = this.resolveCapabilityFallbackDecision(session, fallback);
                 debugBus.emit('capability_fallback', {
                     capability,
                     stepId: step.id,
                     fallback,
+                    fallbackDecision,
                     trace_id: getTraceIdSafe()
                 });
 
@@ -1584,7 +1594,8 @@ Se quiser autorizar, responda:
                             ok: false,
                             capability,
                             error: 'Nao foi possivel instalar automaticamente o suporte a browser (Puppeteer) neste ambiente.',
-                            fallback
+                            fallback,
+                            fallbackDecision
                         };
                     }
 
@@ -1599,7 +1610,8 @@ Posso continuar em modo degradado sem validacao em browser, ou voce pode autoriz
 
 Se quiser autorizar, responda:
 "pode instalar o puppeteer"`,
-                        fallback
+                        fallback,
+                        fallbackDecision
                     };
                 }
 
@@ -1607,7 +1619,8 @@ Se quiser autorizar, responda:
                     ok: false,
                     capability,
                     error: `Capacidade obrigatoria indisponivel: ${capability}`,
-                    fallback
+                    fallback,
+                    fallbackDecision
                 };
             }
 
@@ -1619,6 +1632,60 @@ Se quiser autorizar, responda:
         }
 
         return { ok: true };
+    }
+
+    private getLocalCapabilityFallbackDecision(fallback: CapabilityFallback): CapabilityFallbackDecision {
+        if (fallback.context.suggestedDegradation) {
+            return {
+                action: 'degrade',
+                priority: fallback.severity,
+                capability: fallback.capability,
+                reason: 'local_degradation_available',
+                suggestedDegradation: fallback.context.suggestedDegradation
+            };
+        }
+
+        if (fallback.retryPossible) {
+            return {
+                action: 'retry',
+                priority: fallback.severity,
+                capability: fallback.capability,
+                reason: 'local_retry_possible'
+            };
+        }
+
+        return {
+            action: 'abort',
+            priority: 'high',
+            capability: fallback.capability,
+            reason: 'local_capability_unavailable_no_safe_degradation'
+        };
+    }
+
+    private resolveCapabilityFallbackDecision(
+        session: Session | undefined,
+        fallback: CapabilityFallback
+    ): CapabilityFallbackDecision {
+        const localDecision = this.getLocalCapabilityFallbackDecision(fallback);
+        const orchestratorDecision = session?.conversation_id
+            ? this.orchestrator?.decideCapabilityFallback({
+                sessionId: session.conversation_id,
+                signal: fallback
+            })
+            : undefined;
+
+        const finalDecision = orchestratorDecision ?? localDecision;
+
+        debugBus.emit('capability_fallback_decision', {
+            capability: fallback.capability,
+            failureType: fallback.failureType,
+            localDecision,
+            orchestratorDecision,
+            finalDecision,
+            trace_id: getTraceIdSafe()
+        });
+
+        return finalDecision;
     }
 
     private parsePlan(rawPlan: string): ExecutionPlan {

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
+import { handleCapabilityFallback } from '../capabilities/capabilityFallback';
 import { agentConfig, getExecutionModeSnapshot } from '../core/executor/AgentConfig';
+import { AgentExecutor } from '../core/executor/AgentExecutor';
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
 import { clearLearningBuffer, getLearningBuffer, hashLearningInput, pushLearningRecord } from '../core/executor/operationalLearning';
 import { normalizeExecutionPlan, repairPlanStructure } from '../core/executor/repairPipeline';
@@ -229,6 +231,39 @@ async function run() {
         executorDecision: true
     });
     assert.equal(retryGovernedDecision, false);
+
+    const capabilityFallbackSignal = handleCapabilityFallback('browser_execution');
+
+    const executorWithoutOrchestrator = new AgentExecutor({} as any);
+    const localCapabilityDecision = (executorWithoutOrchestrator as any).resolveCapabilityFallbackDecision(
+        undefined,
+        capabilityFallbackSignal
+    );
+    assert.equal(localCapabilityDecision.action, 'degrade');
+    assert.equal(localCapabilityDecision.priority, 'medium');
+
+    const capabilityOrchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+    const executorWithOrchestrator = new AgentExecutor({} as any, capabilityOrchestrator);
+    const capabilitySession = { conversation_id: 'kb017-capability-safe-mode' } as any;
+
+    const governedCapabilityDecision = (executorWithOrchestrator as any).resolveCapabilityFallbackDecision(
+        capabilitySession,
+        capabilityFallbackSignal
+    );
+    assert.equal(governedCapabilityDecision.action, 'degrade');
+    assert.equal(governedCapabilityDecision.reason, 'degradation_available');
+
+    const originalCapabilityDecider = (capabilityOrchestrator as any).decideCapabilityFallback;
+    (capabilityOrchestrator as any).decideCapabilityFallback = () => undefined;
+
+    const safeModeCapabilityDecision = (executorWithOrchestrator as any).resolveCapabilityFallbackDecision(
+        capabilitySession,
+        capabilityFallbackSignal
+    );
+    assert.equal(safeModeCapabilityDecision.action, localCapabilityDecision.action);
+    assert.equal(safeModeCapabilityDecision.reason, localCapabilityDecision.reason);
+
+    (capabilityOrchestrator as any).decideCapabilityFallback = originalCapabilityDecider;
 
     const templatePlan = await createWebProjectTemplate.build({
         goal: 'crie um jogo da cobrinha em HTML',
@@ -1142,6 +1177,221 @@ async function run() {
             assert.equal(orchestrated.decisionSource, "orchestrator");
         }
     });
+
+    // ── Test: KB-024 execution memory deve ser session-scoped ──
+    await SessionManager.runWithSession('kb-024-execution-memory-a', async () => {
+        const sessionA = SessionManager.getCurrentSession()!;
+        const sessionB = SessionManager.getSession('kb-024-execution-memory-b');
+
+        SessionManager.resetExecutionMemoryState(sessionA);
+        SessionManager.resetExecutionMemoryState(sessionB);
+
+        for (let i = 0; i < 55; i++) {
+            SessionManager.appendExecutionMemoryEntry(sessionA, {
+                stepType: `step-${i}`,
+                tool: `tool-${i % 3}`,
+                success: i % 2 === 0,
+                context: `ctx-${i}`,
+                timestamp: i
+            }, 50);
+        }
+
+        const stateAAfterAppend = SessionManager.getExecutionMemoryState(sessionA);
+        const stateBAfterAppend = SessionManager.getExecutionMemoryState(sessionB);
+
+        assert.equal(stateAAfterAppend.entries.length, 50, 'Session A deve respeitar limite maxEntries=50');
+        assert.equal(stateAAfterAppend.entries[0]?.stepType, 'step-5', 'Session A deve manter apenas as ultimas 50 entradas');
+        assert.equal(stateAAfterAppend.entries[49]?.stepType, 'step-54', 'Session A deve manter a entrada mais recente');
+        assert.equal(stateBAfterAppend.entries.length, 0, 'Session B deve permanecer isolada sem entradas');
+
+        SessionManager.appendExecutionMemoryEntry(sessionB, {
+            stepType: 'step-b-1',
+            tool: 'tool-b',
+            success: true,
+            context: 'ctx-b-1',
+            timestamp: Date.now()
+        }, 50);
+
+        const stateAStillIsolated = SessionManager.getExecutionMemoryState(sessionA);
+        const stateBWithOneEntry = SessionManager.getExecutionMemoryState(sessionB);
+
+        assert.equal(stateAStillIsolated.entries.length, 50, 'Session A deve continuar com 50 entradas');
+        assert.equal(stateBWithOneEntry.entries.length, 1, 'Session B deve ter exatamente 1 entrada');
+        assert.equal(stateBWithOneEntry.entries[0]?.stepType, 'step-b-1');
+
+        const compactedEntries = stateAStillIsolated.entries.slice(-2);
+        SessionManager.setExecutionMemoryState(sessionA, compactedEntries);
+        assert.equal(SessionManager.getExecutionMemoryState(sessionA).entries.length, 2, 'setExecutionMemoryState deve sobrescrever entries da sessao');
+
+        SessionManager.resetExecutionMemoryState(sessionA);
+
+        const stateAAfterReset = SessionManager.getExecutionMemoryState(sessionA);
+        const stateBAfterResetA = SessionManager.getExecutionMemoryState(sessionB);
+
+        assert.equal(stateAAfterReset.entries.length, 0, 'Reset deve limpar apenas a sessao alvo');
+        assert.equal(stateBAfterResetA.entries.length, 1, 'Reset de A nao deve afetar sessao B');
+
+        const rankingSession = SessionManager.getSession('kb-024-ranking-session');
+        SessionManager.resetExecutionMemoryState(rankingSession);
+
+        const now = Date.now();
+        SessionManager.appendExecutionMemoryEntry(rankingSession, {
+            stepType: 'salvar arquivo',
+            tool: 'write_file',
+            success: true,
+            context: 'ctx-r1',
+            timestamp: now - 1000
+        }, 50);
+        SessionManager.appendExecutionMemoryEntry(rankingSession, {
+            stepType: 'salvar arquivo',
+            tool: 'write_file',
+            success: true,
+            context: 'ctx-r2',
+            timestamp: now - 500
+        }, 50);
+        SessionManager.appendExecutionMemoryEntry(rankingSession, {
+            stepType: 'salvar arquivo',
+            tool: 'workspace_save_artifact',
+            success: false,
+            context: 'ctx-r3',
+            timestamp: now - 300
+        }, 50);
+        SessionManager.appendExecutionMemoryEntry(rankingSession, {
+            stepType: 'outro',
+            tool: 'workspace_save_artifact',
+            success: true,
+            context: 'ctx-r4',
+            timestamp: now - 200
+        }, 50);
+
+        const rankingSnapshot = SessionManager.getExecutionMemorySelectionSnapshot(rankingSession, {
+            stepType: 'salvar arquivo',
+            candidateTools: ['write_file', 'workspace_save_artifact'],
+            maxAgeMs: 3600000,
+            minSamples: 2
+        });
+
+        assert.equal(rankingSnapshot.scores.length, 2, 'Snapshot de ranking deve consolidar scores por tool na sessao');
+        assert.equal(rankingSnapshot.scores[0]?.tool, 'write_file', 'Tool com score positivo maior deve aparecer primeiro');
+        assert.equal(rankingSnapshot.scores[0]?.score, 2, 'write_file deve refletir 2 sucessos e 0 falhas');
+        assert.equal(rankingSnapshot.scores[1]?.tool, 'workspace_save_artifact', 'Tool secundaria deve permanecer no ranking');
+        assert.equal(rankingSnapshot.scores[1]?.score, -1, 'workspace_save_artifact deve refletir falha contextual');
+        assert.equal(rankingSnapshot.contextualConfidenceByTool.write_file, 1, 'Confidence contextual da tool principal deve ser 1.0');
+        assert.equal(rankingSnapshot.contextualConfidenceByTool.workspace_save_artifact, 0.5, 'Fallback global deve ser usado quando nao houver amostra contextual minima');
+        assert.equal(rankingSnapshot.bestConfidence, 1, 'Snapshot deve expor bestConfidence contextual');
+        assert.equal(rankingSnapshot.decisionConfidence, 1, 'Decision confidence deve reutilizar o melhor confidence disponivel');
+    });
+
+    // ── Test: KB-024 tool selection deve permanecer passiva no Orchestrator nesta fase ──
+    const kb024SelectionOrchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+
+    kb024SelectionOrchestrator.ingestSignalsFromLoop({
+        failSafe: { activated: true, trigger: 'intent_clear' }
+    } as any, 'kb-024-tool-selection');
+
+    const kb024GovernedSelection = kb024SelectionOrchestrator.decideToolSelection({
+        sessionId: 'kb-024-tool-selection',
+        signal: {
+            stepType: 'salvar arquivo',
+            candidateTools: ['write_file', 'workspace_save_artifact'],
+            scores: [
+                { tool: 'write_file', score: 3, successes: 3, failures: 0 },
+                { tool: 'workspace_save_artifact', score: 1, successes: 1, failures: 0 }
+            ],
+            contextualConfidenceByTool: {
+                write_file: 1,
+                workspace_save_artifact: 0.5
+            },
+            fallbackConfidence: 1,
+            explorationRate: 0.4,
+            shouldExplore: true,
+            hasContextualPositiveCandidate: true,
+            explorationCandidate: 'workspace_save_artifact',
+            highestPositiveCandidate: 'write_file'
+        }
+    });
+
+    // ETAPA KB-024.2: Orchestrator agora e ATIVO em selecao de tool
+    assert.notEqual(kb024GovernedSelection, undefined, 'Orchestrator deve retornar decisao ativa quando houver exploacao+candidato');
+    assert.equal(kb024GovernedSelection?.reason, 'exploration', 'Com shouldExplore=true, Orchestrator deve recomendar exploacao');
+    assert.equal(kb024GovernedSelection?.recommendedTool, 'workspace_save_artifact', 'Exploacao deve usar explorationCandidate');
+
+    const kb024ExplorationOrchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+    const kb024ExplorationSelection = kb024ExplorationOrchestrator.decideToolSelection({
+        sessionId: 'kb-024-tool-selection-free',
+        signal: {
+            stepType: 'salvar arquivo',
+            candidateTools: ['write_file', 'workspace_save_artifact'],
+            scores: [
+                { tool: 'write_file', score: 3, successes: 3, failures: 0 },
+                { tool: 'workspace_save_artifact', score: 1, successes: 1, failures: 0 }
+            ],
+            contextualConfidenceByTool: {
+                write_file: 1,
+                workspace_save_artifact: 0.5
+            },
+            fallbackConfidence: 1,
+            explorationRate: 0.4,
+            shouldExplore: true,
+            hasContextualPositiveCandidate: true,
+            explorationCandidate: 'workspace_save_artifact',
+            highestPositiveCandidate: 'write_file'
+        }
+    });
+
+    // Mesmo sem FailSafe ativo, exploacao aparece porque e logica pura do signal
+    assert.notEqual(kb024ExplorationSelection, undefined, 'Even without FailSafe, exploacao com candidato deve ser recomendada');
+    assert.equal(kb024ExplorationSelection?.reason, 'exploration', 'Exploacao deve ser recomendada quando signal.shouldExplore=true');
+
+    const kb024ContextualSelection = kb024ExplorationOrchestrator.decideToolSelection({
+        sessionId: 'kb-024-tool-selection-contextual',
+        signal: {
+            stepType: 'salvar arquivo',
+            candidateTools: ['write_file', 'workspace_save_artifact'],
+            scores: [
+                { tool: 'write_file', score: 3, successes: 3, failures: 0 },
+                { tool: 'workspace_save_artifact', score: 1, successes: 1, failures: 0 }
+            ],
+            contextualConfidenceByTool: {
+                write_file: 1,
+                workspace_save_artifact: 0.5
+            },
+            fallbackConfidence: 1,
+            explorationRate: 0.2,
+            shouldExplore: false,
+            hasContextualPositiveCandidate: true,
+            highestPositiveCandidate: 'write_file'
+        }
+    });
+
+    // Sem exploacao mas com candidato positivo, Orchestrator recomenda o positivo
+    assert.notEqual(kb024ContextualSelection, undefined, 'Com candidato positivo e sem exploacao, Orchestrator recomenda o positivo');
+    assert.equal(kb024ContextualSelection?.reason, 'contextual_confidence', 'Score positivo com contexto deve ter motivo contextual');
+    assert.equal(kb024ContextualSelection?.recommendedTool, 'write_file', 'Deve recomendar o candidato positivo');
+
+    // ETAPA KB-024.2: Validar seguranca quando nao houver candidato positivo
+    const kb024NoPositiveSelection = kb024ExplorationOrchestrator.decideToolSelection({
+        sessionId: 'kb-024-tool-selection-no-positive',
+        signal: {
+            stepType: 'salvar arquivo',
+            candidateTools: ['write_file', 'workspace_save_artifact'],
+            scores: [
+                { tool: 'write_file', score: -1, successes: 0, failures: 1 },
+                { tool: 'workspace_save_artifact', score: -2, successes: 0, failures: 2 }
+            ],
+            contextualConfidenceByTool: {
+                write_file: 0,
+                workspace_save_artifact: 0
+            },
+            fallbackConfidence: 0,
+            explorationRate: 0.2,
+            shouldExplore: false,
+            hasContextualPositiveCandidate: false,
+            highestPositiveCandidate: undefined
+        }
+    });
+
+    assert.equal(kb024NoPositiveSelection, undefined, 'Sem candidato positivo e exploacao desativada, Orchestrator return undefined (safe)');
 
     console.log('All tests passed.');
 

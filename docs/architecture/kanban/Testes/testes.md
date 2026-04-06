@@ -35,6 +35,41 @@ Objetivo deste arquivo:
     - `source` correto por tipo de tarefa.
     - Em filesystem, 100% dos steps com `tool` preenchido.
 
+- [ ] KB-024 - Centralizar ranking e estado de memoria no SessionManager (parcialmente mitigado)
+  - Status: ETAPA KB-024.1 concluida; ETAPA KB-024.2 de autoridade ativa adiada para manter aderencia ao template nesta fase.
+
+  - [ ] KB-024 ETAPA KB-024.2 - Ativar autoridade do Orchestrator em selecao de tool (adiada)
+    - Status: nao ativada nesta fase para preservar migracao segura em safe mode.
+    - Comportamento esperado:
+      - `decideToolSelection()` no Orchestrator deve permanecer observacional (passivo).
+      - decisao final deve continuar no loop enquanto a migracao de autoridade nao for concluida.
+      - safe mode obrigatorio: `finalDecision = orchestratorDecision ?? loopDecision`.
+    - Evidencias atuais:
+      - ToolSelectionSignal emitido pelo loop e ingerido pelo Orchestrator para observabilidade.
+      - fallback local permanece ativo no AgentLoop nesta etapa.
+      - Suite de testes valida trilha de memoria por sessao e contrato de safe mode.
+      - i18n adicionado com 3 chaves em pt-BR.json e en-US.json.
+      - `node ./node_modules/typescript/bin/tsc --noEmit` sem diagnosticos em arquivos modificados.
+  - Comportamento esperado:
+    - execution memory deve ser persistida por sessao no SessionManager.
+    - limite de entries deve respeitar janela maxima configurada.
+    - reset de uma sessao nao deve afetar outra sessao.
+    - selecao de tool deve emitir signal explicito e permitir decisao final do Orchestrator em safe mode.
+  - Evidencias atuais:
+    - APIs adicionadas em `src/shared/SessionManager.ts`: `getExecutionMemoryState`, `setExecutionMemoryState`, `appendExecutionMemoryEntry`, `resetExecutionMemoryState`.
+    - `AgentLoop` passou a registrar/leitura de execution memory via SessionManager (estado session-scoped), removendo fonte local como autoridade.
+    - `SessionManager` agora expõe snapshot factual de ranking por sessao (`getExecutionMemoryToolScores`, `getExecutionMemoryToolConfidence`, `getExecutionMemoryDecisionConfidence`, `getExecutionMemorySelectionSnapshot`), e o `AgentLoop` consome esse snapshot em vez de recalcular agregados a partir de entries locais.
+    - Suite `src/tests/run.ts` recebeu teste dedicado KB-024 cobrindo isolamento entre sessoes, limite maxEntries, sobrescrita por set e reset por escopo.
+    - Suite `src/tests/run.ts` passou a cobrir consolidacao de ranking por sessao, fallback global de confidence e `decisionConfidence` derivado do snapshot factual.
+    - `AgentLoop` passou a emitir `ToolSelectionSignal` como fatos e consultar `CognitiveOrchestrator.decideToolSelection(...)` em safe mode.
+    - `CognitiveOrchestrator.decideToolSelection(...)` permanece passivo nesta fase e retorna `undefined`, preservando a decisao local enquanto o signal e a trilha de auditoria sao estabilizados.
+    - Suite `src/tests/run.ts` cobre que a selecao de tool permanece passiva no Orchestrator em 3 cenarios: com FailSafe ativo, com exploracao sugerida e com contexto positivo sem exploracao.
+    - `node ./node_modules/typescript/bin/tsc --noEmit` sem diagnosticos no workspace.
+    - `npx.cmd ts-node src/tests/run.ts` executado com fechamento em `All tests passed`.
+  - [ ] Gate da proxima etapa
+    - Concluir extracao facts-first e remover decisao local residual do AgentLoop.
+    - So apos isso rodar regressao completa para avaliar fechamento do card.
+
 - [x] KB-027 - Neutralizar Search como subsistema decisorio isolado (F3/F4)
   - Status: concluido em 5 de abril de 2026 com FASE 3 e FASE 4 validadas.
   - Comportamento esperado:

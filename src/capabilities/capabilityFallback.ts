@@ -1,32 +1,61 @@
 import { Capability } from './CapabilityRegistry';
 
 export type CapabilityFallback =
-    | {
-        mode: 'degraded';
-        strategy: 'static_validation' | 'no_versioning';
-    }
-    | {
-        mode: 'blocked';
-        reason: string;
+    {
+        failureType: 'capability_missing';
+        capability: Capability;
+        retryPossible: boolean;
+        severity: 'medium' | 'high';
+        reasonCode: string;
+        context: {
+            suggestedDegradation?: 'static_validation' | 'no_versioning';
+        };
     };
+
+export type CapabilityFallbackDecisionAction = 'retry' | 'abort' | 'switch_tool' | 'degrade';
+export type CapabilityFallbackDecisionPriority = 'low' | 'medium' | 'high';
+
+export type CapabilityFallbackDecision = {
+    action: CapabilityFallbackDecisionAction;
+    priority: CapabilityFallbackDecisionPriority;
+    capability: Capability;
+    reason: string;
+    suggestedDegradation?: 'static_validation' | 'no_versioning';
+};
 
 export function handleCapabilityFallback(capability: Capability): CapabilityFallback {
     if (capability === 'browser_execution') {
         return {
-            mode: 'degraded',
-            strategy: 'static_validation'
+            failureType: 'capability_missing',
+            capability,
+            retryPossible: true,
+            severity: 'medium',
+            reasonCode: `missing_${capability}`,
+            context: {
+                suggestedDegradation: 'static_validation'
+            }
         };
     }
 
     if (capability === 'git') {
         return {
-            mode: 'degraded',
-            strategy: 'no_versioning'
+            failureType: 'capability_missing',
+            capability,
+            retryPossible: true,
+            severity: 'medium',
+            reasonCode: `missing_${capability}`,
+            context: {
+                suggestedDegradation: 'no_versioning'
+            }
         };
     }
 
     return {
-        mode: 'blocked',
-        reason: `missing_${capability}`
+        failureType: 'capability_missing',
+        capability,
+        retryPossible: false,
+        severity: 'high',
+        reasonCode: `missing_${capability}`,
+        context: {}
     };
 }

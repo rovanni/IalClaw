@@ -29,6 +29,7 @@ import {
     StepValidationResult, 
     ToolFallbackTrigger, 
     ToolFallbackSignal, 
+    ToolSelectionSignal,
     LlmRetrySignal, 
     ReclassificationSignal, 
     RouteAutonomySignal,
@@ -105,7 +106,6 @@ export class AgentLoop {
         lastToolResult: null,
         planTaskType: null
     };
-    private executionMemory: ExecutionMemoryEntry[] = [];
     private readonly MAX_MEMORY_ENTRIES = 50;
     private originalInput: string = '';
     private currentTaskType: TaskType | null = null;
@@ -272,7 +272,6 @@ export class AgentLoop {
         this.createdPaths.clear();
         let toolCallsCount = 0;
         this.reclassificationAttempts = 0;
-        this.executionMemory = [];
         this.mode = 'THINKING';
         this.disableFollowUpQuestions = false;
         this.refinementUsed = false;
@@ -292,7 +291,11 @@ export class AgentLoop {
         if (session && (session.conversation_id === 'default' || !session.conversation_id)) {
             session.conversation_history = [];
             session.pending_actions = [];
+            SessionManager.resetExecutionMemoryState(session);
         }
+
+        const resetSession = SessionManager.getSession(this.chatId || 'default');
+        SessionManager.resetExecutionMemoryState(resetSession);
 
         ToolReliability.reset();
     }
@@ -2642,6 +2645,16 @@ Evite ferramentas que já falharam: ${Array.from(this.executionContext.toolsFail
         SessionManager.resetDeltaState(session);
     }
 
+    private getExecutionMemoryEntries(): ExecutionMemoryEntry[] {
+        const session = SessionManager.getSession(this.chatId || 'default');
+        const state = SessionManager.getExecutionMemoryState(session);
+        return state.entries;
+    }
+
+    private getExecutionMemorySession() {
+        return SessionManager.getSession(this.chatId || 'default');
+    }
+
     private getDeltaState(): { previousConfidence: number | null; lowImprovementCount: number } {
         const session = SessionManager.getSession(this.chatId || 'default');
         const deltaState = SessionManager.getDeltaState(session);
@@ -2971,11 +2984,9 @@ Considere:
             timestamp: Date.now()
         };
 
-        this.executionMemory.push(entry);
-
-        if (this.executionMemory.length > this.MAX_MEMORY_ENTRIES) {
-            this.executionMemory.shift();
-        }
+        const session = SessionManager.getSession(this.chatId || 'default');
+        const updatedState = SessionManager.appendExecutionMemoryEntry(session, entry, this.MAX_MEMORY_ENTRIES);
+        const updatedMemory = updatedState.entries;
 
         if (this.decisionMemory && this.currentTaskType) {
             try {
@@ -3026,38 +3037,13 @@ Considere:
         const status = success ? 'sucesso' : 'falha';
         this.logger.debug('execution_memory', `[LEARNING] ${tool} → ${status} para step "${step.description}"`, {
             stepType: entry.stepType,
-            totalEntries: this.executionMemory.length
+            totalEntries: updatedMemory.length
         });
     }
 
     private getToolScores(stepType: string): ToolScore[] {
-        const recentMemory = this.executionMemory.filter(
-            e => e.stepType === stepType && Date.now() - e.timestamp < 3600000
-        );
-
-        const toolStats = new Map<string, { success: number; failure: number }>();
-
-        for (const entry of recentMemory) {
-            const stats = toolStats.get(entry.tool) || { success: 0, failure: 0 };
-            if (entry.success) {
-                stats.success++;
-            } else {
-                stats.failure++;
-            }
-            toolStats.set(entry.tool, stats);
-        }
-
-        const scores: ToolScore[] = [];
-        toolStats.forEach((stats, tool) => {
-            scores.push({
-                tool,
-                score: stats.success - stats.failure,
-                successes: stats.success,
-                failures: stats.failure
-            });
-        });
-
-        return scores.sort((a, b) => b.score - a.score);
+        const session = this.getExecutionMemorySession();
+        return SessionManager.getExecutionMemoryToolScores(session, stepType, 3600000);
     }
 
     private static readonly EXPLORATION_RATE_HIGH = 0.4;
@@ -3068,57 +3054,42 @@ Considere:
     private static readonly MIN_CONTEXTUAL_SAMPLES = 2;
 
     private getContextualConfidence(stepType: string, tool: string): { confidence: number; isContextual: boolean } {
-        const recentMemory = this.executionMemory.filter(
-            e => e.stepType === stepType && e.tool === tool && Date.now() - e.timestamp < 3600000
+        const session = this.getExecutionMemorySession();
+        const result = SessionManager.getExecutionMemoryToolConfidence(
+            session,
+            stepType,
+            tool,
+            3600000,
+            AgentLoop.MIN_CONTEXTUAL_SAMPLES
         );
 
-        if (recentMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
-            const successes = recentMemory.filter(e => e.success).length;
-            const confidence = successes / recentMemory.length;
-
-            this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} contextual_samples=${recentMemory.length} rate=${confidence.toFixed(2)}`);
-
-            return { confidence, isContextual: true };
+        if (result.confidence > 0) {
+            const sampleScope = result.isContextual ? 'contextual' : 'global';
+            this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} scope=${sampleScope} rate=${result.confidence.toFixed(2)}`);
         }
 
-        const globalMemory = this.executionMemory.filter(
-            e => e.tool === tool && Date.now() - e.timestamp < 3600000
-        );
-
-        if (globalMemory.length >= AgentLoop.MIN_CONTEXTUAL_SAMPLES) {
-            const successes = globalMemory.filter(e => e.success).length;
-            const confidence = successes / globalMemory.length;
-
-            this.logger.debug('confidence', `[CONFIDENCE] step=${stepType} tool=${tool} global_samples=${globalMemory.length} rate=${confidence.toFixed(2)} (fallback)`);
-
-            return { confidence, isContextual: false };
-        }
-
-        return { confidence: 0, isContextual: false };
+        return result;
     }
 
     private getDecisionConfidence(stepType: string, scores: ToolScore[]): number {
-        if (scores.length === 0) {
-            return 0;
-        }
+        const session = this.getExecutionMemorySession();
+        return SessionManager.getExecutionMemoryDecisionConfidence(
+            session,
+            stepType,
+            scores,
+            3600000,
+            AgentLoop.MIN_CONTEXTUAL_SAMPLES
+        );
+    }
 
-        const bestScore = scores[0];
-        if (!bestScore) {
-            return 0;
-        }
-
-        const { confidence, isContextual } = this.getContextualConfidence(stepType, bestScore.tool);
-
-        if (confidence > 0) {
-            return confidence;
-        }
-
-        const totalAttempts = bestScore.successes + bestScore.failures;
-        if (totalAttempts === 0) {
-            return 0;
-        }
-
-        return bestScore.successes / totalAttempts;
+    private getExecutionMemorySelectionSnapshot(stepType: string, candidateTools: string[]) {
+        const session = this.getExecutionMemorySession();
+        return SessionManager.getExecutionMemorySelectionSnapshot(session, {
+            stepType,
+            candidateTools,
+            maxAgeMs: 3600000,
+            minSamples: AgentLoop.MIN_CONTEXTUAL_SAMPLES
+        });
     }
 
     private getAdaptiveExplorationRate(confidence: number): number {
@@ -3131,32 +3102,49 @@ Considere:
         }
     }
 
+    private buildToolSelectionSignal(params: {
+        stepType: string;
+        candidateTools: string[];
+        scores: ToolScore[];
+        contextualConfidenceByTool: Record<string, number>;
+        fallbackConfidence: number;
+        explorationRate: number;
+        shouldExplore: boolean;
+        hasContextualPositiveCandidate: boolean;
+        explorationCandidate?: string;
+        highestPositiveCandidate?: string;
+    }): ToolSelectionSignal {
+        return {
+            stepType: params.stepType,
+            candidateTools: params.candidateTools,
+            scores: params.scores.map((score) => ({
+                tool: score.tool,
+                score: score.score,
+                successes: score.successes,
+                failures: score.failures
+            })),
+            contextualConfidenceByTool: params.contextualConfidenceByTool,
+            fallbackConfidence: params.fallbackConfidence,
+            explorationRate: params.explorationRate,
+            shouldExplore: params.shouldExplore,
+            hasContextualPositiveCandidate: params.hasContextualPositiveCandidate,
+            explorationCandidate: params.explorationCandidate,
+            highestPositiveCandidate: params.highestPositiveCandidate
+        };
+    }
+
     private getBestToolForStep(stepDescription: string, candidateTools: string[]): string | null {
         const stepType = this.getStepType(stepDescription);
-        const scores = this.getToolScores(stepType);
-
-        if (scores.length === 0) {
-            return null;
-        }
-
-        let bestCandidate = candidateTools[0];
-        let bestConfidence = 0;
-
-        for (const candidate of candidateTools) {
-            const scoreEntry = scores.find(s => s.tool === candidate);
-            if (scoreEntry && scoreEntry.score > 0) {
-                const { confidence } = this.getContextualConfidence(stepType, candidate);
-                if (confidence > bestConfidence) {
-                    bestConfidence = confidence;
-                    bestCandidate = candidate;
-                }
-            }
-        }
-
-        const decisionConfidence = bestConfidence > 0 ? bestConfidence : this.getDecisionConfidence(stepType, scores);
+        const snapshot = this.getExecutionMemorySelectionSnapshot(stepType, candidateTools);
+        const scores = snapshot.scores;
+        const contextualConfidenceByTool = snapshot.contextualConfidenceByTool;
+        const bestConfidence = snapshot.bestConfidence;
+        const decisionConfidence = snapshot.decisionConfidence;
         const explorationRate = this.getAdaptiveExplorationRate(decisionConfidence);
 
         const shouldExplore = candidateTools.length > 1 && Math.random() < explorationRate;
+        let explorationCandidate: string | undefined;
+        let positiveCandidate: string | undefined;
 
         if (shouldExplore) {
             const validAlternatives = candidateTools.filter(tool => {
@@ -3165,33 +3153,97 @@ Considere:
             });
 
             if (validAlternatives.length > 1) {
-                const randomTool = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
-                this.logger.info('tool_selection', `[EXPLORATION] confidence=${decisionConfidence.toFixed(2)} rate=${explorationRate} choosing_alternative=${randomTool} for_step=${stepType}`);
-                return randomTool;
+                explorationCandidate = validAlternatives[Math.floor(Math.random() * validAlternatives.length)];
             }
         }
 
         for (const candidate of candidateTools) {
             const scoreEntry = scores.find(s => s.tool === candidate);
             if (scoreEntry && scoreEntry.score > 0) {
-                this.logger.debug('tool_selection', `[LEARNING] Tool ${candidate} selected (score=${scoreEntry.score}) for ${stepType}`);
-                return candidate;
+                positiveCandidate = candidate;
+                break;
             }
+        }
+
+        const toolSelectionSignal = this.buildToolSelectionSignal({
+            stepType,
+            candidateTools,
+            scores,
+            contextualConfidenceByTool,
+            fallbackConfidence: decisionConfidence,
+            explorationRate,
+            shouldExplore,
+            hasContextualPositiveCandidate: bestConfidence > 0,
+            explorationCandidate,
+            highestPositiveCandidate: positiveCandidate
+        });
+
+        this.currentSignals.toolSelection = toolSelectionSignal;
+        this.syncSignalsWithOrchestrator();
+        // TODO(KB-024): nesta fase o Orchestrator observa o signal, mas a decisao final
+        // continua local no loop para manter aderencia ao template Single Brain 2.0.
+        const orchestratorDecision = this.orchestrator?.decideToolSelection({
+            sessionId: this.chatId,
+            signal: toolSelectionSignal
+        });
+        // ETAPA KB-024.2: Safe mode reduzido. O Orchestrator agora decide, e se não conseguir,
+        // o loop retorna null (sem tool selecionada) preservando segurança sem fallback local.
+        const finalDecision = orchestratorDecision;
+        this.currentSignals.toolSelection = finalDecision;
+
+        if (finalDecision?.reason === 'exploration' && finalDecision?.recommendedTool) {
+            this.logger.info('tool_selection', t('agent.kb024.loop_tool_selection_exploration', {
+                confidence: decisionConfidence.toFixed(2),
+                rate: explorationRate,
+                tool: finalDecision.recommendedTool,
+                stepType
+            }), {
+                stepType,
+                recommendedTool: finalDecision.recommendedTool,
+                confidence: decisionConfidence,
+                explorationRate
+            });
+            return finalDecision.recommendedTool;
+        }
+
+        if (finalDecision?.recommendedTool) {
+            const scoreEntry = scores.find(s => s.tool === finalDecision.recommendedTool);
+            const scoreValue = scoreEntry?.score ?? 0;
+            this.logger.debug('tool_selection', t('agent.kb024.loop_tool_selection_selected', {
+                tool: finalDecision.recommendedTool,
+                score: scoreValue,
+                stepType
+            }), {
+                stepType,
+                recommendedTool: finalDecision.recommendedTool,
+                score: scoreValue,
+                reason: finalDecision.reason
+            });
+            return finalDecision.recommendedTool;
         }
 
         const lowestFailing = scores.filter(s => s.score < 0).pop();
         if (lowestFailing) {
-            this.logger.debug('tool_selection', `[LEARNING] Avoiding tool ${lowestFailing.tool} (score=${lowestFailing.score}) for ${stepType}`);
+            this.logger.debug('tool_selection', t('agent.kb024.loop_tool_selection_avoided', {
+                tool: lowestFailing.tool,
+                score: lowestFailing.score,
+                stepType
+            }), {
+                stepType,
+                avoidedTool: lowestFailing.tool,
+                score: lowestFailing.score
+            });
         }
 
         return null;
     }
 
     private logMemoryStats() {
-        if (this.executionMemory.length === 0) return;
+        const executionMemory = this.getExecutionMemoryEntries();
+        if (executionMemory.length === 0) return;
 
         const stats = new Map<string, { success: number; failure: number }>();
-        for (const entry of this.executionMemory) {
+        for (const entry of executionMemory) {
             const key = `${entry.stepType}:${entry.tool}`;
             const s = stats.get(key) || { success: 0, failure: 0 };
             if (entry.success) s.success++; else s.failure++;

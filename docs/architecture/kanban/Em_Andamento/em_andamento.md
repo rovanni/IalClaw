@@ -18,13 +18,31 @@
   - Status: aguardando rodada adicional em ambiente real.
   - Validacao detalhada: ver `docs/architecture/kanban/Testes/testes.md`.
 
+- [ ] KB-024 - Centralizar ranking e estado de memoria no SessionManager (parcialmente mitigado, em migracao de autoridade)
+  - Origem: problemas_criticos (Single Brain)
+  - Risco: Critico
+  - Status (ETAPA KB-024.1): concluida. execution memory migrada para estado session-scoped no SessionManager; ranking factual por sessao exposto pelo SessionManager e consumido pelo AgentLoop.
+  - Status (ETAPA KB-024.2): adiada nesta fase para manter aderencia ao template. Orchestrator permanece passivo na selecao de tool e o loop permanece decisor em safe mode.
+  - Proximo gate: concluir extracao facts-first e remocao de decisao local residual antes da validacao final de fechamento.
+  - Validacao detalhada: ver `docs/architecture/kanban/Testes/testes.md`.
+
 ## Separacao de foco
 
 ### 1) Em andamento e pendente de validacao de testes
 - KB-001
 - KB-011
 - KB-012
-- Fonte unica de validacao: `docs/architecture/kanban/Em_Andamento/validacao.md`
+- KB-024
+- Fonte unica de validacao: `docs/architecture/kanban/Testes/testes.md`
 
 ### 2) Em andamento e pendente de correcao/implementacao
+- Nenhum card nessa faixa no momento.
+- Regra de entrada: mover para esta faixa apenas quando houver implementacao aberta sem evidencia minima em runtime.
+
+## Criterios operacionais (alinhados ao template)
+
+- Reutilizar comportamento existente antes de criar novo fluxo local.
+- Manter safe mode explicito nas decisoes (`orchestratorDecision ?? decisaoLocal`).
+- Registrar evidencia objetiva em `docs/architecture/kanban/Testes/testes.md` antes de marcar concluido.
+- Sincronizar status em `docs/architecture/kanban/mapa_problemas_sistema.md` e `docs/architecture/kanban/Concluido/concluido.md` ao fechar card.
 

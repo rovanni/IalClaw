@@ -7,13 +7,6 @@ Legenda de status:
 - Parcialmente mitigado: houve avanços, mas critério de pronto ainda não foi atendido.
 - Resolvido: critério de pronto atendido e sem regressão observada.
 
-- [ ] KB-001 - Externalizar loop de healing do AgentExecutor para estratégia do Orchestrator
-  - Origem: ProposedChanges (src/core/executor)
-  - Risco: Crítico
-  - Status atual: Parcialmente mitigado
-  - Evidência curta: governança de retry existe, mas ainda com fallback decisório local no executor.
-  - Criterio de pronto: executor executa passo atômico e retorna erro bruto; retry/replan decidido no Orchestrator
-
 - [ ] KB-017 - Externalizar capabilityFallback para signal puro
   - Origem: AntiPatterns + CognitiveArchitectureMap (src/capabilities)
   - Risco: Crítico
@@ -21,10 +14,5 @@ Legenda de status:
   - Evidência curta: fallback centralizado no modulo, mas ainda retorna mode/strategy (decisão embutida).
   - Criterio de pronto: fallback de capacidade retorna fatos/metadados; decisão fica no Orchestrator
 
-- [ ] KB-024 - Centralizar ranking e estado de memória no SessionManager
-  - Origem: AntiPatterns + ProposedChanges (src/memory)
-  - Risco: Crítico
-  - Status atual: Parcialmente mitigado
-  - Evidência curta: SessionManager centraliza parte do estado, mas ranking e executionMemory seguem locais no AgentLoop.
-  - Criterio de pronto: sem ranking/merge decisório local e sem caches paralelos invisíveis à sessão
+
 

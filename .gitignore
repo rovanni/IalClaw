@@ -23,3 +23,6 @@ logs/
 # Artefatos temporários de execução/testes locais
 .tmp_*.log
 .tmp_*.exit
+
+# Logs gerados na raiz do repositório
+/*.log

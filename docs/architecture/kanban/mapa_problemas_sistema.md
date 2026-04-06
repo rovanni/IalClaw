@@ -10,10 +10,11 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 - Plano de correção estrutural: docs/architecture/plans/ProposedChanges.md
 - Histórico técnico: docs/architecture/kanban/historico/checklist_vivo.md
 
-## Radar de críticos (snapshot 2026-04-04)
+## Radar de críticos (snapshot 2026-04-05)
 - Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-017, KB-024
 - Resolvidos: KB-002, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045
+- Em monitoramento runtime (em andamento): KB-011, KB-012
 
 
 Observação:
@@ -105,8 +106,10 @@ Observação:
 - Colunas e prioridades no quadro:
   - Crítico: KB-024
 - Problemas mapeados:
-  - ranking e merge cognitivos fora do Orchestrator
-  - caches e memÃ³rias paralelas fora do SessionManager
+  - estado de execution memory no AgentLoop foi migrado para SessionManager por sessao
+  - selecao de tool permanece em decisao local no AgentLoop, com ToolSelectionSignal observacional no Orchestrator
+  - safe mode obrigatorio mantido: `orchestratorDecision ?? loopDecision`
+  - pendente extracao facts-first para remover decisao local residual antes de fechamento
 - Cards relacionados:
   - KB-024
 
@@ -207,6 +210,25 @@ Observação:
   - inicialização sistêmica procedural e acoplada
 - Cards relacionados:
   - KB-035
+
+### Rastreamento transversal (checklist e governanca documental)
+- Colunas e prioridades no quadro:
+  - Medio: KB-006, KB-007, KB-008
+  - Baixo: KB-009, KB-010, KB-036
+- Problemas mapeados:
+  - cobertura incompleta do builder deterministico para dominios operacionais remanescentes
+  - ausencia de suite dedicada para bordas do guardrail de arquivo
+  - falta de nota arquitetural consolidando o papel do classificador
+  - observabilidade ainda sem indexacao padrao de eventos de auditoria
+  - linguagem e terminologia da documentacao sem revisao completa e uniforme
+  - pequenas duplicacoes de intencao/confirmacao ainda dispersas
+- Cards relacionados:
+  - KB-006
+  - KB-007
+  - KB-008
+  - KB-009
+  - KB-010
+  - KB-036
 
 ### docs/architecture/templates
 - Colunas e prioridades no quadro:

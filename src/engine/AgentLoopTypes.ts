@@ -175,6 +175,26 @@ export type FallbackStrategySignal = {
     hasPendingSteps?: boolean;
 };
 
+export type ToolSelectionSignal = {
+    stepType: string;
+    candidateTools: string[];
+    scores: Array<{
+        tool: string;
+        score: number;
+        successes: number;
+        failures: number;
+    }>;
+    contextualConfidenceByTool: Record<string, number>;
+    fallbackConfidence: number;
+    explorationRate: number;
+    shouldExplore: boolean;
+    hasContextualPositiveCandidate?: boolean;
+    explorationCandidate?: string;
+    highestPositiveCandidate?: string;
+    recommendedTool?: string;
+    reason?: 'contextual_confidence' | 'exploration' | 'positive_score' | 'no_positive_score';
+};
+
 export type StopContinueSignal = {
     shouldStop: boolean;
     reason:
@@ -225,6 +245,7 @@ export type CognitiveSignalsState = {
     route?: RouteAutonomySignal;
     fallback?: ToolFallbackSignal;
     fallbackStrategy?: FallbackStrategySignal;
+    toolSelection?: ToolSelectionSignal;
     validation?: StepValidationSignal;
     stop?: StopContinueSignal;
     failSafe?: FailSafeSignal;
