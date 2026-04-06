@@ -46,3 +46,10 @@
 - Registrar evidencia objetiva em `docs/architecture/kanban/Testes/testes.md` antes de marcar concluido.
 - Sincronizar status em `docs/architecture/kanban/mapa_problemas_sistema.md` e `docs/architecture/kanban/Concluido/concluido.md` ao fechar card.
 
+## Rastreio de movimentacao
+
+- [x] KB-017 - Externalizar capabilityFallback para signal puro
+  - Data de fechamento: 2026-04-05
+  - Movimentacao: removido de `Pendente/problemas_criticos.md` e encaminhado para `Concluido/concluido.md`.
+  - Evidencias: registro tecnico consolidado em `Testes/testes.md` (governanca no Orchestrator, fallback factual, regressao sem falhas).
+

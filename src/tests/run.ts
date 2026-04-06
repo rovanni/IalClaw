@@ -233,14 +233,19 @@ async function run() {
     assert.equal(retryGovernedDecision, false);
 
     const capabilityFallbackSignal = handleCapabilityFallback('browser_execution');
+    assert.equal(capabilityFallbackSignal.failureType, 'capability_missing');
+    assert.equal(capabilityFallbackSignal.capability, 'browser_execution');
+    assert.equal(capabilityFallbackSignal.retryPossible, true);
+    assert.equal(capabilityFallbackSignal.severity, 'medium');
+    assert.equal(capabilityFallbackSignal.context.suggestedDegradation, 'static_validation');
+    assert.equal(('strategy' in (capabilityFallbackSignal as any)), false);
 
     const executorWithoutOrchestrator = new AgentExecutor({} as any);
     const localCapabilityDecision = (executorWithoutOrchestrator as any).resolveCapabilityFallbackDecision(
         undefined,
         capabilityFallbackSignal
     );
-    assert.equal(localCapabilityDecision.action, 'degrade');
-    assert.equal(localCapabilityDecision.priority, 'medium');
+    assert.equal(localCapabilityDecision, undefined);
 
     const capabilityOrchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
     const executorWithOrchestrator = new AgentExecutor({} as any, capabilityOrchestrator);
@@ -260,8 +265,7 @@ async function run() {
         capabilitySession,
         capabilityFallbackSignal
     );
-    assert.equal(safeModeCapabilityDecision.action, localCapabilityDecision.action);
-    assert.equal(safeModeCapabilityDecision.reason, localCapabilityDecision.reason);
+    assert.equal(safeModeCapabilityDecision, undefined);
 
     (capabilityOrchestrator as any).decideCapabilityFallback = originalCapabilityDecider;
 

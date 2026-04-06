@@ -6,6 +6,17 @@ Objetivo deste arquivo:
 
 ## 1) Itens em andamento que precisam de validacao de testes
 
+- [x] KB-017 - Externalizar capabilityFallback para signal puro
+  - Status: concluido em 2026-04-05 (Fase 3 e Fase 4 validadas).
+  - Comportamento validado:
+    - Branch decisoria local removida do executor; decisao de capability fallback centralizada no Orchestrator.
+    - Quando nao ha decisao do Orchestrator, o executor retorna `undefined` para `fallbackDecision` (sem mini-brain residual local).
+    - Payload de fallback permanece factual (`failureType`, `capability`, `retryPossible`, `severity`, `context`) e sem campo `strategy`.
+  - Evidencias atuais:
+    - Refactor em `src/core/executor/AgentExecutor.ts` removeu `getLocalCapabilityFallbackDecision(...)` e manteve apenas decisao orquestrada.
+    - Suite `src/tests/run.ts` atualizada para validar contrato factual de fallback e comportamento governado/delegado.
+    - Execucao de `npm test` com fechamento em `All tests passed`.
+
 - [ ] KB-001 - Externalizar healing loop do executor para governanca do Orchestrator (Fase 1+2)
   - Status: implementado parcialmente e aguardando validacao runtime.
   - Comportamento esperado:

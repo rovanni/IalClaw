@@ -1634,39 +1634,10 @@ Se quiser autorizar, responda:
         return { ok: true };
     }
 
-    private getLocalCapabilityFallbackDecision(fallback: CapabilityFallback): CapabilityFallbackDecision {
-        if (fallback.context.suggestedDegradation) {
-            return {
-                action: 'degrade',
-                priority: fallback.severity,
-                capability: fallback.capability,
-                reason: 'local_degradation_available',
-                suggestedDegradation: fallback.context.suggestedDegradation
-            };
-        }
-
-        if (fallback.retryPossible) {
-            return {
-                action: 'retry',
-                priority: fallback.severity,
-                capability: fallback.capability,
-                reason: 'local_retry_possible'
-            };
-        }
-
-        return {
-            action: 'abort',
-            priority: 'high',
-            capability: fallback.capability,
-            reason: 'local_capability_unavailable_no_safe_degradation'
-        };
-    }
-
     private resolveCapabilityFallbackDecision(
         session: Session | undefined,
         fallback: CapabilityFallback
-    ): CapabilityFallbackDecision {
-        const localDecision = this.getLocalCapabilityFallbackDecision(fallback);
+    ): CapabilityFallbackDecision | undefined {
         const orchestratorDecision = session?.conversation_id
             ? this.orchestrator?.decideCapabilityFallback({
                 sessionId: session.conversation_id,
@@ -1674,18 +1645,15 @@ Se quiser autorizar, responda:
             })
             : undefined;
 
-        const finalDecision = orchestratorDecision ?? localDecision;
-
         debugBus.emit('capability_fallback_decision', {
             capability: fallback.capability,
             failureType: fallback.failureType,
-            localDecision,
             orchestratorDecision,
-            finalDecision,
+            finalDecision: orchestratorDecision,
             trace_id: getTraceIdSafe()
         });
 
-        return finalDecision;
+        return orchestratorDecision;
     }
 
     private parsePlan(rawPlan: string): ExecutionPlan {

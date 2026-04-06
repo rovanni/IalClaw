@@ -1,7 +1,7 @@
 # PLANO DE CORRECAO - KB-017
 
 Data: 5 de abril de 2026
-Status: Planejado para execucao incremental no modelo Single Brain 2.0
+Status: Concluido no modelo Single Brain 2.0 (Fases 3 e 4 validadas)
 Risco: Critico
 Escopo: externalizar decisao de capability fallback para o Orchestrator
 
@@ -119,9 +119,9 @@ Acoes:
 
 Checklist:
 
-- [ ] sem mini-brain residual no fallback
-- [ ] sem `strategy` local como fonte primaria
-- [ ] fluxo continua funcional com capacidades ausentes
+- [x] sem mini-brain residual no fallback
+- [x] sem `strategy` local como fonte primaria
+- [x] fluxo continua funcional com capacidades ausentes
 
 ### FASE 4 - Testes e rastreabilidade
 
@@ -135,9 +135,9 @@ Acoes:
 
 Checklist:
 
-- [ ] testes cobrindo caminho governado e safe mode
-- [ ] rastreabilidade de decisao adequada
-- [ ] sem regressao em fluxos de erro
+- [x] testes cobrindo caminho governado e safe mode
+- [x] rastreabilidade de decisao adequada
+- [x] sem regressao em fluxos de erro
 
 ---
 

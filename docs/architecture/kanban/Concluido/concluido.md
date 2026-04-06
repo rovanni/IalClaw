@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-017 - Externalizar capabilityFallback para signal puro
+  - Data: 2026-04-05
+  - Evidência: decisão local de capability fallback removida do `AgentExecutor`; resolução passou a depender somente de `CognitiveOrchestrator.decideCapabilityFallback(...)`, eliminando mini-brain residual no executor. Testes em `src/tests/run.ts` validam payload factual sem `strategy`, caminho governado e delegação segura quando o Orchestrator retorna `undefined`. Execução de `npm test` finalizou com `All tests passed`.
+
 - [x] KB-027 - Neutralizar Search como subsistema decisorio isolado (Fases 1-6)
   - Data: 2026-04-05
   - Evidência: SearchEngine, InvertedIndex, SemanticGraphBridge e AutoTagger passaram a usar `search_cache` por sessão como fonte primária quando há `sessionId`, preservando Safe Mode nas 5 decisões de busca com padrão `orchestratorDecision ?? localDecision`. A suite `src/tests/KB027SearchSignals.test.ts` cobre payloads de signals, override/delegação do Orchestrator, reaproveitamento de cache na mesma sessão, isolamento entre sessões e limpeza por escopo via `clearIndex/resetVolatileState`. Validação com `npx tsc --noEmit` e suite isolada `node --require ts-node/register --test src/tests/KB027SearchSignals.test.ts` sem falhas.
