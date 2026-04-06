@@ -25,6 +25,7 @@ import { IntentClassifier } from '../core/intent/IntentClassifier';
 import { CognitiveActionExecutor } from '../core/orchestrator/CognitiveActionExecutor';
 import { CognitiveOrchestrator, CognitiveStrategy } from '../core/orchestrator/CognitiveOrchestrator';
 import { buildDecisionPrecedenceContext } from '../core/orchestrator/decisions/precedence/buildDecisionPrecedenceContext';
+import { decideFlowStart } from '../core/orchestrator/decisions/flow/decideFlowStart';
 import { ExecutionPlan } from '../core/planner/types';
 import { AgentLoop } from '../engine/AgentLoop';
 import { LLMProvider, MessagePayload, ProviderFactory, ProviderResponse } from '../engine/ProviderFactory';
@@ -864,8 +865,12 @@ async function run() {
     assert.ok(alphaDefinition?.triggers?.includes('registrar alpha flow'));
     assert.equal(alphaDefinition?.priority, 3);
 
-    const matched = FlowRegistry.matchByInput('pode registrar alpha flow para mim?');
-    assert.equal(matched, 'registry_test_flow_a');
+    const decision = decideFlowStart({
+        sessionId: 'test-session',
+        input: 'pode registrar alpha flow para mim?',
+        availableFlows: FlowRegistry.listDefinitions()
+    });
+    assert.equal(decision.flowId, 'registry_test_flow_a');
 
     await SessionManager.runWithSession('exploration-controller-test', async () => {
         let loopCalls = 0;
