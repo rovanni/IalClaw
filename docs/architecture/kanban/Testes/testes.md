@@ -106,6 +106,7 @@ Objetivo deste arquivo:
     - modularizacao sem alteracao de comportamento no `CognitiveOrchestrator`.
     - `CapabilityAwarePlan` e `PlanningStrategyContext` devem ter fonte unica compartilhada.
     - autoridade cognitiva deve permanecer no Orchestrator, sem mini-brains novos nos modulos extraidos.
+    - recomposicao do fluxo principal deve reduzir a complexidade cognitiva percebida sem reverter os ganhos estruturais da Fase 1.
   - Evidencias atuais:
     - plano formal criado em `docs/architecture/plans/KB-046-PLANO.md`.
     - contratos compartilhados extraidos para `src/core/orchestrator/types/PlanningTypes.ts`.
@@ -118,11 +119,34 @@ Objetivo deste arquivo:
     - montagem estrutural de `ActiveDecisionsResult` movida para `src/core/orchestrator/decisions/active/buildActiveDecisionsResult.ts`, enquanto `CognitiveOrchestrator.ts` preserva as chamadas `decide*` e o ponto final de governanca.
     - contrato de `IngestedSignalSummary` centralizado em `src/core/orchestrator/types/IngestSignalsTypes.ts`.
     - resumo factual inicial de `ingestSignalsFromLoop(...)` movido para `src/core/orchestrator/decisions/signals/buildIngestedSignalSummary.ts`, enquanto `CognitiveOrchestrator.ts` preserva a mutacao de `observedSignals`, o reset de ciclo e os logs observacionais por signal.
+    - contrato de conflitos de signals centralizado em `src/core/orchestrator/types/SignalConflictTypes.ts`.
+    - detector factual de conflitos de `auditSignalConsistency(...)` movido para `src/core/orchestrator/decisions/signals/detectSignalConflicts.ts`, enquanto `CognitiveOrchestrator.ts` preserva `_reportSignalConflict(...)` e o controle do flag `routeVsFailSafeConflictLoggedInCycle`.
+    - contratos de governanca observacional de stop/continue centralizados em `src/core/orchestrator/types/StopContinueGovernanceTypes.ts`.
+    - builders puros dos payloads de `signal_authority_resolution`, `stop_continue_decision_delta`, `stop_continue_contextual_adjustment_applied`, `stop_continue_recurrent_failure_forced_stop` e `stop_continue_active_decision` movidos para `src/core/orchestrator/decisions/stopContinue/buildStopContinueGovernanceAuditPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva o ajuste contextual, a resolucao de authority e a decisao final.
+    - contratos de logs observacionais de signals centralizados em `src/core/orchestrator/types/ObservedSignalLogTypes.ts`.
+    - builders puros dos logs observacionais de `ingestSignalsFromLoop(...)` movidos para `src/core/orchestrator/decisions/signals/buildObservedSignalLogEntries.ts`, enquanto `CognitiveOrchestrator.ts` preserva a ingestao, `_logStopSignal(...)`, a mutacao de `observedSignals` e a emissao final dos logs.
+    - builder puro dos logs observacionais de `_logStopSignal(...)` movido para `src/core/orchestrator/decisions/signals/buildObservedStopSignalLogEntries.ts`, enquanto `CognitiveOrchestrator.ts` preserva a emissao final em ordem.
+    - contratos de debug de planning centralizados em `src/core/orchestrator/types/PlanningDebugTypes.ts`.
+    - builders puros dos payloads de `capability_gap_detected`, `capability_vs_route_conflict` e `planning_strategy_selected` movidos para `src/core/orchestrator/decisions/planning/buildPlanningDebugPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva as condicoes e a ordem dos `emitDebug(...)`.
+    - contratos de debug de retry apos falha centralizados em `src/core/orchestrator/types/RetryAfterFailureDebugTypes.ts`.
+    - builders puros dos payloads de `signal_authority_resolution`, `retry_decision` e `self_healing_active_decision` movidos para `src/core/orchestrator/decisions/retry/buildRetryAfterFailureDebugPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva a authority resolution, a decisao final e a ordem dos eventos.
+    - contratos de debug de route autonomy centralizados em `src/core/orchestrator/types/RouteAutonomyDebugTypes.ts`.
+    - builders puros do payload de `signal_authority_resolution` e do log `route_active_decision` movidos para `src/core/orchestrator/decisions/route/buildRouteAutonomyDebugPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva a authority resolution, a emissao final em ordem e a mutacao de estado aplicada.
+    - contratos de debug de repair strategy centralizados em `src/core/orchestrator/types/RepairStrategyDebugTypes.ts`.
+    - builders puros do payload de `repair_strategy_decision` e do log `repair_strategy_active_decision` movidos para `src/core/orchestrator/decisions/repair/buildRepairStrategyDebugPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva a heuristica, a emissao final em ordem e a decisao retornada.
+    - contratos de debug de decisao final recomendada centralizados em `src/core/orchestrator/types/FinalDecisionDebugTypes.ts`.
+    - builder puro do payload de `final_decision_recommended` movido para `src/core/orchestrator/decisions/final/buildFinalDecisionRecommendedPayload.ts`, enquanto `CognitiveOrchestrator.ts` preserva o timing de emissao e o encadeamento decisorio.
+    - contratos de logs passivos de repair centralizados em `src/core/orchestrator/types/RepairStrategyLogTypes.ts`.
+    - builders puros dos logs `repair_strategy_signal_received` e `repair_result_ingested` movidos para `src/core/orchestrator/decisions/repair/buildRepairStrategyLogPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva a ingestao dos fatos e a emissao final dos eventos.
+    - contratos de logs passivos de self-healing centralizados em `src/core/orchestrator/types/SelfHealingLogTypes.ts`.
+    - builder puro do log `signal_self_healing_observed` movido para `src/core/orchestrator/decisions/retry/buildSelfHealingLogPayloads.ts`, enquanto `CognitiveOrchestrator.ts` preserva a ingestao do fato e a emissao final do evento.
+    - risco arquitetural adicional registrado no plano: fragmentacao sem reducao equivalente da complexidade percebida do fluxo principal.
+    - proxima rodada redefinida no plano como Fase 2 de recomposicao do fluxo do `CognitiveOrchestrator`, interrompendo novas micro-extracoes de builders enquanto a legibilidade do arquivo principal nao melhorar.
     - validacao formal registrada no plano com secoes de inconsistencias, conflitos e autoridade.
     - `npx.cmd tsc --noEmit` executado sem diagnosticos em 6 de abril de 2026.
   - Pendencias para aprovar:
     - registrar fechamento do card quando a modularizacao global do arquivo for concluida no kanban final.
-    - manter a proxima extracao limitada a contratos puros pequenos e auditaveis, conforme definido no plano.
+    - executar a Fase 2 de recomposicao do fluxo por blocos semanticos, conforme redefinido no plano.
 
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 

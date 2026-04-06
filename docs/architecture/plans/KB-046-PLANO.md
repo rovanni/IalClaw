@@ -158,6 +158,7 @@ Heuristica operacional:
 
 - perguntar primeiro qual pedaco dessa funcao nao deveria continuar inline no Orchestrator
 - so depois decidir se esse pedaco vira `types/`, `decisions/` ou helper puro
+- apos consolidar a Fase 1, interromper novas micro-extracoes se elas passarem a aumentar a fragmentacao perceptiva do fluxo principal
 
 ---
 
@@ -309,6 +310,30 @@ Checklist:
 - [x] nenhum gap documental restante
 - [x] pronto para fechamento ou continuidade controlada
 
+### FASE 6 - Recomposicao do fluxo do Orchestrator
+
+Acoes:
+
+- reorganizar o `CognitiveOrchestrator` em blocos semanticos de leitura
+- agrupar chamadas relacionadas por dominio funcional
+- reduzir intercalacao de decisao com debug e log espalhado
+- evitar novas micro-extracoes enquanto elas nao melhorarem a legibilidade do fluxo principal
+
+Checklist:
+
+- [x] fluxo principal recomposto em blocos semanticos claros
+- [x] menor fragmentacao perceptiva do arquivo principal
+- [x] nenhuma heuristica alterada
+- [x] `npx.cmd tsc --noEmit` sem erros
+
+Evidencias (6 de abril de 2026):
+
+- 2 bugs de codigo residual dentro de JSDoc corrigidos (`decideStepValidation`, `decideToolFallback`)
+- 4 metodos orphaos (`decideRetryWithLlm`, `decideReclassification`, `decidePlanAdjustment`, `decideRealityCheck`) movidos de apos `handleExploration` para antes de `decide()` — todos os decide* agora precedem o ponto de entrada principal
+- 5 banners de secao adicionados: SIGNAL INGESTION (linha 240), ACTIVE DECISIONS (linha 608), MAIN COGNITIVE DECISION FLOW (linha 1276), SEARCH GOVERNANCE KB-027 (linha 1593), TOOL SELECTION & EXECUTION (linha 1895)
+- zero erros TypeScript apos todas as mudancas (validado via get_errors do VS Code)
+- nenhuma heuristica, safe mode ou authority alterada
+
 ---
 
 ## STATUS OPERACIONAL DESTA SESSAO
@@ -317,16 +342,38 @@ Checklist:
 - tipos de planning centralizados em `src/core/orchestrator/types/PlanningTypes.ts`
 - contrato de `decideCapabilityFallback(...)` centralizado em `src/core/orchestrator/types/CapabilityFallbackTypes.ts`
 - contrato de `decideRetryAfterFailure(...)` centralizado em `src/core/orchestrator/types/RetryAfterFailureTypes.ts`
+- contratos de debug de retry apos falha centralizados em `src/core/orchestrator/types/RetryAfterFailureDebugTypes.ts`
+- contratos de debug de route autonomy centralizados em `src/core/orchestrator/types/RouteAutonomyDebugTypes.ts`
+- contratos de debug de repair strategy centralizados em `src/core/orchestrator/types/RepairStrategyDebugTypes.ts`
+- contratos de debug de decisao final recomendada centralizados em `src/core/orchestrator/types/FinalDecisionDebugTypes.ts`
+- contratos de logs passivos de repair centralizados em `src/core/orchestrator/types/RepairStrategyLogTypes.ts`
+- contratos de logs passivos de self-healing centralizados em `src/core/orchestrator/types/SelfHealingLogTypes.ts`
 - contrato de `ActiveDecisionsResult` centralizado em `src/core/orchestrator/types/ActiveDecisionsTypes.ts`
 - contrato de `IngestedSignalSummary` centralizado em `src/core/orchestrator/types/IngestSignalsTypes.ts`
+- contrato de conflitos de signals centralizado em `src/core/orchestrator/types/SignalConflictTypes.ts`
 - `decidePlanningStrategy.ts` agora reutiliza contrato compartilhado
 - `CapabilityAwarePlan` passou a carregar `hasGap` como estado derivado canonical do modulo de planning
 - `CognitiveOrchestrator.ts` deixou de recalcular `hasGap` no path de planning e agora apenas consome a derivacao do modulo
+- contratos de debug de planning centralizados em `src/core/orchestrator/types/PlanningDebugTypes.ts`
+- `buildPlanningDebugPayloads.ts` agora concentra a montagem estrutural dos payloads de `capability_gap_detected`, `capability_vs_route_conflict` e `planning_strategy_selected`, mantendo no `CognitiveOrchestrator` apenas as condicoes e a ordem dos `emitDebug(...)`
 - `decideCapabilityFallback.ts` agora reutiliza contrato compartilhado em vez de contexto inline
 - `decideRetryAfterFailure.ts` agora concentra a derivacao estrutural de retry apos falha, mantendo authority resolution, safe mode e telemetria finais no `CognitiveOrchestrator`
+- `buildRetryAfterFailureDebugPayloads.ts` agora concentra a montagem estrutural dos payloads de `signal_authority_resolution`, `retry_decision` e `self_healing_active_decision`, mantendo no `CognitiveOrchestrator` a authority resolution, a decisao final e a ordem de emissao
+- `buildRouteAutonomyDebugPayloads.ts` agora concentra a montagem estrutural do payload de `signal_authority_resolution` e do log `route_active_decision`, mantendo no `CognitiveOrchestrator` a authority resolution, a emissao final em ordem e a mutacao de estado aplicada
+- `buildRepairStrategyDebugPayloads.ts` agora concentra a montagem estrutural do payload de `repair_strategy_decision` e do log `repair_strategy_active_decision`, mantendo no `CognitiveOrchestrator` a heuristica, a emissao final em ordem e a decisao retornada
+- `buildFinalDecisionRecommendedPayload.ts` agora concentra a montagem estrutural do payload de `final_decision_recommended`, mantendo no `CognitiveOrchestrator` a escolha do momento de emissao e o encadeamento decisorio
+- `buildRepairStrategyLogPayloads.ts` agora concentra a montagem estrutural dos logs passivos de `repair_strategy_signal_received` e `repair_result_ingested`, mantendo no `CognitiveOrchestrator` a ingestao e a emissao final dos eventos
+- `buildSelfHealingLogPayloads.ts` agora concentra a montagem estrutural do log passivo de `signal_self_healing_observed`, mantendo no `CognitiveOrchestrator` a ingestao e a emissao final do evento
 - `buildActiveDecisionsResult.ts` agora concentra a montagem estrutural de `loop`, `applied` e `safeModeFallbackApplied`, mantendo as chamadas `decide*` no `CognitiveOrchestrator`
 - `buildIngestedSignalSummary.ts` agora concentra o resumo factual inicial de `ingestSignalsFromLoop(...)`, mantendo no `CognitiveOrchestrator` a mutacao de estado e o logging por tipo de signal
+- `detectSignalConflicts.ts` agora concentra a derivacao factual dos conflitos auditados em `auditSignalConsistency(...)`, mantendo no `CognitiveOrchestrator` a emissao de `_reportSignalConflict(...)` e o controle do flag `routeVsFailSafeConflictLoggedInCycle`
+- contratos de governanca observacional de stop/continue centralizados em `src/core/orchestrator/types/StopContinueGovernanceTypes.ts`
+- `buildStopContinueGovernanceAuditPayloads.ts` agora concentra a montagem estrutural dos payloads de `signal_authority_resolution`, `stop_continue_decision_delta`, `stop_continue_contextual_adjustment_applied`, `stop_continue_recurrent_failure_forced_stop` e `stop_continue_active_decision`, mantendo no `CognitiveOrchestrator` o ajuste contextual, a resolucao de authority e a decisao final
+- contratos de logs observacionais de signals centralizados em `src/core/orchestrator/types/ObservedSignalLogTypes.ts`
+- `buildObservedSignalLogEntries.ts` agora concentra a montagem estrutural dos logs observacionais de `ingestSignalsFromLoop(...)`, mantendo no `CognitiveOrchestrator` a ingestao, a mutacao de estado, `_logStopSignal(...)` e a emissao final dos logs
+- `buildObservedStopSignalLogEntries.ts` agora concentra a montagem estrutural dos logs de `_logStopSignal(...)`, mantendo no `CognitiveOrchestrator` apenas a emissao final em ordem
 - `CognitiveOrchestrator.ts` mantem a autoridade final e apenas delega computacao estrutural
+- a proxima rodada deixa de priorizar novos builders pequenos e passa a priorizar recomposicao semantica do fluxo principal
 - compilacao validada com `npx.cmd tsc --noEmit`
 
 ---
@@ -468,8 +515,21 @@ Nesta etapa, a modularizacao nao altera esse comportamento.
 - modularizacao com reutilizacao de tipos, sem mudanca funcional
 - eliminacao de duplicacao de derivacao no fluxo de planning, mantendo o modulo como fonte unica de verdade
 - extracao da derivacao pura de retry apos falha para modulo auxiliar sem deslocar a resolucao final de autoridade do Orchestrator
+- extracao dos builders puros de debug e log do path de retry apos falha sem deslocar a authority nem a decisao final
 - extracao da montagem pura de `ActiveDecisionsResult` para helper auxiliar sem deslocar o disparo das decisoes ativas
 - extracao do resumo factual de ingestao de signals para helper auxiliar sem deslocar a observacao passiva nem os logs por signal
+- extracao do detector puro de conflitos de signals para helper auxiliar sem deslocar a emissao de auditoria nem o controle de estado do ciclo
+- extracao dos builders puros de auditoria de stop/continue para helper auxiliar sem deslocar a governanca contextual nem a resolucao final de authority
+- extracao adicional dos builders puros de logs contextuais e payload final de stop/continue para helper auxiliar sem deslocar as condicoes de ajuste nem a decisao final
+- extracao dos builders puros de logs observacionais de ingestao para helper auxiliar sem deslocar a ordem das emissoes nem a observacao passiva local
+- extracao do builder puro dos logs de `_logStopSignal(...)` sem deslocar a observacao passiva nem alterar o timing de emissao
+- extracao dos builders puros de `emitDebug(...)` de planning sem deslocar as condicoes de emissao nem alterar a ordem dos eventos
+- extracao dos builders puros de debug/log de `decideRouteAutonomy(...)` sem deslocar a authority resolution, a ordem das emissoes nem a aplicacao final do signal
+- extracao dos builders puros de debug/log de `decideRepairStrategy(...)` sem deslocar a heuristica, a ordem das emissoes nem a decisao final retornada
+- extracao do builder puro de `emitFinalDecisionRecommended(...)` sem deslocar o fluxo decisorio nem o timing de emissao do evento
+- extracao dos builders puros dos logs passivos de repair sem deslocar a ingestao dos fatos nem a emissao final dos eventos
+- extracao do builder puro do log passivo de self-healing sem deslocar a ingestao do fato nem a emissao final do evento
+- identificacao de um novo risco: fragmentacao sem reducao equivalente da complexidade cognitiva percebida
 
 ### Verificacao estrutural
 
@@ -484,15 +544,28 @@ Nesta etapa, a modularizacao nao altera esse comportamento.
 
 Fronteira definida para a rodada seguinte:
 
-- revisar contratos inline restantes e blocos coesos de derivacao ainda embutidos em funcoes maiores do `CognitiveOrchestrator`
-- priorizar apenas contextos puros e pequenos, sem estado e sem authority propria
+- interromper temporariamente a busca por novos builders pequenos
+- iniciar recomposicao do fluxo principal do `CognitiveOrchestrator` por blocos semanticos
+- priorizar legibilidade do arquivo principal antes de novas extracoes estruturais
 - candidata anterior concluida: `RetryAfterFailureContext` agora possui fonte unica compartilhada com `decideRetryAfterFailure.ts`
 - candidata atual concluida: `applyActiveDecisions(...)` agora delega a montagem estrutural para `buildActiveDecisionsResult.ts`
 - candidata atual complementar concluida: `ingestSignalsFromLoop(...)` agora delega o resumo factual inicial para `buildIngestedSignalSummary.ts`
-- proxima candidata segura: identificar um bloco pequeno que hoje apenas deriva dados ou monta contexto dentro de uma funcao maior, sem tocar em `resolveSignalAuthority`
+- candidata atual complementar concluida: `auditSignalConsistency(...)` agora delega a deteccao factual de conflitos para `detectSignalConflicts.ts`
+- candidata atual complementar concluida: `applyStopContinueGovernance(...)` agora delega a montagem estrutural dos payloads observacionais para `buildStopContinueGovernanceAuditPayloads.ts`
+- candidata atual complementar concluida: `ingestSignalsFromLoop(...)` agora delega a montagem dos logs observacionais para `buildObservedSignalLogEntries.ts`
+- candidata atual complementar concluida: `applyStopContinueGovernance(...)` agora tambem delega a montagem dos logs contextuais e do payload final ativo para `buildStopContinueGovernanceAuditPayloads.ts`
+- candidata atual complementar concluida: `_logStopSignal(...)` agora delega a montagem dos logs observacionais para `buildObservedStopSignalLogEntries.ts`
+- candidata atual complementar concluida: `decidePlanningStrategy(...)` agora delega a montagem dos payloads de debug para `buildPlanningDebugPayloads.ts`
+- candidata atual complementar concluida: `decideRetryAfterFailure(...)` agora delega a montagem dos payloads de debug e log para `buildRetryAfterFailureDebugPayloads.ts`
+- candidata atual complementar concluida: `decideRouteAutonomy(...)` agora delega a montagem do payload de authority resolution e do log ativo para `buildRouteAutonomyDebugPayloads.ts`
+- candidata atual complementar concluida: `decideRepairStrategy(...)` agora delega a montagem do payload de `repair_strategy_decision` e do log ativo para `buildRepairStrategyDebugPayloads.ts`
+- candidata atual complementar concluida: `emitFinalDecisionRecommended(...)` agora delega a montagem do payload para `buildFinalDecisionRecommendedPayload.ts`
+- candidata atual complementar concluida: `ingestRepairStrategySignal(...)` e `ingestRepairResult(...)` agora delegam a montagem dos logs passivos para `buildRepairStrategyLogPayloads.ts`
+- candidata atual complementar concluida: `ingestSelfHealingSignal(...)` agora delega a montagem do log passivo para `buildSelfHealingLogPayloads.ts`
+- proxima candidata segura: recompor um trecho do fluxo principal por dominio semantico, sem alterar heuristica nem authority
 - proibido nesta rodada: escolher uma funcao grande inteira como alvo apenas por volume ou impacto percebido
 
-Condicoes obrigatorias antes da proxima extracao:
+Condicoes obrigatorias antes da proxima rodada:
 
 - diff pequeno e reversivel
 - sem mover `decide()` nem funcoes de conciliacao de authority
@@ -501,11 +574,11 @@ Condicoes obrigatorias antes da proxima extracao:
 
 Criterios obrigatorios da candidata:
 
-- nao possuir estado proprio
-- nao influenciar authority
-- nao exigir nova heuristica
-- permitir limpeza imediata da origem apos a extracao
-- representar um bloco coeso claramente separavel do restante da funcao hospedeira
+- melhorar a leitura do fluxo principal
+- reduzir saltos mentais entre arquivos
+- nao alterar authority nem heuristica
+- permitir reversao simples se a recomposicao nao trouxer ganho real
+- representar um agrupamento semantico claro, e nao apenas uma mudanca cosmetica
 
 ---
 

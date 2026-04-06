@@ -79,7 +79,10 @@ Observação:
 - Problemas mapeados:
   - modularizacao do `CognitiveOrchestrator` sem plano formal quebrava o gate documental do template
   - `CapabilityAwarePlan` e `PlanningStrategyContext` estavam duplicados entre o Orchestrator e o modulo de decisao de planning
-  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts` e `src/core/orchestrator/types/IngestSignalsTypes.ts`
+  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts`, `src/core/orchestrator/types/IngestSignalsTypes.ts`, `src/core/orchestrator/types/SignalConflictTypes.ts`, `src/core/orchestrator/types/StopContinueGovernanceTypes.ts` e `src/core/orchestrator/types/ObservedSignalLogTypes.ts`
+  - detector factual de conflitos de `auditSignalConsistency(...)` extraido para helper puro, mantendo no Orchestrator a emissao de auditoria e o controle do ciclo
+  - payloads observacionais de `applyStopContinueGovernance(...)` extraidos para helpers puros, mantendo no Orchestrator a governanca contextual e a autoridade final
+  - logs observacionais de `ingestSignalsFromLoop(...)` extraidos para builder puro, reduzindo verbosidade inline sem mover ingestao nem autoridade
 - Cards relacionados:
   - KB-046
 
