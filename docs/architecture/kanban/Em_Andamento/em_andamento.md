@@ -36,7 +36,11 @@
 - Fonte unica de validacao: `docs/architecture/kanban/Testes/testes.md`
 
 ### 2) Em andamento e pendente de correcao/implementacao
-- Nenhum card nessa faixa no momento.
+- KB-046 - Modularizacao governada do CognitiveOrchestrator
+  - Origem: extracao incremental em `src/core/orchestrator`
+  - Risco: Medio
+  - Status: plano formal criado; centralizacao de `CapabilityAwarePlan` e `PlanningStrategyContext` em andamento para remover duplicacao e fechar o gate documental.
+  - Validacao detalhada: ver `docs/architecture/kanban/Testes/testes.md`.
 - Regra de entrada: mover para esta faixa apenas quando houver implementacao aberta sem evidencia minima em runtime.
 
 ## Criterios operacionais (alinhados ao template)

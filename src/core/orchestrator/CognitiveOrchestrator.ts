@@ -5,7 +5,7 @@ import { FlowManager } from '../flow/FlowManager';
 import { FlowRegistry } from '../flow/FlowRegistry';
 import { CognitiveActionExecutor, ExecutionResult } from './CognitiveActionExecutor';
 import { IntentionResolver } from '../agent/IntentionResolver';
-import { getRequiredCapabilitiesForTaskType, TaskClassifier, TaskType } from '../agent/TaskClassifier';
+import { TaskClassifier, TaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { DecisionMemory } from '../../memory/DecisionMemory';
@@ -24,6 +24,8 @@ import { PlanRuntimeSignals } from '../../capabilities/stepCapabilities';
 import { CapabilityFallback, CapabilityFallbackDecision } from '../../capabilities/capabilityFallback';
 import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecision';
 import { SearchSignal } from '../../shared/signals/SearchSignals';
+import { decidePlanningStrategy as decidePlanningStrategyDecision } from './decisions/planning/decidePlanningStrategy';
+import { decideCapabilityFallback as decideCapabilityFallbackDecision } from './decisions/capability/decideCapabilityFallback';
 
 
 export enum CognitiveStrategy {
@@ -65,25 +67,9 @@ export interface CognitiveDecision {
     capabilityAwarePlan?: CapabilityAwarePlan;
 }
 
-export type CapabilityAwarePlan = {
-    steps?: Array<{
-        tool?: string;
-        description?: string;
-    }>;
-    requiredCapabilities: string[];
-    missingCapabilities: string[];
-    isExecutable: boolean;
-    fallbackStrategy?: 'graceful_response' | 'request_install' | 'defer';
+export type CapabilityAwarePlan = import('./types/PlanningTypes').CapabilityAwarePlan;
     // Fonte da recomendação cognitiva de planejamento (não representa aplicação final).
-    finalDecisionSource: 'orchestrator' | 'loop_safe_fallback';
-};
-
-type PlanningStrategyContext = {
-    sessionId: string;
-    taskType: TaskType;
-    route: ExecutionRoute;
-    capabilityGap: ResolutionProposal;
-};
+type PlanningStrategyContext = import('./types/PlanningTypes').PlanningStrategyContext;
 
 type SignalAuthorityDecision = {
     override?: boolean;
@@ -182,24 +168,12 @@ export class CognitiveOrchestrator {
      */
     public decidePlanningStrategy(context: PlanningStrategyContext): CapabilityAwarePlan {
         const { sessionId, taskType, route, capabilityGap } = context;
-        const requiredCapabilities = getRequiredCapabilitiesForTaskType(taskType);
-        const missingFromGap = capabilityGap.gap?.missing || [];
-        const primaryMissing = capabilityGap.gap?.resource ? [capabilityGap.gap.resource] : [];
-        const missingCapabilities = Array.from(new Set([...missingFromGap, ...primaryMissing]));
-
+        const planningDecision = decidePlanningStrategyDecision(context);
+        const requiredCapabilities = planningDecision.requiredCapabilities;
+        const missingCapabilities = planningDecision.missingCapabilities;
         const hasGap = capabilityGap.hasGap || missingCapabilities.length > 0;
-        const isExecutable = !hasGap;
-        const fallbackStrategy: CapabilityAwarePlan['fallbackStrategy'] = hasGap
-            ? (capabilityGap.solution?.requiresConfirmation ? 'request_install' : 'defer')
-            : undefined;
-
-        const planningDecision: CapabilityAwarePlan = {
-            requiredCapabilities,
-            missingCapabilities,
-            isExecutable,
-            fallbackStrategy,
-            finalDecisionSource: 'orchestrator'
-        };
+        const isExecutable = planningDecision.isExecutable;
+        const fallbackStrategy = planningDecision.fallbackStrategy;
 
         this.lastCapabilityAwarePlanBySession.set(sessionId, planningDecision);
 
@@ -1094,39 +1068,15 @@ export class CognitiveOrchestrator {
         signal: CapabilityFallback;
     }): CapabilityFallbackDecision | undefined {
         const { sessionId, signal } = context;
+        const decision = decideCapabilityFallbackDecision({ signal });
 
-        if (!signal?.capability) {
+        if (!decision) {
             this.logger.debug('no_capability_fallback_signal_available', '[ORCHESTRATOR ACTIVE] Nenhum CapabilityFallback facts disponivel para decisao ativa', {
                 sessionId
             });
-            return undefined;
         }
 
-        if (signal.context.suggestedDegradation) {
-            return {
-                action: 'degrade',
-                priority: signal.severity,
-                capability: signal.capability,
-                reason: 'degradation_available',
-                suggestedDegradation: signal.context.suggestedDegradation
-            };
-        }
-
-        if (signal.retryPossible) {
-            return {
-                action: 'retry',
-                priority: signal.severity,
-                capability: signal.capability,
-                reason: 'retry_possible'
-            };
-        }
-
-        return {
-            action: 'abort',
-            priority: 'high',
-            capability: signal.capability,
-            reason: 'capability_unavailable_no_safe_degradation'
-        };
+        return decision;
     }
 
     /**
@@ -1511,13 +1461,15 @@ export class CognitiveOrchestrator {
             intent: classification.type,
             isContinuation: !!pendingAction,
             hasAllParams: true,
-            riskLevel: 'medium',
+            riskLevel: this.resolveRiskLevel(classification.type, routeDecision.nature),
             isDestructive: false,
             isReversible: true,
             confidence: aggregatedConfidence.score,
             aggregatedConfidence,
             cognitiveState,
             nature: routeDecision.nature,
+            route: routeDecision.route,
+            intentSubtype: routeDecision.subtype,
             capabilityGap,
             pendingAction,
             reactiveState
@@ -1622,6 +1574,18 @@ export class CognitiveOrchestrator {
         } catch {
             return [];
         }
+    }
+
+    private resolveRiskLevel(taskType: TaskType, nature: TaskNature): 'low' | 'medium' | 'high' {
+        if (taskType === 'information_request' || taskType === 'conversation') {
+            return 'low';
+        }
+
+        if (nature === TaskNature.INFORMATIVE) {
+            return 'low';
+        }
+
+        return 'medium';
     }
 
     private suggestHybridTool(input: string, taskType: TaskType): string | undefined {

@@ -88,10 +88,11 @@ export class ActionRouter {
         let subtype = this.detectSubtype(normalizedInput);
 
         // 2. Detectar Natureza (Informação vs Execução)
-        const nature = this.detectTaskNature(normalizedInput);
+        let nature = this.detectTaskNature(normalizedInput);
 
         // 3. Verificar Agibilidade (Actionability)
         const requiresTool = this.requiresToolExecution(normalizedInput);
+        const requiresExternalInformation = this.requiresExternalInformation(normalizedInput, taskType);
 
         // 4. Rota Inicial
         let route = ExecutionRoute.TOOL_LOOP;
@@ -99,19 +100,30 @@ export class ActionRouter {
 
         const infoTypes: TaskType[] = ['content_generation', 'information_request', 'conversation', 'data_analysis'];
 
-        const isSelfQuery = /sabe\s+fazer|consegue|pode\s+ajudar|skills|tools|suporte|expert/i.test(normalizedInput);
+        const isMemorySelfQuery = this.isMemorySelfQuery(normalizedInput, taskType);
+        const isCapabilitySelfQuery = this.isCapabilitySelfQuery(normalizedInput);
 
-        if (isSelfQuery) {
+        if (isMemorySelfQuery) {
+            route = ExecutionRoute.DIRECT_LLM;
+            nature = TaskNature.INFORMATIVE;
+            confidence = 1.0;
+            subtype = IntentSubtype.COMMAND;
+        } else if (isCapabilitySelfQuery) {
             route = ExecutionRoute.TOOL_LOOP;
             confidence = 1.0;
             subtype = IntentSubtype.COMMAND; // Evita bloqueio pelo DecisionEngine (legacy guard 'doubt' → ASK)
+        } else if (requiresExternalInformation) {
+            route = ExecutionRoute.TOOL_LOOP;
+            nature = TaskNature.EXECUTABLE;
+            confidence = 1.0;
+            subtype = IntentSubtype.COMMAND;
         } else if (!requiresTool && (infoTypes.includes(taskType as TaskType) || nature === TaskNature.INFORMATIVE)) {
             route = ExecutionRoute.DIRECT_LLM;
             confidence = (taskType === 'conversation' || taskType === 'information_request') ? 1.0 : 0.95;
         }
 
         // 5. Ajustar confiança baseada no subtipo (Garantindo que self-queries não sejam penalizadas)
-        if (!isSelfQuery) {
+        if (!isMemorySelfQuery && !isCapabilitySelfQuery && !requiresExternalInformation) {
             if (subtype === IntentSubtype.SUGGESTION) {
                 confidence *= 0.8;
             } else if (subtype === IntentSubtype.DOUBT) {
@@ -177,6 +189,35 @@ export class ActionRouter {
         }
 
         return TaskNature.EXECUTABLE;
+    }
+
+    private requiresExternalInformation(input: string, taskType: TaskType | null): boolean {
+        if (taskType !== 'information_request' && taskType !== 'data_analysis') {
+            return false;
+        }
+
+        const hasLookupVerb = /\b(verificar|verifique|consultar|consulte|pesquisar|pesquise|buscar|busque|check|lookup|look up)\b/i.test(input);
+        const hasTimeSensitiveMarker = /\b(atual|agora|hoje|recente|recentes|latest|current|today|now)\b/i.test(input);
+        const hasMarketOrExternalDomain = /\b(pre[çc]o|cota[cç][aã]o|valor|situa[cç][aã]o|mercado|market|not[ií]cia|news|cripto|criptomoeda|crypto|bitcoin|ethereum|paxg|pax gold|ouro|gold|clima|weather)\b/i.test(input);
+
+        return (hasLookupVerb && hasMarketOrExternalDomain) || (hasTimeSensitiveMarker && hasMarketOrExternalDomain);
+    }
+
+    private isMemorySelfQuery(input: string, taskType: TaskType | null): boolean {
+        if (taskType === 'information_request') {
+            const memoryQuery = /\b(mem[óo]ria|memory|hist[oó]rico|contexto|lembra|recorda)\b.*\b(sobre mim|de mim|minha|meu|me)\b/i.test(input)
+                || /\b(o que)\b.*\b(sabe|lembra|recorda)\b.*\b(sobre mim|de mim)\b/i.test(input);
+
+            if (memoryQuery) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private isCapabilitySelfQuery(input: string): boolean {
+        return /sabe\s+fazer|consegue|pode\s+ajudar|skills|tools|suporte|expert/i.test(input);
     }
 
     /**

@@ -1,6 +1,6 @@
 # IalClaw - Estrutura de Arquivos e Diretorios
 
-Gerado em: 2026-04-03
+Gerado em: 2026-04-06
 
 ```text
 IalClaw/
@@ -113,6 +113,11 @@ IalClaw/
 |  |  |  \- detectors/
 |  |  |- language/
 |  |  |- orchestrator/
+|  |  |  |- decisions/
+|  |  |  |  |- capability/
+|  |  |  |  |  \- decideCapabilityFallback.ts
+|  |  |  |  \- planning/
+|  |  |  |     \- decidePlanningStrategy.ts
 |  |  |  \- modules/
 |  |  |- planner/
 |  |  |  \- templates/

@@ -100,6 +100,21 @@ Objetivo deste arquivo:
   - Pendencias para aprovar:
     - Nenhuma pendencia aberta no escopo do KB-027.
 
+- [ ] KB-046 - Modularizacao governada do CognitiveOrchestrator
+  - Status: em andamento em 6 de abril de 2026.
+  - Comportamento esperado:
+    - modularizacao sem alteracao de comportamento no `CognitiveOrchestrator`.
+    - `CapabilityAwarePlan` e `PlanningStrategyContext` devem ter fonte unica compartilhada.
+    - autoridade cognitiva deve permanecer no Orchestrator, sem mini-brains novos nos modulos extraidos.
+  - Evidencias atuais:
+    - plano formal criado em `docs/architecture/plans/KB-046-PLANO.md`.
+    - contratos compartilhados extraidos para `src/core/orchestrator/types/PlanningTypes.ts`.
+    - `CognitiveOrchestrator.ts` e `decidePlanningStrategy.ts` ajustados para reutilizar a mesma definicao de tipos.
+    - validacao formal registrada no plano com secoes de inconsistencias, conflitos e autoridade.
+    - `npx.cmd tsc --noEmit` executado sem diagnosticos em 6 de abril de 2026.
+  - Pendencias para aprovar:
+    - registrar fechamento do card quando a modularizacao atual for concluida no kanban final.
+
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 
 ### Preparacao (Windows PowerShell)

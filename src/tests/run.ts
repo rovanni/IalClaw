@@ -15,6 +15,7 @@ import { buildPlannerFallbackPlan, detectPlannerIntent } from '../core/planner/p
 import { decideExecutionPath } from '../core/runtime/decisionGate';
 import { getPendingAction, isConfirmation, setPendingAction } from '../core/agent/PendingActionTracker';
 import { buildExecutionPlan, classifyTask } from '../core/agent/TaskClassifier';
+import { ActionRouter, ExecutionRoute } from '../core/autonomy/ActionRouter';
 import { AgentRuntime } from '../core/AgentRuntime';
 import { AgentController } from '../core/AgentController';
 import { FlowManager } from '../core/flow/FlowManager';
@@ -641,6 +642,10 @@ async function run() {
     const snakeClassification = classifyTask('crie um jogo da cobrinha em html');
     assert.equal(snakeClassification.type, 'content_generation');
 
+    const memoryClassification = classifyTask('o que voce tem na sua memoria sobre mim?');
+    assert.equal(memoryClassification.type, 'information_request');
+    assert.ok(memoryClassification.confidence >= 0.95);
+
     const filesystemDeterministicPlan = buildExecutionPlan('filesystem', 'crie pasta jogos e subpasta jogo-cobra');
     assert.ok(filesystemDeterministicPlan);
     assert.equal(filesystemDeterministicPlan?.length, 2);
@@ -650,6 +655,15 @@ async function run() {
 
     const noBuilderPlan = buildExecutionPlan('content_generation', 'explique quicksort');
     assert.equal(noBuilderPlan, null);
+
+    const actionRouter = new ActionRouter();
+    const externalInfoRoute = actionRouter.decideRoute('poderia verificar a situacao da criptomoeda pax gold?', 'information_request');
+    assert.equal(externalInfoRoute.route, ExecutionRoute.TOOL_LOOP);
+    assert.equal(externalInfoRoute.subtype, 'command');
+    assert.equal(externalInfoRoute.confidence, 1);
+
+    const memoryRoute = actionRouter.decideRoute('o que voce tem na sua memoria sobre mim?', 'information_request');
+    assert.equal(memoryRoute.confidence, 1);
 
     await SessionManager.runWithSession('exploration-orchestrator-test', async () => {
         const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
@@ -661,6 +675,30 @@ async function run() {
 
         assert.equal(decision.strategy, CognitiveStrategy.ASK);
         assert.match(decision.reason, /tipo de jogo|snake|pong/i);
+    });
+
+    await SessionManager.runWithSession('external-info-orchestrator-test', async () => {
+        const orchestrator = new CognitiveOrchestrator({ searchByContent: () => [] } as any, new FlowManager());
+        const decision = await orchestrator.decide({
+            sessionId: 'external-info-orchestrator-test',
+            input: 'poderia verificar a situacao da criptomoeda pax gold?'
+        });
+
+        assert.equal(decision.strategy, CognitiveStrategy.TOOL);
+        assert.equal(decision.reason, 'tool_execution');
+    });
+
+    await SessionManager.runWithSession('memory-query-orchestrator-test', async () => {
+        const orchestrator = new CognitiveOrchestrator({
+            searchByContent: () => [{ score: 0.91, content: 'Usuario prefere respostas objetivas.' }]
+        } as any, new FlowManager());
+        const decision = await orchestrator.decide({
+            sessionId: 'memory-query-orchestrator-test',
+            input: 'o que voce tem na sua memoria sobre mim?'
+        });
+
+        assert.notEqual(decision.strategy, CognitiveStrategy.ASK);
+        assert.equal(decision.strategy, CognitiveStrategy.LLM);
     });
 
     await SessionManager.runWithSession('kb-045-start-flow-test', async () => {

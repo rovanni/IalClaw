@@ -15,6 +15,7 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 - Parcialmente mitigados: KB-001, KB-024
 - Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045
 - Em monitoramento runtime (em andamento): KB-011, KB-012
+- Em governanca estrutural (em andamento): KB-046
 
 
 Observação:
@@ -71,6 +72,16 @@ Observação:
 - Cards relacionados:
   - KB-001
   - KB-020
+
+### src/core/orchestrator
+- Colunas e prioridades no quadro:
+  - Medio: KB-046
+- Problemas mapeados:
+  - modularizacao do `CognitiveOrchestrator` sem plano formal quebrava o gate documental do template
+  - `CapabilityAwarePlan` e `PlanningStrategyContext` estavam duplicados entre o Orchestrator e o modulo de decisao de planning
+  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`
+- Cards relacionados:
+  - KB-046
 
 ### src/core/flow
 - Colunas e prioridades no quadro:

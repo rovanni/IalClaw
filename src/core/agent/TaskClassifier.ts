@@ -394,22 +394,27 @@ export class TaskClassifier {
             return { type: 'skill_installation', confidence: 0.98, source: 'heuristic' };
         }
 
-        // 3. PERGUNTAS SOBRE O SISTEMA/PASSADO - information_request
+        // 3. CONSULTAS SEGURAS DE MEMORIA/IDENTIDADE - information_request
+        if (this.isMemorySelfQuery(normalized)) {
+            return { type: 'information_request', confidence: 0.98, source: 'heuristic' };
+        }
+
+        // 4. PERGUNTAS SOBRE O SISTEMA/PASSADO - information_request
         if (this.isMetaQuestion(normalized)) {
             return { type: 'information_request', confidence: 0.95, source: 'heuristic' };
         }
 
-        // 4. CRIAÇÃO DE SLIDES/HTML - content_generation
+        // 5. OPERACOES DE ARQUIVO - filesystem
         if (this.isFilesystemOperation(normalized)) {
             return { type: 'filesystem', confidence: 0.90, source: 'heuristic' };
         }
 
-        // 5. CRIAÇÃO DE SLIDES/HTML - content_generation
+        // 6. CRIAÇÃO DE SLIDES/HTML - content_generation
         if (this.isContentGeneration(normalized)) {
             return { type: 'content_generation', confidence: 0.95, source: 'heuristic' };
         }
 
-        // 6. Conversão de arquivos - MAS NÃO se for melhoria/organização
+        // 7. Conversão de arquivos - MAS NÃO se for melhoria/organização
         if (this.isFileConversion(normalized)) {
             return { type: 'file_conversion', confidence: 0.95, source: 'heuristic' };
         }
@@ -464,6 +469,16 @@ export class TaskClassifier {
         ];
 
         return skillPatterns.some(pattern => pattern.test(normalized));
+    }
+
+    private isMemorySelfQuery(normalized: string): boolean {
+        const memoryPatterns = [
+            /\b(mem[óo]ria|memory|hist[oó]rico|contexto|lembra|lembran[çc]a|recorda)\b.*\b(sobre mim|de mim|minha|meu|me)\b/i,
+            /\b(o que|qual|quais)\b.*\b(mem[óo]ria|memory|hist[oó]rico|contexto)\b/i,
+            /\b(o que)\b.*\b(sabe|lembra|recorda)\b.*\b(sobre mim|de mim)\b/i
+        ];
+
+        return memoryPatterns.some(pattern => pattern.test(normalized));
     }
 
     private isFilesystemOperation(normalized: string): boolean {
