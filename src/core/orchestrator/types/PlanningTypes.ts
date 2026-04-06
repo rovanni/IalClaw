@@ -9,6 +9,7 @@ export type CapabilityAwarePlan = {
     }>;
     requiredCapabilities: string[];
     missingCapabilities: string[];
+    hasGap: boolean;
     isExecutable: boolean;
     fallbackStrategy?: 'graceful_response' | 'request_install' | 'defer';
     // Fonte da recomendacao cognitiva de planejamento (nao representa aplicacao final).

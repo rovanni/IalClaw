@@ -17,6 +17,7 @@ export function decidePlanningStrategy(context: PlanningStrategyContext): Capabi
     return {
         requiredCapabilities,
         missingCapabilities,
+        hasGap,
         isExecutable,
         fallbackStrategy,
         finalDecisionSource: 'orchestrator'

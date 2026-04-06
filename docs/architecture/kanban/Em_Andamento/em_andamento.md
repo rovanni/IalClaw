@@ -39,7 +39,7 @@
 - KB-046 - Modularizacao governada do CognitiveOrchestrator
   - Origem: extracao incremental em `src/core/orchestrator`
   - Risco: Medio
-  - Status: plano formal criado; centralizacao de `CapabilityAwarePlan` e `PlanningStrategyContext` em andamento para remover duplicacao e fechar o gate documental.
+  - Status: rodada atual consolidada com contratos compartilhados de planning, capability fallback, retry after failure, active decisions e ingest summary; resumo factual inicial de `ingestSignalsFromLoop(...)` extraido para helper auxiliar mantendo mutacao de estado e logs por signal no Orchestrator, `npx.cmd tsc --noEmit` limpo e proxima fronteira segura registrada no plano para continuidade controlada.
   - Validacao detalhada: ver `docs/architecture/kanban/Testes/testes.md`.
 - Regra de entrada: mover para esta faixa apenas quando houver implementacao aberta sem evidencia minima em runtime.
 

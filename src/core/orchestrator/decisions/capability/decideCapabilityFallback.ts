@@ -1,8 +1,7 @@
-import { CapabilityFallback, CapabilityFallbackDecision } from '../../../../capabilities/capabilityFallback';
+import { CapabilityFallbackDecision } from '../../../../capabilities/capabilityFallback';
+import { CapabilityFallbackDecisionContext } from '../../types/CapabilityFallbackTypes';
 
-export function decideCapabilityFallback(context: {
-    signal: CapabilityFallback;
-}): CapabilityFallbackDecision | undefined {
+export function decideCapabilityFallback(context: CapabilityFallbackDecisionContext): CapabilityFallbackDecision | undefined {
     const { signal } = context;
 
     if (!signal?.capability) {

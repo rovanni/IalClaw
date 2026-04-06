@@ -110,10 +110,19 @@ Objetivo deste arquivo:
     - plano formal criado em `docs/architecture/plans/KB-046-PLANO.md`.
     - contratos compartilhados extraidos para `src/core/orchestrator/types/PlanningTypes.ts`.
     - `CognitiveOrchestrator.ts` e `decidePlanningStrategy.ts` ajustados para reutilizar a mesma definicao de tipos.
+    - `CapabilityAwarePlan` passou a expor `hasGap`, permitindo que o `CognitiveOrchestrator` consuma a derivacao do modulo de planning sem recalculo local.
+    - contrato de `decideCapabilityFallback(...)` centralizado em `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, removendo contexto inline no modulo auxiliar.
+    - contrato de `decideRetryAfterFailure(...)` centralizado em `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, removendo contexto inline do path extraido.
+    - derivacao estrutural de retry apos falha movida para `src/core/orchestrator/decisions/retry/decideRetryAfterFailure.ts`, enquanto `CognitiveOrchestrator.ts` preserva authority resolution, telemetria e safe mode.
+    - contrato de `ActiveDecisionsResult` centralizado em `src/core/orchestrator/types/ActiveDecisionsTypes.ts`, preservando compatibilidade via reexport no `CognitiveOrchestrator`.
+    - montagem estrutural de `ActiveDecisionsResult` movida para `src/core/orchestrator/decisions/active/buildActiveDecisionsResult.ts`, enquanto `CognitiveOrchestrator.ts` preserva as chamadas `decide*` e o ponto final de governanca.
+    - contrato de `IngestedSignalSummary` centralizado em `src/core/orchestrator/types/IngestSignalsTypes.ts`.
+    - resumo factual inicial de `ingestSignalsFromLoop(...)` movido para `src/core/orchestrator/decisions/signals/buildIngestedSignalSummary.ts`, enquanto `CognitiveOrchestrator.ts` preserva a mutacao de `observedSignals`, o reset de ciclo e os logs observacionais por signal.
     - validacao formal registrada no plano com secoes de inconsistencias, conflitos e autoridade.
     - `npx.cmd tsc --noEmit` executado sem diagnosticos em 6 de abril de 2026.
   - Pendencias para aprovar:
-    - registrar fechamento do card quando a modularizacao atual for concluida no kanban final.
+    - registrar fechamento do card quando a modularizacao global do arquivo for concluida no kanban final.
+    - manter a proxima extracao limitada a contratos puros pequenos e auditaveis, conforme definido no plano.
 
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 

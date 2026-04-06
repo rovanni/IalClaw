@@ -79,7 +79,7 @@ Observação:
 - Problemas mapeados:
   - modularizacao do `CognitiveOrchestrator` sem plano formal quebrava o gate documental do template
   - `CapabilityAwarePlan` e `PlanningStrategyContext` estavam duplicados entre o Orchestrator e o modulo de decisao de planning
-  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`
+  - mitigacao em andamento: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts` e `src/core/orchestrator/types/IngestSignalsTypes.ts`
 - Cards relacionados:
   - KB-046
 

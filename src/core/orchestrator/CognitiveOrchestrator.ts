@@ -21,11 +21,19 @@ import { FailSafeModule } from './modules/FailSafeModule';
 import { StopContinueDeltaContext, StopContinueDeltaEvaluationResult, StopContinueExecutionContext, StopContinueModule } from './modules/StopContinueModule';
 import { IntentResult } from '../intent/IntentResult';
 import { PlanRuntimeSignals } from '../../capabilities/stepCapabilities';
-import { CapabilityFallback, CapabilityFallbackDecision } from '../../capabilities/capabilityFallback';
+import { CapabilityFallbackDecision } from '../../capabilities/capabilityFallback';
 import { PlanRuntimeDecision, RuntimeDecisionReasons } from './PlanRuntimeDecision';
 import { SearchSignal } from '../../shared/signals/SearchSignals';
+import { buildActiveDecisionsResult } from './decisions/active/buildActiveDecisionsResult';
+import { buildIngestedSignalSummary } from './decisions/signals/buildIngestedSignalSummary';
 import { decidePlanningStrategy as decidePlanningStrategyDecision } from './decisions/planning/decidePlanningStrategy';
 import { decideCapabilityFallback as decideCapabilityFallbackDecision } from './decisions/capability/decideCapabilityFallback';
+import { decideRetryAfterFailure as decideRetryAfterFailureDecision } from './decisions/retry/decideRetryAfterFailure';
+import type { ActiveDecisionSnapshot, ActiveDecisionsResult } from './types/ActiveDecisionsTypes';
+import { CapabilityFallbackDecisionContext } from './types/CapabilityFallbackTypes';
+import type { IngestedSignalSummary } from './types/IngestSignalsTypes';
+import { RetryAfterFailureContext } from './types/RetryAfterFailureTypes';
+import type { CapabilityAwarePlan, PlanningStrategyContext } from './types/PlanningTypes';
 
 
 export enum CognitiveStrategy {
@@ -67,9 +75,12 @@ export interface CognitiveDecision {
     capabilityAwarePlan?: CapabilityAwarePlan;
 }
 
-export type CapabilityAwarePlan = import('./types/PlanningTypes').CapabilityAwarePlan;
+export type { CapabilityAwarePlan } from './types/PlanningTypes';
     // Fonte da recomendação cognitiva de planejamento (não representa aplicação final).
-type PlanningStrategyContext = import('./types/PlanningTypes').PlanningStrategyContext;
+
+type CapabilityFallbackContext = CapabilityFallbackDecisionContext & {
+    sessionId: string;
+};
 
 type SignalAuthorityDecision = {
     override?: boolean;
@@ -85,42 +96,7 @@ type SignalAuthorityContext = {
     route?: RouteAutonomySignal;
 };
 
-type RetryAfterFailureContext = {
-    sessionId: string;
-    attempt?: number;
-    executorDecision?: boolean;
-};
-
-export type ActiveDecisionsResult = {
-    loop: {
-        stop?: StopContinueSignal;
-        fallback?: ToolFallbackSignal;
-        validation?: StepValidationSignal;
-        route?: RouteAutonomySignal;
-        failSafe?: FailSafeSignal;
-    };
-    orchestrator: {
-        stop?: StopContinueSignal;
-        fallback?: ToolFallbackSignal;
-        validation?: StepValidationSignal;
-        route?: RouteAutonomySignal;
-        failSafe?: FailSafeSignal;
-    };
-    applied: {
-        stop?: StopContinueSignal;
-        fallback?: ToolFallbackSignal;
-        validation?: StepValidationSignal;
-        route?: RouteAutonomySignal;
-        failSafe?: FailSafeSignal;
-    };
-    safeModeFallbackApplied: {
-        stop: boolean;
-        fallback: boolean;
-        validation: boolean;
-        route: boolean;
-        failSafe: boolean;
-    };
-};
+export type { ActiveDecisionsResult } from './types/ActiveDecisionsTypes';
 
 /**
  * CognitiveOrchestrator: Centraliza a tomada de decisão do agente.
@@ -169,11 +145,13 @@ export class CognitiveOrchestrator {
     public decidePlanningStrategy(context: PlanningStrategyContext): CapabilityAwarePlan {
         const { sessionId, taskType, route, capabilityGap } = context;
         const planningDecision = decidePlanningStrategyDecision(context);
-        const requiredCapabilities = planningDecision.requiredCapabilities;
-        const missingCapabilities = planningDecision.missingCapabilities;
-        const hasGap = capabilityGap.hasGap || missingCapabilities.length > 0;
-        const isExecutable = planningDecision.isExecutable;
-        const fallbackStrategy = planningDecision.fallbackStrategy;
+        const {
+            requiredCapabilities,
+            missingCapabilities,
+            hasGap,
+            isExecutable,
+            fallbackStrategy
+        } = planningDecision;
 
         this.lastCapabilityAwarePlanBySession.set(sessionId, planningDecision);
 
@@ -247,19 +225,11 @@ export class CognitiveOrchestrator {
      * @param sessionId Session context for logging
      */
     public ingestSignalsFromLoop(signals: Readonly<CognitiveSignalsState>, sessionId: string): void {
+        const ingestedSignalSummary: IngestedSignalSummary = buildIngestedSignalSummary({ signals });
+
         this.logger.info('signals_ingested_passive_mode', '[ORCHESTRATOR PASSIVE] Consumindo signals do AgentLoop', {
             sessionId,
-            hasStop: !!signals.stop,
-            hasFallback: !!signals.fallback,
-            hasFallbackStrategy: !!signals.fallbackStrategy,
-            hasValidation: !!signals.validation,
-            hasRoute: !!signals.route,
-            hasFailSafe: !!signals.failSafe,
-            hasLlmRetry: !!signals.llmRetry,
-            hasReclassification: !!signals.reclassification,
-            hasPlanAdjustment: !!signals.planAdjustment,
-            hasRealityCheckFacts: !!signals.realityCheckFacts,
-            hasRealityCheck: !!signals.realityCheck
+            ...ingestedSignalSummary
         });
 
         // Store the observed signals (immutably merge new observations)
@@ -514,23 +484,12 @@ export class CognitiveOrchestrator {
         const failSafeSignal = this.observedSignals.failSafe;
         const stopSignal = this.observedSignals.stop;
         const validationSignal = this.observedSignals.validation;
-
-        let orchestratorDecision: boolean | undefined;
-        let reason = 'insufficient_context';
-
-        if (failSafeSignal?.activated) {
-            orchestratorDecision = false;
-            reason = 'fail_safe_activated';
-        } else if (stopSignal?.shouldStop) {
-            orchestratorDecision = false;
-            reason = 'stop_continue_should_stop';
-        } else if (validationSignal && !validationSignal.validationPassed) {
-            orchestratorDecision = true;
-            reason = 'validation_failed';
-        } else if (selfHealingSignal?.activated) {
-            orchestratorDecision = true;
-            reason = 'self_healing_active';
-        }
+        const { orchestratorDecision, reason } = decideRetryAfterFailureDecision({
+            selfHealing: selfHealingSignal,
+            failSafe: failSafeSignal,
+            stopContinue: stopSignal,
+            validation: validationSignal
+        });
 
         const authorityDecision = this.resolveSignalAuthority({
             sessionId,
@@ -1063,10 +1022,7 @@ export class CognitiveOrchestrator {
      * - Decisao central no Orchestrator
      * - Safe mode no executor: undefined => decisao local
      */
-    public decideCapabilityFallback(context: {
-        sessionId: string;
-        signal: CapabilityFallback;
-    }): CapabilityFallbackDecision | undefined {
+    public decideCapabilityFallback(context: CapabilityFallbackContext): CapabilityFallbackDecision | undefined {
         const { sessionId, signal } = context;
         const decision = decideCapabilityFallbackDecision({ signal });
 
@@ -1121,7 +1077,7 @@ export class CognitiveOrchestrator {
     }
 
     public applyActiveDecisions(sessionId: string): ActiveDecisionsResult {
-        const loop = {
+        const loop: ActiveDecisionSnapshot = {
             stop: this.observedSignals.stop,
             fallback: this.observedSignals.fallback,
             validation: this.observedSignals.validation,
@@ -1129,7 +1085,7 @@ export class CognitiveOrchestrator {
             failSafe: this.observedSignals.failSafe
         };
 
-        const orchestrator = {
+        const orchestrator: ActiveDecisionSnapshot = {
             stop: this.decideStopContinue(sessionId),
             fallback: this.decideToolFallback(sessionId),
             validation: this.decideStepValidation(sessionId),
@@ -1137,26 +1093,7 @@ export class CognitiveOrchestrator {
             failSafe: this.decideFailSafe(sessionId)
         };
 
-        const applied = {
-            stop: orchestrator.stop ?? loop.stop,
-            fallback: orchestrator.fallback ?? loop.fallback,
-            validation: orchestrator.validation ?? loop.validation,
-            route: orchestrator.route ?? loop.route,
-            failSafe: orchestrator.failSafe ?? loop.failSafe
-        };
-
-        return {
-            loop,
-            orchestrator,
-            applied,
-            safeModeFallbackApplied: {
-                stop: !orchestrator.stop && !!loop.stop,
-                fallback: !orchestrator.fallback && !!loop.fallback,
-                validation: !orchestrator.validation && !!loop.validation,
-                route: !orchestrator.route && !!loop.route,
-                failSafe: !orchestrator.failSafe && !!loop.failSafe
-            }
-        };
+        return buildActiveDecisionsResult({ loop, orchestrator });
     }
 
     /**
