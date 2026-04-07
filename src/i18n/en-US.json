@@ -432,6 +432,8 @@
   "agent.orchestrator.ask.execution_unclear": "I understand the goal, but I'm not sure which tool to use. Could you provide more context?",
   "agent.orchestrator.ask.cognitive_conflict": "I found conflicting ways to handle your request. Could you be more specific about the desired outcome?",
   "agent.orchestrator.ask.low_confidence_fallback": "I'm not entirely sure how to proceed safely. Could you clarify your objective?",
+  "agent.orchestrator.memory.introspection_hit": "I found information in my memory about this.",
+  "agent.orchestrator.memory.introspection_miss": "I did not find specific records about this in my memory.",
   "agent.orchestrator.exploration.generic_response": "Let's develop this together.\n\nTo guide you better, tell me:\n1. What outcome you want to achieve\n2. Whether this is for study, a prototype, or production\n3. What constraints already exist in the project",
   "agent.orchestrator.exploration.game_response": "Let's develop this together.\n\nWhat kind of game are you thinking about?\n1. Something simple, like Snake or Pong\n2. A 2D or 3D project\n3. Something for study or a more complete prototype",
   "intent.exploration.regex": "\\b(help me|i am thinking|thinking about|i have an idea|how can i|i want to do|i want to create|let'?s think|could you guide me)\\b",

@@ -581,6 +581,46 @@ export class CognitiveMemory {
         );
     }
 
+    /**
+     * KB-048: Persist a general user memory node.
+     */
+    public async saveUserMemory(sessionId: string, content: string): Promise<string> {
+        const now = new Date().toISOString();
+        const nodeId = `user_mem:${sessionId}:${Date.now()}`;
+        const preview = content.slice(0, 280);
+        const embedding = await this.provider.embed(content.slice(0, 6000));
+
+        this.db.prepare(`
+            INSERT INTO nodes
+            (id, type, subtype, name, content, content_preview, embedding, category, tags, importance, score, freshness, auto_indexed, created_at, modified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            nodeId,
+            'memory',
+            'user',
+            'User Memory',
+            content,
+            preview,
+            JSON.stringify(embedding),
+            'user_memory',
+            JSON.stringify(['user', sessionId]),
+            0.6,
+            0.5,
+            1.0,
+            1,
+            now,
+            now
+        );
+
+        this.logger.info('user_memory_saved', '[MEMORY] Nova memória de usuário registrada', {
+            sessionId,
+            nodeId,
+            contentLength: content.length
+        });
+
+        return nodeId;
+    }
+
     public async upsertSkillGraph(input: {
         skill_name: string;
         description?: string;

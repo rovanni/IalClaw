@@ -76,6 +76,7 @@ import type { SignalConflictId, SignalConflictSeverity } from './types/SignalCon
 import type { StopContinueGovernanceAuditContext } from './types/StopContinueGovernanceTypes';
 import { decideFlowStart as decideFlowStartDecision } from './decisions/flow/decideFlowStart';
 import { FlowStartDecision } from './types/FlowStartTypes';
+import { decideMemoryQuery as decideMemoryQueryDecision } from './decisions/memory/decideMemoryQuery';
 
 
 export enum CognitiveStrategy {
@@ -1284,9 +1285,12 @@ export class CognitiveOrchestrator {
         const text = cognitiveInput.input;
 
         // ── 1. RECUPERAÇÃO DE ESTADO (Internalizada) ───────────────────────
+        let decision: CognitiveDecision | undefined;
         const currentSession = SessionManager.getSession(sessionId);
+        
         if (!currentSession) {
-            return { strategy: CognitiveStrategy.LLM, confidence: 0.5, reason: "session_not_found" };
+            decision = { strategy: CognitiveStrategy.LLM, confidence: 0.5, reason: "session_not_found" };
+            return this.consolidateAndReturn(decision, sessionId);
         }
 
         const cognitiveState = SessionManager.getCognitiveState(currentSession);
@@ -1306,18 +1310,16 @@ export class CognitiveOrchestrator {
             isIntentRelatedToTopic: IntentionResolver.isIntentRelatedToTopic(text, flowState?.topic || undefined)
         });
 
-        // ── 2. HIERARQUIA DE PRECEDÊNCIA (Production-Level) ─────────────────
+        // ── 2. HIERARQUIA DE PRECEDÊNCIA (Convergente) ───────────────────────
 
         // --- 2.1. RECOVERY (MÁXIMA PRIORIDADE) ---
         if (precedence.hasReactiveState) {
             this.logger.info('precedence_recovery', '[ORCHESTRATOR] Prioridade: Recovery');
 
             if (intent === 'STOP' || intent === 'DECLINE') {
-                return { strategy: CognitiveStrategy.LLM, confidence: 1.0, reason: "user_cancelled_recovery", clearPendingAction: true };
-            }
-
-            if (reactiveState.type === 'capability_missing' || reactiveState.type === 'execution_failed') {
-                return {
+                decision = { strategy: CognitiveStrategy.LLM, confidence: 1.0, reason: "user_cancelled_recovery", clearPendingAction: true };
+            } else if (reactiveState.type === 'capability_missing' || reactiveState.type === 'execution_failed') {
+                decision = {
                     strategy: CognitiveStrategy.CONFIRM,
                     confidence: 0.95,
                     reason: "reactive_recovery_needed",
@@ -1336,180 +1338,217 @@ export class CognitiveOrchestrator {
         }
 
         // --- 2.2. FLOW (GUIADO) ---
-        // KB-021: usa cognitiveState (sessão) como fonte de verdade; flowManager como fallback em memória
-        if (precedence.hasActiveFlow) {
+        if (!decision && precedence.hasActiveFlow) {
             if (precedence.isFlowEscape) {
                 this.logger.info('precedence_flow_interrupt', '[ORCHESTRATOR] Flow interrompido por topic shift');
-                return {
+                decision = {
                     strategy: CognitiveStrategy.INTERRUPT_FLOW,
                     confidence: 0.95,
                     reason: "topic_shift",
                     interruptionReason: "user_interruption"
                 };
+            } else {
+                this.logger.info('precedence_flow', '[ORCHESTRATOR] Prioridade: Flow Ativo');
+                decision = {
+                    strategy: CognitiveStrategy.FLOW,
+                    confidence: Math.max(0.85, flowState?.confidence || 0.9),
+                    reason: "active_flow_continuity"
+                };
             }
-
-            this.logger.info('precedence_flow', '[ORCHESTRATOR] Prioridade: Flow Ativo');
-            return {
-                strategy: CognitiveStrategy.FLOW,
-                confidence: Math.max(0.85, flowState?.confidence || 0.9),
-                reason: "active_flow_continuity"
-            };
         }
 
         // --- 2.3. PENDING ACTION (CONFIRMAÇÃO) ---
-        if (precedence.hasPendingAction && pendingAction) {
+        if (!decision && precedence.hasPendingAction && pendingAction) {
             const pendingActionId = pendingAction.id;
             this.logger.info('precedence_pending', '[ORCHESTRATOR] Prioridade: Pending Action');
 
             if (intent === 'CONFIRM' || intent === 'CONTINUE' || intent === 'EXECUTE') {
-                return { strategy: CognitiveStrategy.EXECUTE_PENDING, confidence: 1.0, reason: "user_confirmed_pending", pendingActionId };
-            }
-
-            if (intent === 'STOP' || intent === 'DECLINE') {
-                return { strategy: CognitiveStrategy.CANCEL_PENDING, confidence: 1.0, reason: "user_declined_pending", pendingActionId };
-            }
-
-            if (match.type === 'UNKNOWN' && text.length > 120) {
-                return { strategy: CognitiveStrategy.LLM, confidence: 0.9, reason: "topic_shift_clearing_pending", clearPendingAction: true };
+                decision = { strategy: CognitiveStrategy.EXECUTE_PENDING, confidence: 1.0, reason: "user_confirmed_pending", pendingActionId };
+            } else if (intent === 'STOP' || intent === 'DECLINE') {
+                decision = { strategy: CognitiveStrategy.CANCEL_PENDING, confidence: 1.0, reason: "user_declined_pending", pendingActionId };
+            } else if (match.type === 'UNKNOWN' && text.length > 120) {
+                decision = { strategy: CognitiveStrategy.LLM, confidence: 0.9, reason: "topic_shift_clearing_pending", clearPendingAction: true };
             }
         }
 
         // --- 2.4. FLOW START (nova intenção) ---
-        // Pending action tem prioridade sobre início de flow para evitar abandono de estado crítico aberto.
-        const flowIdToStart = precedence.canEvaluateFlowStart ? this.decideFlowStart(sessionId, text) : undefined;
-        if (flowIdToStart) {
-            this.logger.info('precedence_flow_start', '[ORCHESTRATOR] Prioridade: Início de Flow', {
-                sessionId,
-                flowId: flowIdToStart
+        if (!decision) {
+            const flowIdToStart = precedence.canEvaluateFlowStart ? this.decideFlowStart(sessionId, text) : undefined;
+            if (flowIdToStart) {
+                this.logger.info('precedence_flow_start', '[ORCHESTRATOR] Prioridade: Início de Flow', {
+                    sessionId,
+                    flowId: flowIdToStart
+                });
+                decision = {
+                    strategy: CognitiveStrategy.START_FLOW,
+                    confidence: 0.9,
+                    reason: 'flow_start_requested',
+                    flowId: flowIdToStart
+                };
+            }
+        }
+
+        // --- 2.4.5. MEMORY INTROSPECTION (KB-048) ---
+        // Prioridade cirúrgica: se for consulta de memória, intercepta antes do loop normal.
+        if (!decision && (intent === 'MEMORY_QUERY' || intent === 'MEMORY_CHECK' || intent === 'MEMORY_STORE')) {
+            this.logger.info('precedence_memory_introspection', '[ORCHESTRATOR] Prioridade: Introspecção de Memória', {
+                intent
             });
-            return {
-                strategy: CognitiveStrategy.START_FLOW,
-                confidence: 0.9,
-                reason: 'flow_start_requested',
-                flowId: flowIdToStart
-            };
+            decision = await decideMemoryQueryDecision({
+                sessionId,
+                input: text,
+                intent
+            }, this.memoryService);
         }
 
         // --- 2.5. NORMAL (DECISION HUB) ---
-        this.logger.info('precedence_normal', '[ORCHESTRATOR] Prioridade: Processamento Normal');
+        if (!decision) {
+            this.logger.info('precedence_normal', '[ORCHESTRATOR] Prioridade: Processamento Normal');
 
-        if (cognitiveInput.intent?.mode === 'EXPLORATION') {
-            this.logger.info('precedence_intent_exploration', '[ORCHESTRATOR] Intenção exploratória detectada', {
-                sessionId,
-                confidence: cognitiveInput.intent.confidence
-            });
+            if (cognitiveInput.intent?.mode === 'EXPLORATION') {
+                this.logger.info('precedence_intent_exploration', '[ORCHESTRATOR] Intenção exploratória detectada', {
+                    sessionId,
+                    confidence: cognitiveInput.intent.confidence
+                });
 
-            return {
-                strategy: CognitiveStrategy.ASK,
-                confidence: cognitiveInput.intent.confidence,
-                reason: this.handleExploration(text)
-            };
+                decision = {
+                    strategy: CognitiveStrategy.ASK,
+                    confidence: cognitiveInput.intent.confidence,
+                    reason: this.handleExploration(text)
+                };
+            } else {
+                const classification = await this.taskClassifier.classify(text);
+                const routeDecision = this.actionRouter.decideRoute(text, classification.type);
+                const memoryHits = await this.safeMemoryQuery(text);
+
+                const capabilityGap = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
+
+                const capabilityAwarePlan = this.decidePlanningStrategy({
+                    sessionId,
+                    taskType: classification.type,
+                    route: routeDecision.route,
+                    capabilityGap
+                });
+
+                const aggregatedConfidence = this.confidenceScorer.calculate({
+                    classifierConfidence: classification.confidence,
+                    routerConfidence: routeDecision.confidence,
+                    memoryHits: memoryHits,
+                    nature: routeDecision.nature
+                });
+
+                const autonomyDecision = decideAutonomy({
+                    intent: classification.type,
+                    isContinuation: !!pendingAction,
+                    hasAllParams: true,
+                    riskLevel: this.resolveRiskLevel(classification.type, routeDecision.nature),
+                    isDestructive: false,
+                    isReversible: true,
+                    confidence: aggregatedConfidence.score,
+                    aggregatedConfidence,
+                    cognitiveState,
+                    nature: routeDecision.nature,
+                    route: routeDecision.route,
+                    intentSubtype: routeDecision.subtype,
+                    capabilityGap,
+                    pendingAction,
+                    reactiveState
+                });
+
+                if (autonomyDecision === AutonomyDecision.ASK) {
+                    this.emitFinalDecisionRecommended({
+                        sessionId,
+                        strategy: CognitiveStrategy.ASK,
+                        reason: 'low_confidence_fallback',
+                        capabilityAwarePlan
+                    });
+                    decision = {
+                        strategy: CognitiveStrategy.ASK,
+                        confidence: aggregatedConfidence.score,
+                        reason: t('agent.orchestrator.ask.low_confidence_fallback'),
+                        capabilityAwarePlan,
+                        usedInputGap: false 
+                    };
+                } else if (autonomyDecision === AutonomyDecision.CONFIRM) {
+                    decision = {
+                        strategy: CognitiveStrategy.CONFIRM,
+                        confidence: aggregatedConfidence.score,
+                        reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
+                        capabilityGap,
+                        capabilityAwarePlan,
+                        usedInputGap: !!inputGap && capabilityGap.hasGap
+                    };
+                } else if (routeDecision.nature === TaskNature.HYBRID) {
+                    decision = {
+                        strategy: CognitiveStrategy.HYBRID,
+                        confidence: 0.9,
+                        reason: "hybrid_informative_executable",
+                        toolProposal: this.suggestHybridTool(text, classification.type),
+                        capabilityAwarePlan,
+                        usedInputGap: !!inputGap
+                    };
+                } else if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
+                    decision = {
+                        strategy: CognitiveStrategy.TOOL,
+                        confidence: routeDecision.confidence,
+                        reason: "tool_execution",
+                        capabilityAwarePlan,
+                        usedInputGap: !!inputGap
+                    };
+                } else {
+                    decision = {
+                        strategy: CognitiveStrategy.LLM,
+                        confidence: routeDecision.confidence,
+                        reason: "direct_response",
+                        capabilityAwarePlan,
+                        usedInputGap: !!inputGap && !capabilityGap.hasGap
+                    };
+                }
+            }
         }
 
-        const classification = await this.taskClassifier.classify(text);
-        const routeDecision = this.actionRouter.decideRoute(text, classification.type);
-        const memoryHits = await this.safeMemoryQuery(text);
+        // ── 3. CONSOLIDAÇÃO DE EFEITOS (Single Brain Governance) ──────────────
+        return this.consolidateAndReturn(decision, sessionId, inputGap);
+    }
 
-        const capabilityGap = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
-
-        const capabilityAwarePlan = this.decidePlanningStrategy({
-            sessionId,
-            taskType: classification.type,
-            route: routeDecision.route,
-            capabilityGap
-        });
-
-        const aggregatedConfidence = this.confidenceScorer.calculate({
-            classifierConfidence: classification.confidence,
-            routerConfidence: routeDecision.confidence,
-            memoryHits: memoryHits,
-            nature: routeDecision.nature
-        });
-
-        const autonomyDecision = decideAutonomy({
-            intent: classification.type,
-            isContinuation: !!pendingAction,
-            hasAllParams: true,
-            riskLevel: this.resolveRiskLevel(classification.type, routeDecision.nature),
-            isDestructive: false,
-            isReversible: true,
-            confidence: aggregatedConfidence.score,
-            aggregatedConfidence,
-            cognitiveState,
-            nature: routeDecision.nature,
-            route: routeDecision.route,
-            intentSubtype: routeDecision.subtype,
-            capabilityGap,
-            pendingAction,
-            reactiveState
-        });
-
-        // ── 3. MAPEAMENTO FINAL DE ESTRATÉGIA ───────────────────────────────
-        let decision: CognitiveDecision;
-
-        if (autonomyDecision === AutonomyDecision.ASK) {
-            this.emitFinalDecisionRecommended({
+    /**
+     * 🔒 RULE: All decisions MUST pass through consolidation layer.
+     * Centraliza a validação final, o consumo de estado e o logging de auditoria.
+     */
+    private consolidateAndReturn(
+        decision: CognitiveDecision | undefined, 
+        sessionId: string, 
+        inputGap?: any
+    ): CognitiveDecision {
+        // 1. INVARIANT CHECK (KB-048 refinement)
+        if (!decision || !decision.strategy) {
+            this.logger.error('critical_decision_failure', null, '[ORCHESTRATOR] Decision pipeline failed to converge', {
                 sessionId,
-                strategy: CognitiveStrategy.ASK,
-                reason: 'low_confidence_fallback',
-                capabilityAwarePlan
+                hasDecision: !!decision,
+                strategy: decision?.strategy
             });
-            decision = {
-                strategy: CognitiveStrategy.ASK,
-                confidence: aggregatedConfidence.score,
-                reason: t('agent.orchestrator.ask.low_confidence_fallback'),
-                capabilityAwarePlan,
-                // No low confidence fallback, we don't necessarily "consume" the gap yet
-                // unless we have specific logic saying so. For now, following user advice:
-                // only when explicitly influencing the result.
-                usedInputGap: false 
-            };
-        } else if (autonomyDecision === AutonomyDecision.CONFIRM) {
-            decision = {
-                strategy: CognitiveStrategy.CONFIRM,
-                confidence: aggregatedConfidence.score,
-                reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
-                capabilityGap,
-                capabilityAwarePlan,
-                usedInputGap: !!inputGap && capabilityGap.hasGap
-            };
-        } else if (routeDecision.nature === TaskNature.HYBRID) {
-            decision = {
-                strategy: CognitiveStrategy.HYBRID,
-                confidence: 0.9,
-                reason: "hybrid_informative_executable",
-                toolProposal: this.suggestHybridTool(text, classification.type),
-                capabilityAwarePlan,
-                usedInputGap: !!inputGap
-            };
-        } else if (routeDecision.route === ExecutionRoute.TOOL_LOOP) {
-            decision = {
-                strategy: CognitiveStrategy.TOOL,
-                confidence: routeDecision.confidence,
-                reason: "tool_execution",
-                capabilityAwarePlan,
-                usedInputGap: !!inputGap
-            };
-        } else {
-            decision = {
-                strategy: CognitiveStrategy.LLM,
-                confidence: routeDecision.confidence,
-                reason: "direct_response",
-                capabilityAwarePlan,
-                // KB-046: O gap deve ser consumido se chegamos ao LLM em um "normal path"
-                // onde avaliamos as capacidades e elas NÃO apresentaram gap bloqueador.
-                usedInputGap: !!inputGap && !capabilityGap.hasGap
-            };
+            throw new Error(`[CRITICAL] Decision pipeline failed to converge for session ${sessionId}`);
         }
 
-        // ── 4. CONSOLIDAÇÃO DE EFEITOS (Single Brain) ────────────────────────
-        if (decision.usedInputGap) {
+        const currentSession = SessionManager.getSession(sessionId);
+
+        // 2. STATE CONSUMPTION (Centralized)
+        if (decision.usedInputGap && currentSession) {
             delete currentSession.last_input_gap;
             this.logger.info('consuming_input_gap', '[ORCHESTRATOR] Consumindo sinal de gap utilizado na decisão.', { 
                 capability: inputGap?.capability,
                 reason: decision.reason
             });
         }
+
+        // 3. FINAL AUDIT LOG
+        this.logger.debug('final_cognitive_decision', '[ORCHESTRATOR FINAL] Decisão cognitiva consolidada', {
+            sessionId,
+            strategy: decision.strategy,
+            confidence: decision.confidence,
+            reason: decision.reason,
+            usedInputGap: decision.usedInputGap
+        });
 
         return decision;
     }

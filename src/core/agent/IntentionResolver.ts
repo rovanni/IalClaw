@@ -1,7 +1,7 @@
 import { createLogger } from '../../shared/AppLogger';
 import { t } from '../../i18n';
 
-export type IntentType = 'CONTINUE' | 'STOP' | 'EXECUTE' | 'CONFIRM' | 'DECLINE' | 'RETRY' | 'QUESTION' | 'META' | 'TASK' | 'UNKNOWN';
+export type IntentType = 'CONTINUE' | 'STOP' | 'EXECUTE' | 'CONFIRM' | 'DECLINE' | 'RETRY' | 'QUESTION' | 'META' | 'TASK' | 'MEMORY_QUERY' | 'MEMORY_CHECK' | 'MEMORY_STORE' | 'UNKNOWN';
 
 export interface IntentMatch {
     type: IntentType;
@@ -28,6 +28,24 @@ export class IntentionResolver {
         if (this.matchPattern(normalized, 'intent.confirm.permissive')) return { type: 'CONFIRM', confidence: 0.85 };
         if (this.matchPattern(normalized, 'intent.decline.regex')) return { type: 'DECLINE', confidence: 0.95 };
         if (this.matchPattern(normalized, 'intent.retry.regex')) return { type: 'RETRY', confidence: 0.95 };
+        
+        // 1.5. MEMORY INTROSPECTION (GATING + REGEX)
+        if (this.isMemoryIntrospection(normalized)) {
+            // MEMORY_STORE: "guarde isso", "lembre disso", "registre isso"
+            const isStore = /\b(guard\w+|armaz\w+|registr\w+|anot\w+|salv\w+)\b/i.test(normalized) && 
+                            !hasQuestionMark && 
+                            /\b(isso|isto|esta|essa|aquele|aquela|tudo|contexto|que|o\s+fato)\b/i.test(normalized);
+            
+            if (isStore) return { type: 'MEMORY_STORE', confidence: 0.94 };
+
+            // MEMORY_CHECK: "esta na memoria?", "foi registrado?", "voce lembra?"
+            const hasOpenIndicator = /^(o que|quais|como|quem|me diga|mostre)\b/i.test(normalized);
+            const isCheck = /(?:^|\s|["'])(esta|está|tem|foi|const\w*|registr\w+|armazen\w+|guard\w+|salv\w+|grav\w+|lembr\w+|record\w+)(?:\s|$|[?,.!;: "'])/i.test(normalized) && 
+                            (hasQuestionMark || normalized.length < 30 || /^(você|voce|vce|tu)\b/i.test(normalized)) &&
+                            !hasOpenIndicator;
+                            
+            return { type: isCheck ? 'MEMORY_CHECK' : 'MEMORY_QUERY', confidence: 0.92 };
+        }
 
         // 2. STOP / CANCEL
         const STOP_KEYWORDS = ["cancel", "stop", "exit", "sair", "cancelar", "parar", "esquece", "deixa pra lá", "para tudo", "aborte", "abortar"];
@@ -106,5 +124,18 @@ export class IntentionResolver {
             /^(sim|não|nao|yes|no)$/i
         ];
         return taskIndicators.some(pattern => pattern.test(normalized));
+    }
+
+    private static isMemoryIntrospection(normalized: string): boolean {
+        const keywords = /(lembr\w+|memória|memoria|regist\w+|armazen\w+|guard\w+|sabe|conhece|anot\w+|record\w+|grav\w+)/i;
+        const context = /(você|voce|vce|tu|mim|meu|minha|minhas|meus|nosso|nossa|seu|sua|disso|disto|daqui|desse|dessa|daquele|daquela|comigo|isso|isto|esta|está|foi|registrado)/i;
+        
+        const hasKeywords = keywords.test(normalized);
+        const hasContext = context.test(normalized);
+        
+        const isStrict = hasKeywords && hasContext;
+        const isShort = normalized.length < 150; 
+        
+        return isStrict && isShort;
     }
 }
