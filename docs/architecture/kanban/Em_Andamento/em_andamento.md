@@ -58,3 +58,8 @@
   - Movimentacao: consolidado como concluido com excecao arquitetural controlada documentada em `docs/architecture/decisions/KB-048-exception.md`.
   - Evidencias: classificacao de `MEMORY_QUERY` estabilizada para linguagem natural PT-BR; consumo de `last_input_gap` mantido exclusivamente no Final Gate; validacao registrada em `Testes/testes.md`.
 
+- [x] KB-049 - Small Talk Governance (fast-path + anti-overreach)
+  - Data de fechamento: 2026-04-06
+  - Movimentacao: consolidado como concluido com validacao unitaria e de integracao; sem pendencias abertas no escopo.
+  - Evidencias: precedencia `MEMORY -> SMALL_TALK` no `IntentionResolver`; `skipPlanning/skipToolLoop` no `CognitiveOrchestrator`; `AgentLoop` respeitando flags e bypass de bloqueio indevido em `REAL_TOOLS_ONLY`; validacao registrada em `Testes/testes.md`.
+

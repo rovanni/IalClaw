@@ -13,7 +13,7 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 ## Radar de críticos (snapshot 2026-04-06)
 - Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-024
-- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046, KB-048
+- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046, KB-048, KB-049
 - Em monitoramento runtime (em andamento): KB-011, KB-012
 
 

@@ -167,6 +167,24 @@ Objetivo deste arquivo:
   - Pendencias para aprovar:
     - nenhuma no escopo do KB-048.
 
+- [x] KB-049 - Small Talk Governance (fast-path com controle de overreach)
+  - Status: concluido em 6 de abril de 2026.
+  - Comportamento esperado:
+    - mensagens sociais curtas (ex.: "Oi", "Tudo bem?") devem acionar fast-path com `skipPlanning=true` e `skipToolLoop=true`.
+    - comandos de memoria com saudacao inline (ex.: "oi, voce lembra de mim?", "tudo bem, guarde isso") nao devem ser classificados como `SMALL_TALK`.
+    - `REAL_TOOLS_ONLY` nao deve bloquear resposta direta para `SMALL_TALK`.
+  - Evidencias atuais:
+    - `IntentionResolver.resolve()` com precedencia `MEMORY` antes de `SMALL_TALK`, reduzindo ambiguidade semantica em casos hibridos.
+    - `IntentionResolver.isSmallTalk()` com guard para greeting composto com pergunta real e `TASK_HINTS` cobrindo verbos de memoria (`guarde|lembre|registre|anote|grave`).
+    - `CognitiveOrchestrator.decide()` retorna `small_talk_fast_path` com `skipPlanning` e `skipToolLoop`.
+    - `AgentLoop` consome `policy.orchestrationResult` e respeita flags para bypass de planejamento/loop de tools sem bloquear small talk.
+    - Testes executados com sucesso:
+      - `npx ts-node src/tests/KB049_small_talk_unit.test.ts`
+      - `npx ts-node src/tests/KB049_small_talk_integration.test.ts`
+      - `npx tsc --noEmit`
+  - Pendencias para aprovar:
+    - nenhuma no escopo do KB-049.
+
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 
 ### Preparacao (Windows PowerShell)

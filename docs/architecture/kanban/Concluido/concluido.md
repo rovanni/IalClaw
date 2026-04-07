@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-049 - Small Talk Governance (fast-path + anti-overreach)
+  - Data: 2026-04-06
+  - Evidência: `IntentionResolver` recebeu `SMALL_TALK` com governanca de precedencia (`MEMORY -> SMALL_TALK`) e guard para casos compostos de saudacao + pedido; `CognitiveOrchestrator` passou a emitir `small_talk_fast_path` com `skipPlanning=true` e `skipToolLoop=true`; `AgentLoop` passou a respeitar as flags da orquestracao, evitando bloqueio indevido por `REAL_TOOLS_ONLY` em interacoes sociais. Validacao em `src/tests/KB049_small_talk_unit.test.ts`, `src/tests/KB049_small_talk_integration.test.ts` e `npx tsc --noEmit`.
+
 - [x] KB-048 - Memory Introspection + Final Gate (alinhamento com template + estabilizacao)
   - Data: 2026-04-06
   - Evidência: `IntentionResolver.isMemoryIntrospection(...)` ampliado para cobrir consultas abertas em PT-BR (incluindo variacoes sem acento/singular-plural), corrigindo classificacao de `MEMORY_QUERY`. `AgentController` ajustado para nao consumir `session.last_input_gap` antes do Orchestrator; consumo permanece centralizado no `consolidateAndReturn(...)` condicionado por `decision.usedInputGap`. Introspeccao manteve `usedInputGap: false`. Excecao arquitetural controlada formalizada em `docs/architecture/decisions/KB-048-exception.md`.
