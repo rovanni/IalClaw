@@ -202,11 +202,15 @@ export class CognitiveActionExecutor {
             }
         }
 
-        this.memory.saveMessage(session.conversation_id, 'user', userQuery);
-        this.memory.saveMessage(session.conversation_id, 'assistant', decision.reason);
-        SessionManager.addToHistory(session.conversation_id, 'user', userQuery);
-        SessionManager.addToHistory(session.conversation_id, 'assistant', decision.reason);
+        const userFacingReason = decision.reason === 'capability_gap_detected'
+            ? t('agent.orchestrator.gap.title')
+            : decision.reason;
 
-        return { answer: decision.reason };
+        this.memory.saveMessage(session.conversation_id, 'user', userQuery);
+        this.memory.saveMessage(session.conversation_id, 'assistant', userFacingReason);
+        SessionManager.addToHistory(session.conversation_id, 'user', userQuery);
+        SessionManager.addToHistory(session.conversation_id, 'assistant', userFacingReason);
+
+        return { answer: userFacingReason };
     }
 }

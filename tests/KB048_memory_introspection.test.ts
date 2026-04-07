@@ -32,7 +32,10 @@ async function runKB048Tests() {
         'o que você sabe sobre mim?',
         'o que voce lembra do meu saldo?',
         'quais informacoes voce tem sobre o paxg?',
-        'me diga o que voce sabe sobre meu projeto'
+        'me diga o que voce sabe sobre meu projeto',
+        'e do pax gold?',
+        'e sobre o paxg?',
+        'e quanto a minha carteira?'
     ];
     for (const input of queryInputs) {
         const match = IntentionResolver.resolve(input);

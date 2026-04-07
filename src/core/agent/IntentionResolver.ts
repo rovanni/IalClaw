@@ -158,6 +158,15 @@ export class IntentionResolver {
             return true;
         }
 
+        // Follow-up implicito curto (KB-049.1 E3):
+        // "e do X?", "e sobre X?", "e quanto a X?"
+        // Guardas: precisa ser pergunta curta e nao pode parecer comando/tarefa operacional.
+        const hasImplicitFollowUp = /^(?:e\s+)(?:do|da|dos|das|de|sobre|quanto\s+a)\s+[^?]{2,80}\?$/i.test(ascii);
+        const hasOperationalVerb = /\b(criar|apagar|deletar|executar|rodar|fazer|faca|faça|instalar|buscar|abrir|salvar)\b/i.test(ascii);
+        if (hasImplicitFollowUp && !hasOperationalVerb) {
+            return true;
+        }
+
         const keywords = /(lembr\w+|memória|memoria|regist\w+|armazen\w+|guard\w+|sabe|conhece|anot\w+|record\w+|grav\w+)/i;
         const context = /(você|voce|vce|tu|mim|meu|minha|minhas|meus|nosso|nossa|seu|sua|disso|disto|daqui|desse|dessa|daquele|daquela|comigo|isso|isto|esta|está|foi|registrado)/i;
         
