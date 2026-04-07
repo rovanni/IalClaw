@@ -10,7 +10,9 @@ export async function bootstrapCapabilities(
         'fs_access',
         'node_execution',
         'whisper_transcription',
-        'tts_generation'
+        'tts_generation',
+        'ffmpeg',
+        'sudo_permissions'
     ];
 
     const results = await Promise.allSettled(

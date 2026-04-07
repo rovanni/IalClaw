@@ -470,8 +470,8 @@ async function run() {
     {
         const registryWithList = new SkillRegistry();
         const fakeSkills: LoadedSkill[] = [
-            { name: 'skill-installer', description: 'Instala skills do marketplace', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [] },
-            { name: 'skill-auditor', description: 'Audita skills publicas', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [] },
+            { id: 'skill-installer', name: 'skill-installer', description: 'Instala skills do marketplace', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [], capabilities: [] },
+            { id: 'skill-auditor', name: 'skill-auditor', description: 'Audita skills publicas', argumentHint: '', body: '', sourcePath: '', origin: 'internal', triggers: [], capabilities: [] },
         ];
         registryWithList.register({
             name: 'list_installed_skills',
@@ -540,13 +540,15 @@ async function run() {
         );
 
         const skill: LoadedSkill = {
+            id: 'skill-installer',
             name: 'skill-installer',
             description: 'instala skills publicas',
             argumentHint: '',
             body: 'Fluxo de instalacao',
             sourcePath: '/tmp/skill.md',
             origin: 'internal',
-            triggers: ['instalar skill']
+            triggers: ['instalar skill'],
+            capabilities: []
         };
 
         const response = await (controller as any).runWithSkill(

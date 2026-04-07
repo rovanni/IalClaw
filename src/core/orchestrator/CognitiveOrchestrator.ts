@@ -5,11 +5,18 @@ import { FlowManager } from '../flow/FlowManager';
 import { FlowRegistry } from '../flow/FlowRegistry';
 import { CognitiveActionExecutor, ExecutionResult } from './CognitiveActionExecutor';
 import { IntentionResolver } from '../agent/IntentionResolver';
-import { TaskClassifier, TaskType } from '../agent/TaskClassifier';
+import { TaskClassifier, TaskType, getRequiredCapabilitiesForTaskType } from '../agent/TaskClassifier';
 import { createLogger } from '../../shared/AppLogger';
 import { getSecurityPolicy } from '../policy/SecurityPolicyProvider';
 import { DecisionMemory } from '../../memory/DecisionMemory';
 import { CapabilityResolver, ResolutionProposal, CapabilityStatus } from '../autonomy/CapabilityResolver';
+import { capabilityRegistry, skillManager } from '../../capabilities';
+import {
+    deriveCapabilitiesFromInput,
+    getCandidateSkillsForCapability,
+    getRuntimeRequirementsForCapability,
+    normalizeCapability
+} from '../../capabilities/capabilitySkillMap';
 import { ConfidenceScorer, AggregatedConfidence } from '../autonomy/ConfidenceScorer';
 import { getPendingAction } from '../agent/PendingActionTracker';
 import { SessionManager, SessionContext } from '../../shared/SessionManager';
@@ -234,6 +241,127 @@ export class CognitiveOrchestrator {
 
     public getLastCapabilityAwarePlan(sessionId: string): CapabilityAwarePlan | undefined {
         return this.lastCapabilityAwarePlanBySession.get(sessionId);
+    }
+
+    private reconcileCapabilityGap(input: string, taskType: TaskType, hypothesis: ResolutionProposal): ResolutionProposal {
+        const requiredByTask = getRequiredCapabilitiesForTaskType(taskType);
+        const requiredSemantic = new Set<string>(deriveCapabilitiesFromInput(input));
+        const requiredRuntime = new Set<string>(requiredByTask);
+
+        const fromHypothesis = [
+            ...(hypothesis.gap?.missing || []),
+            ...(hypothesis.gap?.resource ? [hypothesis.gap.resource] : [])
+        ];
+
+        for (const item of fromHypothesis) {
+            const mapped = normalizeCapability(item);
+            if (mapped) {
+                requiredSemantic.add(mapped);
+            }
+        }
+
+        const dynamicIndex = skillManager.getCapabilityIndex();
+        const capabilityResolutionByCapability: Record<string, {
+            runtimeSkills: string[];
+            mappedSkills: string[];
+            candidateSkills: string[];
+            availableSkills: string[];
+            realMissing: boolean;
+        }> = {};
+        const candidateSkillsByCapability: Record<string, string[]> = {};
+        const availableSkillIds = skillManager.listSkillIds();
+
+        for (const semanticCapability of requiredSemantic) {
+            const runtimeSkills = dynamicIndex[semanticCapability] || [];
+            const mappedSkills = getCandidateSkillsForCapability(semanticCapability);
+            const candidateSkills = Array.from(new Set([
+                ...runtimeSkills,
+                ...mappedSkills
+            ]));
+            const availableSkills = candidateSkills.filter(skillId => skillManager.hasSkill(skillId));
+            const realMissing = availableSkills.length === 0;
+
+            capabilityResolutionByCapability[semanticCapability] = {
+                runtimeSkills,
+                mappedSkills,
+                candidateSkills,
+                availableSkills,
+                realMissing
+            };
+            candidateSkillsByCapability[semanticCapability] = candidateSkills;
+
+            this.logger.info('capability_awareness_reconciled', '[ORCHESTRATOR] Capability awareness reconciliado com runtime como fonte primaria', {
+                capability: semanticCapability,
+                runtimeSkills,
+                mappedSkills,
+                candidateSkills,
+                availableSkills,
+                realMissing
+            });
+
+            if (realMissing) {
+                for (const runtimeCapability of getRuntimeRequirementsForCapability(semanticCapability)) {
+                    requiredRuntime.add(runtimeCapability);
+                }
+            }
+        }
+
+        const requiredCapabilities = Array.from(requiredRuntime);
+        const availableCapabilities = requiredCapabilities.filter(capability =>
+            capabilityRegistry.isAvailable(capability as any)
+        );
+        const missingRuntimeCapabilities = requiredCapabilities.filter(capability =>
+            !capabilityRegistry.isAvailable(capability as any)
+        );
+
+        const semanticMissing = Array.from(requiredSemantic).filter(capability => {
+            const runtimeRequirements = getRuntimeRequirementsForCapability(capability);
+            if (runtimeRequirements.length > 0) {
+                return false;
+            }
+
+            return capabilityResolutionByCapability[capability]?.realMissing ?? true;
+        });
+
+        const missingCapabilities = Array.from(new Set([...missingRuntimeCapabilities, ...semanticMissing]));
+
+        this.logger.debug('capability_awareness_reconciled', '[ORCHESTRATOR] Reconciliando hipótese de gap com estado real do registry', {
+            input,
+            taskType,
+            requiredSemanticCapabilities: Array.from(requiredSemantic),
+            requiredCapabilities,
+            dynamicIndex,
+            capabilityResolutionByCapability,
+            candidateSkillsByCapability,
+            availableSkillIds,
+            availableCapabilities,
+            missingCapabilities,
+            hypothesisHasGap: hypothesis.hasGap,
+            hypothesisMissing: hypothesis.gap?.missing || []
+        });
+
+        if (missingCapabilities.length === 0) {
+            return {
+                hasGap: false,
+                status: CapabilityStatus.AVAILABLE
+            };
+        }
+
+        const primaryMissing = missingCapabilities[0];
+
+        return {
+            hasGap: true,
+            status: CapabilityStatus.MISSING,
+            gap: {
+                resource: primaryMissing,
+                reason: hypothesis.gap?.reason || 'Missing required capabilities for current task',
+                task: hypothesis.gap?.task || taskType,
+                severity: hypothesis.gap?.severity || 'blocking',
+                missing: missingCapabilities,
+                installSuggestions: hypothesis.gap?.installSuggestions
+            },
+            solution: hypothesis.solution
+        };
     }
 
     private emitFinalDecisionRecommended(params: {
@@ -1441,7 +1569,8 @@ export class CognitiveOrchestrator {
                 const routeDecision = this.actionRouter.decideRoute(text, classification.type);
                 const memoryHits = await this.safeMemoryQuery(text);
 
-                const capabilityGap = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
+                const capabilityGapHypothesis = this.capabilityResolver.resolve(text, classification.type, routeDecision.nature, inputGap || undefined);
+                const capabilityGap = this.reconcileCapabilityGap(text, classification.type, capabilityGapHypothesis);
 
                 const capabilityAwarePlan = this.decidePlanningStrategy({
                     sessionId,

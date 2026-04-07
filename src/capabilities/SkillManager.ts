@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { Capability, CapabilityRegistry } from './CapabilityRegistry';
+import { normalizeCapability } from './capabilitySkillMap';
 import { emitDebug } from '../shared/DebugBus';
 import { findBinary, resolveBinary, detectWhisper } from '../shared/BinaryUtils';
 
@@ -16,6 +17,7 @@ export type SkillPolicy =
 export type Skill = {
     id: string;
     provides: Capability[];
+    capabilities?: string[];
     check: () => Promise<boolean>;
     install?: () => Promise<void>;
 };
@@ -23,6 +25,7 @@ export type Skill = {
 export class SkillManager {
     private skills: Skill[] = [];
     private ongoingChecks = new Map<Capability, Promise<boolean>>();
+    private dynamicSkillIds = new Set<string>();
 
     constructor(
         private registry: CapabilityRegistry,
@@ -39,6 +42,63 @@ export class SkillManager {
 
     getPolicy(): SkillPolicy {
         return this.policy;
+    }
+
+    listSkillIds(): string[] {
+        return Array.from(new Set(this.skills.map(skill => skill.id)));
+    }
+
+    hasSkill(skillId: string): boolean {
+        const normalizedSkillId = this.normalizeSkillId(skillId);
+        return this.skills.some(skill => this.normalizeSkillId(skill.id) === normalizedSkillId);
+    }
+
+    syncLoadedSkills(skills: Array<{ id: string; capabilities?: string[] }>): void {
+        this.skills = this.skills.filter(skill => !this.dynamicSkillIds.has(skill.id));
+        this.dynamicSkillIds.clear();
+
+        for (const skill of skills) {
+            if (!skill?.id) {
+                continue;
+            }
+
+            const capabilities = Array.isArray(skill.capabilities)
+                ? skill.capabilities.filter((capability): capability is string => typeof capability === 'string' && capability.trim().length > 0)
+                : [];
+
+            this.skills.push({
+                id: skill.id,
+                provides: [],
+                capabilities,
+                check: async () => true
+            });
+
+            this.dynamicSkillIds.add(skill.id);
+        }
+    }
+
+    getCapabilityIndex(): Record<string, string[]> {
+        const capabilityIndex: Record<string, string[]> = {};
+
+        for (const skill of this.skills) {
+            const declaredCapabilities = Array.isArray(skill.capabilities) && skill.capabilities.length > 0
+                ? skill.capabilities
+                : skill.provides;
+
+            for (const declaredCapability of declaredCapabilities) {
+                const normalizedCapability = this.normalizeDeclaredCapability(String(declaredCapability || ''));
+                if (!normalizedCapability) {
+                    continue;
+                }
+
+                capabilityIndex[normalizedCapability] ||= [];
+                if (!capabilityIndex[normalizedCapability].includes(skill.id)) {
+                    capabilityIndex[normalizedCapability].push(skill.id);
+                }
+            }
+        }
+
+        return capabilityIndex;
     }
 
     async ensure(capability: Capability, overridePolicy?: SkillPolicy): Promise<boolean> {
@@ -144,6 +204,20 @@ export class SkillManager {
         }
 
         return false;
+    }
+
+    private normalizeDeclaredCapability(capability: string): string | undefined {
+        const normalized = normalizeCapability(capability);
+        if (normalized) {
+            return normalized;
+        }
+
+        const fallback = capability.trim().toLowerCase().replace(/[\s-]+/g, '_');
+        return fallback || undefined;
+    }
+
+    private normalizeSkillId(skillId: string): string {
+        return String(skillId || '').trim().toLowerCase().replace(/\s+/g, '-');
     }
 }
 

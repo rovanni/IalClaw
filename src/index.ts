@@ -310,7 +310,18 @@ const skillsRoot = path.join(__dirname, '..', 'skills');
 const projectRoot = path.join(__dirname, '..');
 const auditLog = createAuditLog(projectRoot);
 const skillLoader = new SkillLoader(skillsRoot, auditLog);
-skillLoader.load();
+function syncLoadedSkillsToSkillManager(): ReturnType<SkillLoader['load']> {
+    const loadedSkills = skillLoader.load();
+    skillManager.syncLoadedSkills(
+        loadedSkills.map(skill => ({
+            id: skill.id,
+            capabilities: skill.capabilities
+        }))
+    );
+    return loadedSkills;
+}
+
+syncLoadedSkillsToSkillManager();
 const skillResolver = new SkillResolver(skillLoader);
 
 // Tool que o LLM pode chamar quando o usuário perguntar sobre skills disponíveis
@@ -451,7 +462,7 @@ registry.register({
 }, {
     execute: async () => {
         auditLog.reload();
-        const skills = skillLoader.load();
+        const skills = syncLoadedSkillsToSkillManager();
         return t('index.reload.success', {
             count: skills.length,
             names: skills.map(s => s.name).join(', ')
@@ -522,7 +533,7 @@ registry.register({
         fs.renameSync(tempDir, publicDir);
 
         auditLog.reload();
-        const loaded = skillLoader.load();
+        const loaded = syncLoadedSkillsToSkillManager();
 
         const skillJsonPath = path.join(publicDir, 'skill.json');
         let capabilities: string[] = [];
@@ -583,7 +594,7 @@ registry.register({
         const removedOrphans = memory.cleanupOrphanSkillNodes();
 
         auditLog.reload();
-        skillLoader.load();
+        syncLoadedSkillsToSkillManager();
 
         return t('index.skill.uninstalled', { name: safeName, count: removedOrphans });
     }

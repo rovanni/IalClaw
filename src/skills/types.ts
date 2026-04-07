@@ -1,4 +1,6 @@
 export type LoadedSkill = {
+    /** Id canônico da skill derivado do diretório de origem. */
+    id: string;
     /** Nome canônico da skill (campo `name` do frontmatter). */
     name: string;
     /** Descrição resumida usada para detecção automática de intenção. */
@@ -13,6 +15,8 @@ export type LoadedSkill = {
     origin: 'internal' | 'public';
     /** Frases de ativação free-text carregadas do skill.json (invocation.freeText). */
     triggers: string[];
+    /** Capabilities declaradas em frontmatter ou skill.json. */
+    capabilities: string[];
 };
 
 export type PendingSkillItem = {

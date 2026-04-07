@@ -169,6 +169,8 @@ export class SkillLoader {
             const name = this.yamlField(yaml, 'name');
             if (!name) return null;
 
+            const id = path.basename(path.dirname(filePath));
+
             const description =
                 this.yamlMultilineField(yaml, 'description') ||
                 this.yamlField(yaml, 'description');
@@ -176,8 +178,9 @@ export class SkillLoader {
 
             // Lê freeText triggers do skill.json irmão, se existir
             const triggers = this.loadTriggersFromSkillJson(filePath);
+            const capabilities = this.loadCapabilities(filePath, yaml);
 
-            return { name, description, argumentHint, body, sourcePath: filePath, origin, triggers };
+            return { id, name, description, argumentHint, body, sourcePath: filePath, origin, triggers, capabilities };
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'unknown';
             logger.warn('skill_parse_failed', `Failed to parse ${filePath}: ${msg}`);
@@ -200,6 +203,26 @@ export class SkillLoader {
         return [];
     }
 
+    private loadCapabilities(skillMdPath: string, yaml: string): string[] {
+        const yamlCapabilities = this.yamlListField(yaml, 'capabilities');
+        if (yamlCapabilities.length > 0) {
+            return yamlCapabilities;
+        }
+
+        try {
+            const jsonPath = path.join(path.dirname(skillMdPath), 'skill.json');
+            if (!fs.existsSync(jsonPath)) return [];
+            const meta = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            if (Array.isArray(meta?.capabilities)) {
+                return meta.capabilities.filter((capability: unknown) => typeof capability === 'string');
+            }
+        } catch {
+            // ignora erros silenciosamente
+        }
+
+        return [];
+    }
+
     /** Extrai campo simples: `key: value` ou `key: 'value'` */
     private yamlField(yaml: string, key: string): string {
         const m = yaml.match(new RegExp(`^${key}:\\s*['"]?([^'"\\n\\r]+?)['"]?\\s*$`, 'm'));
@@ -211,6 +234,26 @@ export class SkillLoader {
         const m = yaml.match(new RegExp(`^${key}:\\s*>\\r?\\n([\\s\\S]*?)(?=^[\\w-]|$)`, 'm'));
         if (!m) return '';
         return m[1].replace(/^[ \t]+/gm, '').replace(/\r?\n/g, ' ').trim();
+    }
+
+    private yamlListField(yaml: string, key: string): string[] {
+        const m = yaml.match(new RegExp(`^${key}:\\s*\\r?\\n((?:^[ \t]+-\\s+.*(?:\\r?\\n|$))+ )`, 'm'));
+        if (!m) {
+            const block = yaml.match(new RegExp(`^${key}:\\s*\\r?\\n([\\s\\S]*?)(?=^[^ \t-]|$)`, 'm'));
+            if (!block) {
+                return [];
+            }
+
+            return block[1]
+                .split(/\r?\n/)
+                .map(line => line.match(/^[ \t]+-\s+(.*)$/)?.[1]?.trim())
+                .filter((line): line is string => Boolean(line));
+        }
+
+        return m[1]
+            .split(/\r?\n/)
+            .map(line => line.match(/^[ \t]+-\s+(.*)$/)?.[1]?.trim())
+            .filter((line): line is string => Boolean(line));
     }
 
     private safeReaddir(dir: string): string[] {
