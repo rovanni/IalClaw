@@ -18,6 +18,7 @@ import { AgentController } from './core/AgentController';
 import { startTraceRecorder } from './shared/TraceRecorder';
 import { bootstrapCapabilities } from './capabilities/bootstrapCapabilities';
 import { capabilityRegistry, skillManager } from './capabilities';
+import { validateAliasMap } from './capabilities/capabilityAliasMap';
 import { SkillLoader } from './skills/SkillLoader';
 import { SkillResolver } from './skills/SkillResolver';
 import { createAuditLog } from './skills/AuditLog';
@@ -311,6 +312,7 @@ const projectRoot = path.join(__dirname, '..');
 const auditLog = createAuditLog(projectRoot);
 const skillLoader = new SkillLoader(skillsRoot, auditLog);
 function syncLoadedSkillsToSkillManager(): ReturnType<SkillLoader['load']> {
+    validateAliasMap();
     const loadedSkills = skillLoader.load();
     skillManager.syncLoadedSkills(
         loadedSkills.map(skill => ({

@@ -2,12 +2,14 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { Capability, CapabilityRegistry } from './CapabilityRegistry';
-import { normalizeCapability } from './capabilitySkillMap';
+import { Capability, CapabilityRegistry, listCanonicalCapabilities } from './CapabilityRegistry';
+import { canonicalizeCapability } from './canonicalizeCapability';
 import { emitDebug } from '../shared/DebugBus';
 import { findBinary, resolveBinary, detectWhisper } from '../shared/BinaryUtils';
+import { createLogger } from '../shared/AppLogger';
 
 const execAsync = promisify(exec);
+const logger = createLogger('SkillManager');
 
 export type SkillPolicy =
     | 'auto-install'
@@ -22,10 +24,22 @@ export type Skill = {
     install?: () => Promise<void>;
 };
 
+export type CapabilityAuditEntry = {
+    skillId: string;
+    raw: string;
+    normalized: string;
+    canonical: string;
+    isKnown: boolean;
+    isUnknown: boolean;
+    source: 'skill_frontmatter';
+    timestamp: string;
+};
+
 export class SkillManager {
     private skills: Skill[] = [];
     private ongoingChecks = new Map<Capability, Promise<boolean>>();
     private dynamicSkillIds = new Set<string>();
+    private capabilityAuditLog: CapabilityAuditEntry[] = [];
 
     constructor(
         private registry: CapabilityRegistry,
@@ -56,6 +70,7 @@ export class SkillManager {
     syncLoadedSkills(skills: Array<{ id: string; capabilities?: string[] }>): void {
         this.skills = this.skills.filter(skill => !this.dynamicSkillIds.has(skill.id));
         this.dynamicSkillIds.clear();
+        this.capabilityAuditLog = [];
 
         for (const skill of skills) {
             if (!skill?.id) {
@@ -66,10 +81,23 @@ export class SkillManager {
                 ? skill.capabilities.filter((capability): capability is string => typeof capability === 'string' && capability.trim().length > 0)
                 : [];
 
+            const canonicalCapabilities: string[] = [];
+
+            for (const rawCapability of capabilities) {
+                const canonicalized = this.auditDeclaredCapability(skill.id, rawCapability);
+                if (!canonicalized) {
+                    continue;
+                }
+
+                if (!canonicalCapabilities.includes(canonicalized)) {
+                    canonicalCapabilities.push(canonicalized);
+                }
+            }
+
             this.skills.push({
                 id: skill.id,
                 provides: [],
-                capabilities,
+                capabilities: canonicalCapabilities,
                 check: async () => true
             });
 
@@ -86,19 +114,36 @@ export class SkillManager {
                 : skill.provides;
 
             for (const declaredCapability of declaredCapabilities) {
-                const normalizedCapability = this.normalizeDeclaredCapability(String(declaredCapability || ''));
-                if (!normalizedCapability) {
+                const canonicalCapability = this.normalizeDeclaredCapability(String(declaredCapability || ''));
+                if (!canonicalCapability) {
                     continue;
                 }
 
-                capabilityIndex[normalizedCapability] ||= [];
-                if (!capabilityIndex[normalizedCapability].includes(skill.id)) {
-                    capabilityIndex[normalizedCapability].push(skill.id);
+                capabilityIndex[canonicalCapability] ||= [];
+                if (!capabilityIndex[canonicalCapability].includes(skill.id)) {
+                    capabilityIndex[canonicalCapability].push(skill.id);
                 }
             }
         }
 
         return capabilityIndex;
+    }
+
+    getCapabilityAuditLog(): CapabilityAuditEntry[] {
+        return [...this.capabilityAuditLog];
+    }
+
+    getUnknownCapabilities(): string[] {
+        return Array.from(new Set(
+            this.capabilityAuditLog
+                .filter(entry => entry.isUnknown)
+                .map(entry => entry.canonical)
+        ));
+    }
+
+    getUnusedCapabilities(): string[] {
+        const index = this.getCapabilityIndex();
+        return listCanonicalCapabilities().filter(capability => !(capability in index));
     }
 
     async ensure(capability: Capability, overridePolicy?: SkillPolicy): Promise<boolean> {
@@ -207,13 +252,44 @@ export class SkillManager {
     }
 
     private normalizeDeclaredCapability(capability: string): string | undefined {
-        const normalized = normalizeCapability(capability);
-        if (normalized) {
-            return normalized;
+        const canonicalized = canonicalizeCapability(capability);
+        return canonicalized.isKnown ? canonicalized.canonical : undefined;
+    }
+
+    private auditDeclaredCapability(skillId: string, rawCapability: string): string | undefined {
+        const canonicalized = canonicalizeCapability(rawCapability);
+        const entry: CapabilityAuditEntry = {
+            skillId,
+            raw: rawCapability,
+            normalized: canonicalized.normalized,
+            canonical: canonicalized.canonical,
+            isKnown: canonicalized.isKnown,
+            isUnknown: canonicalized.isUnknown,
+            source: 'skill_frontmatter',
+            timestamp: new Date().toISOString()
+        };
+
+        this.capabilityAuditLog.push(entry);
+
+        if (canonicalized.isUnknown) {
+            // TODO(KB-050): migrar politica de tratamento de unknown para governanca explicita no Orchestrator.
+            logger.warn('unknown_capability_detected', '[KB-050] Unknown capability detectada no frontmatter; mantendo apenas auditoria', {
+                skillId,
+                raw: rawCapability,
+                normalized: canonicalized.normalized,
+                canonical: canonicalized.canonical
+            });
+            emitDebug('unknown_capability_detected', {
+                skillId,
+                raw: rawCapability,
+                normalized: canonicalized.normalized,
+                canonical: canonicalized.canonical,
+                source: 'skill_frontmatter'
+            });
+            return undefined;
         }
 
-        const fallback = capability.trim().toLowerCase().replace(/[\s-]+/g, '_');
-        return fallback || undefined;
+        return canonicalized.canonical;
     }
 
     private normalizeSkillId(skillId: string): string {

@@ -63,3 +63,8 @@
   - Movimentacao: consolidado como concluido com validacao unitaria e de integracao; sem pendencias abertas no escopo.
   - Evidencias: precedencia `MEMORY -> SMALL_TALK` no `IntentionResolver`; `skipPlanning/skipToolLoop` no `CognitiveOrchestrator`; `AgentLoop` respeitando flags e bypass de bloqueio indevido em `REAL_TOOLS_ONLY`; validacao registrada em `Testes/testes.md`.
 
+- [x] KB-050 - Governanca semantica de capabilities (RAW -> normalize -> canonicalize -> validate -> index)
+  - Data de fechamento: 2026-04-07
+  - Movimentacao: implementado em camada canonica + integracao no SkillManager com auditoria separada e validacao de alias no startup.
+  - Evidencias: canonicalizacao deterministica (`canonicalizeCapability`), bloqueio de unknown no `capabilityIndex`, auditoria em `getCapabilityAuditLog()`, diagnosticos (`getUnknownCapabilities`, `getUnusedCapabilities`), script de qualidade `validateCapabilities` e cobertura de testes no `src/tests/run.ts`.
+

@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-050 - Governanca semantica de capabilities (RAW -> normalize -> canonicalize -> validate -> index)
+  - Data: 2026-04-07
+  - Evidência: `CANONICAL_CAPABILITIES` consolidado no registry de capabilities; aliases centralizados com `validateAliasMap()`; canonicalizacao deterministica via `canonicalizeCapability`; `SkillManager` passou a manter `capabilityIndex` separado de `capabilityAuditLog`, indexando apenas capabilities conhecidas e auditando unknown com warning `unknown_capability_detected`; diagnosticos adicionados (`getUnknownCapabilities`, `getCapabilityAuditLog`, `getUnusedCapabilities`); startup de skills validando aliases e script de qualidade `scripts/validateCapabilities.ts` com regra DEV=warning / CI=fail; cobertura dos cenarios canonical/alias/unknown/mixed no `src/tests/run.ts`.
+
 - [x] KB-049 - Small Talk Governance (fast-path + anti-overreach)
   - Data: 2026-04-06
   - Evidência: `IntentionResolver` recebeu `SMALL_TALK` com governanca de precedencia (`MEMORY -> SMALL_TALK`) e guard para casos compostos de saudacao + pedido; `CognitiveOrchestrator` passou a emitir `small_talk_fast_path` com `skipPlanning=true` e `skipToolLoop=true`; `AgentLoop` passou a respeitar as flags da orquestracao, evitando bloqueio indevido por `REAL_TOOLS_ONLY` em interacoes sociais. Validacao em `src/tests/KB049_small_talk_unit.test.ts`, `src/tests/KB049_small_talk_integration.test.ts` e `npx tsc --noEmit`.

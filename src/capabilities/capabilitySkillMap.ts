@@ -1,37 +1,4 @@
-const CAPABILITY_ALIASES: Record<string, string> = {
-    audio: 'audio_response',
-    audio_response: 'audio_response',
-    voice: 'audio_response',
-    voice_response: 'audio_response',
-    tts: 'audio_response',
-    tts_generation: 'audio_response',
-
-    stt: 'speech_to_text',
-    speech_to_text: 'speech_to_text',
-    voice_input: 'speech_to_text',
-    whisper: 'speech_to_text',
-    whisper_transcription: 'speech_to_text',
-
-    web_search: 'web_search',
-    search_web: 'web_search',
-    browser_search: 'web_search',
-
-    file_read: 'file_read',
-    file_write: 'file_write',
-    document_generate: 'document_generate',
-    image_generate: 'image_generate',
-    system_setup: 'system_setup',
-    automation: 'automation',
-
-    browser_execution: 'browser_execution',
-    fs_access: 'fs_access',
-    node_execution: 'node_execution',
-    git: 'git',
-    docker: 'docker',
-    ffmpeg: 'ffmpeg',
-    test_runner: 'test_runner',
-    sudo_permissions: 'sudo_permissions'
-};
+import { canonicalizeCapability } from './canonicalizeCapability';
 
 export const CAPABILITY_TO_SKILLS: Record<string, string[]> = {
     audio_response: ['telegram-voice', 'tts', 'ffmpeg'],
@@ -65,8 +32,8 @@ const CAPABILITY_TO_RUNTIME_REQUIREMENTS: Record<string, string[]> = {
 };
 
 export function normalizeCapability(capability: string): string | undefined {
-    const key = (capability || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    return CAPABILITY_ALIASES[key];
+    const canonicalized = canonicalizeCapability(capability);
+    return canonicalized.isKnown ? canonicalized.canonical : undefined;
 }
 
 export function getCandidateSkillsForCapability(capability: string): string[] {

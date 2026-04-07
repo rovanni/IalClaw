@@ -6,6 +6,26 @@ Objetivo deste arquivo:
 
 ## 1) Itens em andamento que precisam de validacao de testes
 
+- [x] KB-050 - Governanca semantica de capabilities (Single Brain)
+  - Status: concluido em 7 de abril de 2026.
+  - Comportamento esperado:
+    - pipeline de capability com normalizacao/canonicalizacao deterministica no ingest de skills.
+    - capabilities unknown nao podem entrar em `capabilityIndex`.
+    - unknown precisa aparecer em auditoria separada e warning estruturado.
+    - conflito de alias deve falhar no startup e no CI.
+  - Evidencias atuais:
+    - camada canonica adicionada em `src/capabilities/CapabilityRegistry.ts` com `CANONICAL_CAPABILITIES` e tipo `CanonicalCapability`.
+    - aliases centralizados em `src/capabilities/capabilityAliasMap.ts` com `validateAliasMap()`.
+    - canonicalizacao centralizada em `src/capabilities/canonicalizeCapability.ts`.
+    - `SkillManager` integrado para auditar (`getCapabilityAuditLog`) e indexar apenas capabilities conhecidas.
+    - unknown logado como `unknown_capability_detected` e exposto em `getUnknownCapabilities()`.
+    - script de qualidade criado em `scripts/validateCapabilities.ts` com regra DEV=warning e CI=fail para unknown sem allowlist.
+    - cobertura dos 4 cenarios obrigatorios adicionada em `src/tests/run.ts` (canonical direto, alias, unknown, mixed).
+  - Validacao executada:
+    - `node ./node_modules/typescript/bin/tsc --noEmit`
+    - `npm.cmd run validate:capabilities`
+    - `npm.cmd test` (falha preexistente fora do escopo KB-050 em `src/tests/run.ts` no bloco de consumo de `last_input_gap`)
+
 - [x] KB-017 - Externalizar capabilityFallback para signal puro
   - Status: concluido em 2026-04-05 (Fase 3 e Fase 4 validadas).
   - Comportamento validado:

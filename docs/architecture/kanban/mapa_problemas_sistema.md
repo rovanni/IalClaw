@@ -13,7 +13,7 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 ## Radar de críticos (snapshot 2026-04-06)
 - Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-024
-- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046, KB-048, KB-049
+- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046, KB-048, KB-049, KB-050
 - Em monitoramento runtime (em andamento): KB-011, KB-012
 
 
@@ -28,18 +28,20 @@ Observação:
 ### src/capabilities
 - Colunas e prioridades no quadro:
   - Crítico: KB-002
-  - Concluído: KB-017
+  - Concluído: KB-017, KB-050
   - Médio: KB-004, KB-005
 - Problemas mapeados:
   - stepCapabilities decide runtime sozinho
   - SkillManager decide instalação/autoremediação
   - CapabilityRegistry mantém estado paralelo
   - capabilityFallback decidia degradação fora do Orchestrator -> resolvido em KB-017
+  - governanca semantica de capabilities (alias/unknown/index) estava difusa -> resolvido em KB-050
 - Cards relacionados:
   - KB-002
   - KB-004
   - KB-005
   - KB-017
+  - KB-050
 
 ### src/config
 - Colunas e prioridades no quadro:

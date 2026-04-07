@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getRequiredCapabilitiesForPlanStep } from '../capabilities/taskCapabilities';
 import { handleCapabilityFallback } from '../capabilities/capabilityFallback';
+import { canonicalizeCapability } from '../capabilities/canonicalizeCapability';
+import { CapabilityRegistry } from '../capabilities/CapabilityRegistry';
+import { SkillManager } from '../capabilities/SkillManager';
 import { agentConfig, getExecutionModeSnapshot } from '../core/executor/AgentConfig';
 import { AgentExecutor } from '../core/executor/AgentExecutor';
 import { resolveExecutionMode, selectDiffStrategy, selectValidationMode } from '../core/executor/diffStrategy';
@@ -78,6 +81,34 @@ class RegistryTestFlowC implements Flow {
 
 async function run() {
     runStepResultValidatorTests();
+
+    const canonicalDirect = canonicalizeCapability('web_search');
+    assert.equal(canonicalDirect.isKnown, true);
+    assert.equal(canonicalDirect.canonical, 'web_search');
+
+    const aliasResult = canonicalizeCapability('browser nav');
+    assert.equal(aliasResult.isKnown, true);
+    assert.equal(aliasResult.canonical, 'browser_execution');
+
+    const unknownResult = canonicalizeCapability('magic_ai_thing');
+    assert.equal(unknownResult.isKnown, false);
+    assert.equal(unknownResult.isUnknown, true);
+
+    const kb050Manager = new SkillManager(new CapabilityRegistry(), 'strict-no-install');
+    kb050Manager.syncLoadedSkills([
+        {
+            id: 'kb050-mixed-skill',
+            capabilities: ['browser nav', 'unknown_x']
+        }
+    ]);
+    assert.deepEqual(kb050Manager.getCapabilityIndex(), {
+        browser_execution: ['kb050-mixed-skill']
+    });
+    const kb050Audit = kb050Manager.getCapabilityAuditLog();
+    assert.equal(kb050Audit.length, 2);
+    assert.equal(kb050Audit.some(entry => entry.raw === 'browser nav' && entry.canonical === 'browser_execution' && entry.isKnown), true);
+    assert.equal(kb050Audit.some(entry => entry.raw === 'unknown_x' && entry.isUnknown), true);
+    assert.deepEqual(kb050Manager.getUnknownCapabilities(), ['unknown_x']);
 
     assert.deepEqual(getExecutionModeSnapshot('balanced'), {
         executionMode: 'balanced',

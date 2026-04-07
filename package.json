@@ -11,6 +11,7 @@
     "dev:debug": "node bin/ialclaw.js start --debug",
     "dev:debug:tail": "node bin/ialclaw.js start --debug --tail",
     "test": "ts-node src/tests/run.ts",
+    "validate:capabilities": "ts-node scripts/validateCapabilities.ts",
     "kanban:check": "ts-node scripts/kanban-check.ts",
     "kanban:check:strict": "ts-node scripts/kanban-check.ts --strict",
     "setup": "ts-node src/scripts/setup.ts",
