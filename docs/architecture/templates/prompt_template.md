@@ -78,7 +78,7 @@ O comportamento do sistema deve permanecer exatamente igual.
 
 ### 📋 CHECKLIST KANBAN V2.0 (OBRIGATÓRIO)
 
-Após qualquer alteração, os ficheiros nas pastas físicas devem ser atualizados:
+Após qualquer alteração, os arquivos nas pastas físicas devem ser atualizados:
 
 1. Pendente: Remover o card de docs/architecture/kanban/Pendente/problemas_*.md.
 2. Andamento: Manter o rastro em docs/architecture/kanban/Em_Andamento/em_andamento.md.
@@ -229,7 +229,15 @@ Após implementar, você DEVE verificar:
 
 ---
 
-## 🔥 6. VERIFICAÇÃO DE CONFLITOS REAIS (OBRIGATÓRIO)
+### 6. GOVERNANÇA DE INVARIANTES (KB-048) 🔒
+
+* A decisão passou pelo **Gate Final** (`consolidateAndReturn`)?
+* O `input_gap` foi consumido/preservado corretamente?
+* Existe apenas um único ponto de log para a decisão final?
+
+---
+
+## 🔥 7. VERIFICAÇÃO DE CONFLITOS REAIS (OBRIGATÓRIO)
 
 ### a. conflitos entre signals
 

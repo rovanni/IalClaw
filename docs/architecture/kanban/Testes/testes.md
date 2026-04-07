@@ -152,6 +152,21 @@ Objetivo deste arquivo:
   - Pendencias para aprovar:
     - nenhuma no escopo do KB-046.
 
+- [x] KB-048 - Memory Introspection + Final Gate (alinhamento com template)
+  - Status: concluido em 6 de abril de 2026.
+  - Comportamento esperado:
+    - classificacao de introspeccao aberta em PT-BR deve cair em `MEMORY_QUERY` (nao em `QUESTION`).
+    - introspeccao (`MEMORY_QUERY`, `MEMORY_CHECK`, `MEMORY_STORE`) nao deve consumir `last_input_gap`.
+    - consumo de `last_input_gap` deve ocorrer somente no `consolidateAndReturn(...)` quando `decision.usedInputGap === true`.
+  - Evidencias atuais:
+    - `IntentionResolver.isMemoryIntrospection(...)` ampliado para padroes de linguagem natural (sem acento, singular/plural e variacoes abertas).
+    - `AgentController` deixou de limpar `session.last_input_gap` antes da orquestracao; sinal agora apenas observado no controller.
+    - decisao de introspeccao continua passando pelo Orchestrator e Final Gate, sem bypass nem `early return` fora da consolidacao.
+    - excecao arquitetural formalizada em `docs/architecture/decisions/KB-048-exception.md`.
+    - validacao obrigatoria executada: `npx ts-node tests/KB048_memory_introspection.test.ts`.
+  - Pendencias para aprovar:
+    - nenhuma no escopo do KB-048.
+
 ## 2) Roteiro pratico com IalClaw (site/jogo)
 
 ### Preparacao (Windows PowerShell)

@@ -110,6 +110,11 @@ export interface CognitiveDecision {
     interruptionReason?: string;
     usedInputGap?: boolean;
 
+    // Orchestration Hints (KB-049)
+    type?: string;
+    skipPlanning?: boolean;
+    skipToolLoop?: boolean;
+
     // Metadados para diagnóstico (opcionais)
     route?: any;
     autonomy?: any;
@@ -1401,6 +1406,21 @@ export class CognitiveOrchestrator {
             }, this.memoryService);
         }
 
+        // --- 2.4.6. SMALL TALK (KB-049) ---
+        // Bypass total para interações sociais (Oi, Tudo bem, etc)
+        if (!decision && intent === 'SMALL_TALK') {
+            this.logger.info('precedence_small_talk', '[ORCHESTRATOR] Prioridade: Small Talk (Fast Path)');
+            decision = {
+                strategy: CognitiveStrategy.LLM,
+                type: 'small_talk',
+                confidence: 1.0,
+                reason: 'small_talk_fast_path',
+                skipPlanning: true,
+                skipToolLoop: true,
+                usedInputGap: false
+            };
+        }
+
         // --- 2.5. NORMAL (DECISION HUB) ---
         if (!decision) {
             this.logger.info('precedence_normal', '[ORCHESTRATOR] Prioridade: Processamento Normal');
@@ -1467,7 +1487,7 @@ export class CognitiveOrchestrator {
                         confidence: aggregatedConfidence.score,
                         reason: t('agent.orchestrator.ask.low_confidence_fallback'),
                         capabilityAwarePlan,
-                        usedInputGap: false 
+                        usedInputGap: !!inputGap
                     };
                 } else if (autonomyDecision === AutonomyDecision.CONFIRM) {
                     decision = {
@@ -1476,7 +1496,7 @@ export class CognitiveOrchestrator {
                         reason: capabilityGap.hasGap ? "capability_gap_detected" : "high_risk_confirmation",
                         capabilityGap,
                         capabilityAwarePlan,
-                        usedInputGap: !!inputGap && capabilityGap.hasGap
+                        usedInputGap: !!inputGap
                     };
                 } else if (routeDecision.nature === TaskNature.HYBRID) {
                     decision = {
@@ -1501,7 +1521,7 @@ export class CognitiveOrchestrator {
                         confidence: routeDecision.confidence,
                         reason: "direct_response",
                         capabilityAwarePlan,
-                        usedInputGap: !!inputGap && !capabilityGap.hasGap
+                        usedInputGap: !!inputGap
                     };
                 }
             }

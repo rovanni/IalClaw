@@ -478,11 +478,10 @@ export class AgentController {
         let effectiveUserQuery = userQuery;
         this.resolveSessionLanguage(userQuery, session, 'user');
 
-        // Extrair e limpar signal de gap (transiente)
+        // Apenas observa o signal; consumo real ocorre no Final Gate do Orchestrator.
         const inputGap = session.last_input_gap;
         if (inputGap) {
-            session.last_input_gap = undefined; // Clear immediately to ensure it's transient
-            logger.info('consuming_input_gap_signal', '[COGNITIVE] Consumindo sinal de gap para orquestração', {
+            logger.info('input_gap_signal_available', t('log.agent.input_gap_signal_available'), {
                 capability: inputGap.capability
             });
         }

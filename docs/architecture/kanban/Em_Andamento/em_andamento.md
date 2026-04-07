@@ -53,3 +53,8 @@
   - Movimentacao: removido de `Pendente/problemas_criticos.md` e encaminhado para `Concluido/concluido.md`.
   - Evidencias: registro tecnico consolidado em `Testes/testes.md` (governanca no Orchestrator, fallback factual, regressao sem falhas).
 
+- [x] KB-048 - Memory Introspection + Final Gate (estabilizacao)
+  - Data de fechamento: 2026-04-06
+  - Movimentacao: consolidado como concluido com excecao arquitetural controlada documentada em `docs/architecture/decisions/KB-048-exception.md`.
+  - Evidencias: classificacao de `MEMORY_QUERY` estabilizada para linguagem natural PT-BR; consumo de `last_input_gap` mantido exclusivamente no Final Gate; validacao registrada em `Testes/testes.md`.
+

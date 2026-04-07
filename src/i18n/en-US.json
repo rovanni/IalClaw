@@ -198,6 +198,7 @@
   "log.agent.project_index_failed": "[LOG] log.agent.project_index_failed",
   "log.agent.project_indexed": "[LOG] log.agent.project_indexed",
   "log.agent.send_response_critical_failure": "[LOG] log.agent.send_response_critical_failure",
+  "log.agent.input_gap_signal_available": "[COGNITIVE] Input gap signal available for orchestration (consumption is exclusive to Final Gate).",
   "log.agent.session_directive_handled": "[LOG] log.agent.session_directive_handled",
   "log.agent.skill_completed": "[LOG] log.agent.skill_completed",
   "log.agent.skill_resolved": "[LOG] log.agent.skill_resolved",

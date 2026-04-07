@@ -1,5 +1,9 @@
 # Concluído
 
+- [x] KB-048 - Memory Introspection + Final Gate (alinhamento com template + estabilizacao)
+  - Data: 2026-04-06
+  - Evidência: `IntentionResolver.isMemoryIntrospection(...)` ampliado para cobrir consultas abertas em PT-BR (incluindo variacoes sem acento/singular-plural), corrigindo classificacao de `MEMORY_QUERY`. `AgentController` ajustado para nao consumir `session.last_input_gap` antes do Orchestrator; consumo permanece centralizado no `consolidateAndReturn(...)` condicionado por `decision.usedInputGap`. Introspeccao manteve `usedInputGap: false`. Excecao arquitetural controlada formalizada em `docs/architecture/decisions/KB-048-exception.md`.
+
 - [x] KB-047 - Governança de início de flows (Flow Start) centralizada
   - Data: 2026-04-06
   - Evidência: `matchByInput` removido do `FlowRegistry`. Lógica de decisão centralizada em `decideFlowStart.ts`. `CognitiveOrchestrator` agora é o único responsável por identificar e disparar novos flows, emitindo sinais de debug com detalhes do matching. Precedência corrigida para garantir que `Pending Action` tenha prioridade sobre o início de novos contextos. `tests/KB047_flow_start_governance.test.ts` validado com 100% de sucesso.

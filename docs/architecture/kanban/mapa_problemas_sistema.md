@@ -13,7 +13,7 @@ Este arquivo é o índice operacional do quadro: cada componente aponta para os 
 ## Radar de críticos (snapshot 2026-04-06)
 - Persistem: KB-003
 - Parcialmente mitigados: KB-001, KB-024
-- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046
+- Resolvidos: KB-002, KB-017, KB-020, KB-021, KB-022, KB-023, KB-027, KB-045, KB-046, KB-048
 - Em monitoramento runtime (em andamento): KB-011, KB-012
 
 
@@ -74,9 +74,11 @@ Observação:
 
 ### src/core/orchestrator
 - Colunas e prioridades no quadro:
-  - Concluido: KB-046
+  - Concluido: KB-046, KB-048
 - Problemas mapeados:
   - modularizacao do `CognitiveOrchestrator` sem plano formal quebrava o gate documental do template
+  - classificacao de introspeccao de memoria em linguagem natural aberta podia cair em `QUESTION` em vez de `MEMORY_QUERY` -> resolvido em KB-048
+  - governanca de `input_gap` com risco de consumo antecipado fora do Final Gate -> resolvido em KB-048
   - `CapabilityAwarePlan` e `PlanningStrategyContext` estavam duplicados entre o Orchestrator e o modulo de decisao de planning
   - mitigacao concluida: contratos compartilhados centralizados em `src/core/orchestrator/types/PlanningTypes.ts`, `src/core/orchestrator/types/CapabilityFallbackTypes.ts`, `src/core/orchestrator/types/RetryAfterFailureTypes.ts`, `src/core/orchestrator/types/ActiveDecisionsTypes.ts`, `src/core/orchestrator/types/IngestSignalsTypes.ts`, `src/core/orchestrator/types/SignalConflictTypes.ts`, `src/core/orchestrator/types/StopContinueGovernanceTypes.ts` e `src/core/orchestrator/types/ObservedSignalLogTypes.ts`
   - detector factual de conflitos de `auditSignalConsistency(...)` extraido para helper puro, mantendo no Orchestrator a emissao de auditoria e o controle do ciclo
@@ -86,6 +88,7 @@ Observação:
   - continuidade controlada definida: bloquear novas micro-extracoes quando nao houver ganho real de leitura, priorizando refinamento semantico local
 - Cards relacionados:
   - KB-046
+  - KB-048
 
 ### src/core/flow
 - Colunas e prioridades no quadro:

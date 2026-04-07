@@ -783,10 +783,10 @@ export class AgentLoop {
             ? true
             : planExecutability.planRequiresTools;
         const inputMentionsSkill = /\bskill\b/i.test(userInput);
-        const hasExecutionIntent = requiresRealWorldAction || planRequiresTools || inputMentionsSkill;
+        const hasExecutionIntent = (requiresRealWorldAction || planRequiresTools || inputMentionsSkill) && !orchestration?.skipPlanning;
         const executionMode = hasExecutionIntent ? 'REAL_TOOLS_ONLY' : 'NORMAL';
 
-        if (requiresRealWorldAction && !planExecutability.isExecutablePlan) {
+        if (requiresRealWorldAction && !planExecutability.isExecutablePlan && !orchestration?.skipPlanning) {
             this.logger.error('non_executable_operational_plan', new Error('non_executable_operational_plan'), '[GOVERNANCE] Plano não executável para intenção operacional', {
                 taskType: this.currentTaskType,
                 step_count: planExecutability.totalSteps,
@@ -795,7 +795,7 @@ export class AgentLoop {
             throw new Error(t('error.executor.non_executable_plan_for_operational_intent'));
         }
 
-        const loopDecision = !hasExecutionIntent;
+        const loopDecision = !hasExecutionIntent || orchestration?.skipToolLoop;
         const orchestratorDecision = this.orchestrator?.decideDirectExecution({
             sessionId: this.chatId,
             context: {
@@ -846,16 +846,19 @@ export class AgentLoop {
                     task_type: this.currentTaskType
                 });
             }
+
             if (finalDirectDecision) {
                 this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
                     mode: 'cognitive_direct',
                     bypass_loop: true,
-                    task_type: this.currentTaskType
+                    task_type: this.currentTaskType,
+                    reason: orchestration?.reason || 'low_risk'
                 });
-                if (executionMode !== 'REAL_TOOLS_ONLY') {
+                if (executionMode !== 'REAL_TOOLS_ONLY' || orchestration?.skipToolLoop) {
                     return this.executeContentGenerationDirect(userInput, initialMessages);
                 }
             }
+
             this.logger.info('short_circuit_blocked', '[GOVERNANCE] Short-circuit bloqueado — intenção de execução detectada, continuando para loop', {
                 hasExecutionIntent,
                 task_type: this.currentTaskType
@@ -968,9 +971,9 @@ export class AgentLoop {
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // EXPLICABILIDADE: Simular plano antes de agir
+        // EXPLICABILIDADE: Simular plano antes de agir (Skip if skipPlanning)
         // ═══════════════════════════════════════════════════════════════════
-        if (executionMode !== 'REAL_TOOLS_ONLY') {
+        if (executionMode !== 'REAL_TOOLS_ONLY' && !orchestration?.skipPlanning) {
             const planExplanation = await this.simulatePlan(userInput, decision.subtype);
             this.logger.info('action_plan_simulated', '[COGNITIVE] Plano simulado para o usuário', { explanation: planExplanation });
         }
@@ -1023,7 +1026,9 @@ export class AgentLoop {
 
         this.evaluateModeTransition();
 
-        this.ensureMinimalPlan();
+        if (!orchestration?.skipPlanning) {
+            this.ensureMinimalPlan();
+        }
 
         if (this.currentTaskType && ['file_conversion', 'file_search', 'content_generation'].includes(this.currentTaskType)) {
             const workspaceHint: MessagePayload = {

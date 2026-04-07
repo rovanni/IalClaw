@@ -147,7 +147,7 @@ function normalizeError(error: unknown): SerializableLogValue {
 
 function sanitize(value: unknown, depth: number = 0, seen: WeakSet<object> = new WeakSet()): SerializableLogValue {
     if (value === null || value === undefined) {
-        return value;
+        return value as any;
     }
 
     if (depth > 4) {
