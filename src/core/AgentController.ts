@@ -170,6 +170,7 @@ export class AgentController {
             return SessionManager.runWithSession(conversationId, async () => {
                 const progress = this.createTelegramProgressTracker(ctx);
                 let answer: string | null = null;
+                let requiresAudioReply = payload.requires_audio_reply;
                 const session = SessionManager.getCurrentSession();
 
                 // Propagate capability gap signal to session (transient evidence)
@@ -180,26 +181,58 @@ export class AgentController {
                     });
                 }
 
-                try {
-                    answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
-                    await progress.complete();
-                } catch (error: any) {
-                    await progress.fail(error);
-                    logger.error('conversation_execution_failed', error, t('log.agent.conversation_execution_failed'), {
-                        duration_ms: Date.now() - startedAt,
-                        source_type: payload.source_type
+                const isAudioWithoutTranscription = payload.source_type === 'audio'
+                    && payload.capability_gap?.capability === 'whisper_transcription';
+
+                if (isAudioWithoutTranscription) {
+                    const autoInstallAllowed = session?.capability_policy_overrides?.whisper_transcription === 'auto-install';
+                    requiresAudioReply = false;
+
+                    if (autoInstallAllowed) {
+                        logger.info('audio_transcription_auto_install_started', '[TELEGRAM] Tentando auto-instalacao do Whisper para processar audio', {
+                            capability: payload.capability_gap?.capability
+                        });
+
+                        const installed = await skillManager.ensure('whisper_transcription', 'auto-install');
+                        answer = installed
+                            ? t('telegram.input.audio_transcription_auto_install_success')
+                            : t('telegram.input.audio_transcription_auto_install_failed');
+                    } else {
+                        answer = t('telegram.input.audio_transcription_unavailable');
+                    }
+
+                    // O aviso ja foi entregue ao usuario; evita reprocessar o mesmo gap no turno seguinte.
+                    if (session?.last_input_gap?.capability === 'whisper_transcription') {
+                        delete session.last_input_gap;
+                    }
+
+                    logger.info('audio_transcription_unavailable_reply', '[TELEGRAM] Audio recebido sem Whisper; respondendo com orientacao acionavel', {
+                        capability: payload.capability_gap?.capability,
+                        auto_install_allowed: autoInstallAllowed
                     });
-                    answer = t('agent.error.pipeline', { message: error.message });
+                    await progress.complete();
+                } else {
+                    try {
+                        answer = await this.runConversation(conversationId, payload.text, progress.onEvent);
+                        await progress.complete();
+                    } catch (error: any) {
+                        await progress.fail(error);
+                        logger.error('conversation_execution_failed', error, t('log.agent.conversation_execution_failed'), {
+                            duration_ms: Date.now() - startedAt,
+                            source_type: payload.source_type
+                        });
+                        answer = t('agent.error.pipeline', { message: error.message });
+                    }
                 }
 
                 // GARANTIA DE ENTREGA: Sempre tentar enviar resposta, mesmo se houve erro
                 if (answer) {
                     try {
-                        await this.outputHandler.sendResponse(ctx, answer, payload.requires_audio_reply);
+                        await this.outputHandler.sendResponse(ctx, answer, requiresAudioReply);
                         logger.info('message_flow_completed', t('log.agent.message_flow_completed'), {
                             duration_ms: Date.now() - startedAt,
                             response_length: answer.length,
-                            requires_audio_reply: payload.requires_audio_reply
+                            requires_audio_reply: requiresAudioReply
                         });
                     } catch (sendError: any) {
                         // CRÍTICO: sendResponse falhou completamente (incluindo todos os retries e fallbacks)
@@ -1302,6 +1335,23 @@ export class AgentController {
             return t('agent.install.browser.failed');
         }
 
+        const audioCapability = this.extractAudioCapabilityInstallAuthorization(normalized);
+        if (audioCapability) {
+            if (!session) {
+                return t('agent.session.not_found');
+            }
+
+            session.capability_policy_overrides = {
+                ...(session.capability_policy_overrides || {}),
+                [audioCapability]: 'auto-install'
+            };
+
+            const installed = await skillManager.ensure(audioCapability as any, 'auto-install');
+            return installed
+                ? t('agent.install.audio_capability.success', { capability: audioCapability })
+                : t('agent.install.audio_capability.failed', { capability: audioCapability });
+        }
+
         // Decision Gate: intent + contexto -> decisão
         const decision = decisionGate({ text: normalized, session: session ?? undefined });
 
@@ -1328,6 +1378,27 @@ export class AgentController {
     private isPuppeteerInstallAuthorization(normalizedQuery: string): boolean {
         return /\b(pode instalar|pode tentar instalar|autorizo instalar|autorizo tentar instalar|instale o puppeteer|instalar o puppeteer)\b/.test(normalizedQuery)
             && normalizedQuery.includes('puppeteer');
+    }
+
+    private extractAudioCapabilityInstallAuthorization(normalizedQuery: string): 'whisper_transcription' | 'ffmpeg' | 'tts_generation' | null {
+        const hasInstallAuthorization = /\b(pode instalar|pode tentar instalar|autorizo instalar|autorizo tentar instalar|instale|instalar)\b/.test(normalizedQuery);
+        if (!hasInstallAuthorization) {
+            return null;
+        }
+
+        if (/\b(whisper|transcri(?:cao|ção)|transcrever|transcricao|transcrição)\b/.test(normalizedQuery)) {
+            return 'whisper_transcription';
+        }
+
+        if (/\b(ffmpeg)\b/.test(normalizedQuery)) {
+            return 'ffmpeg';
+        }
+
+        if (/\b(tts|texto para audio|texto para áudio|voz sintetica|voz sintética|sintese de voz|síntese de voz)\b/.test(normalizedQuery)) {
+            return 'tts_generation';
+        }
+
+        return null;
     }
 
     private resolveSessionLanguage(input: string, session?: ReturnType<typeof SessionManager.getCurrentSession>, source: InputSource = 'unknown'): Lang {

@@ -199,6 +199,18 @@ export class CognitiveActionExecutor {
                         originalQuery: userQuery
                     }
                 });
+
+                const capabilityName = gap.resource;
+                const options = t('agent.orchestrator.gap.options');
+                const confirmInstall = t('agent.orchestrator.gap.confirm_install', { resource: capabilityName });
+                const fullResponse = `${t('agent.orchestrator.gap.title')}\n\n${options}\n\n${confirmInstall}`;
+
+                this.memory.saveMessage(session.conversation_id, 'user', userQuery);
+                this.memory.saveMessage(session.conversation_id, 'assistant', fullResponse);
+                SessionManager.addToHistory(session.conversation_id, 'user', userQuery);
+                SessionManager.addToHistory(session.conversation_id, 'assistant', fullResponse);
+
+                return { answer: fullResponse };
             }
         }
 
