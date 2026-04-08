@@ -1744,7 +1744,17 @@ export class CognitiveOrchestrator {
     }
 
     private resolveRiskLevel(taskType: TaskType, nature: TaskNature): 'low' | 'medium' | 'high' {
-        if (taskType === 'information_request' || taskType === 'conversation' || taskType === 'content_generation') {
+        // PRINCÍPIO: Tipos que NÃO modificam o sistema são low risk.
+        // Apenas ações destrutivas (delete, format, sudo) são high risk.
+        const lowRiskTypes: TaskType[] = [
+            'information_request',
+            'conversation',
+            'content_generation',
+            'data_analysis',
+            'file_search',
+            'skill_installation'
+        ];
+        if (lowRiskTypes.includes(taskType)) {
             return 'low';
         }
 
@@ -1752,6 +1762,7 @@ export class CognitiveOrchestrator {
             return 'low';
         }
 
+        // system_operation e file_conversion são medium (podem modificar o sistema)
         return 'medium';
     }
 

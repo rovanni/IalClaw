@@ -72,10 +72,13 @@ export class ActionRouter {
 
     /**
      * Padrões para subtipos de intenção.
+     * PRINCÍPIO: Pedidos claros são COMMAND, não DOUBT.
+     * Apenas perguntas genuínas (que começam com por que/onde/qual/quais/when/why/where/how) são DOUBT.
+     * "Pode instalar?", "Poderia enviar?", "Consegue fazer?" são PEDIDOS, não dúvidas.
      */
     private readonly SUBTYPE_PATTERNS = {
-        SUGGESTION: /\b(acho que|deveria|poderia|seria bom|talvez|quem sabe|sugiro|recommend|should|could|maybe)\b/i,
-        DOUBT: /\?|^(por que|onde|qual|quais|when|why|where|how)\b/i
+        SUGGESTION: /\b(acho que|deveria|seria bom|talvez|quem sabe|sugiro|recommend|should|maybe)\b/i,
+        DOUBT: /^[?]$|^(por que|onde|qual|quais|when|why|where|how)\s/i
     };
 
     /**
@@ -122,15 +125,15 @@ export class ActionRouter {
             confidence = (taskType === 'conversation' || taskType === 'information_request') ? 1.0 : 0.95;
         }
 
-        // 5. Ajustar confiança baseada no subtipo (Garantindo que self-queries não sejam penalizadas)
+        // 5. Ajustar confiança baseada no subtipo
+        // PRINCÍPIO: Pedidos (COMMAND) não são penalizados. Apenas perguntas genuínas (DOUBT) têm confiança reduzida.
         if (!isMemorySelfQuery && !isCapabilitySelfQuery && !requiresExternalInformation) {
-            if (subtype === IntentSubtype.SUGGESTION) {
-                confidence *= 0.8;
-            } else if (subtype === IntentSubtype.DOUBT) {
-                confidence *= 0.6;
-            } else if (subtype === IntentSubtype.UNCERTAIN && taskType !== 'conversation') {
-                confidence *= 0.5;
+            if (subtype === IntentSubtype.DOUBT) {
+                confidence *= 0.7; // Pergunta real: confiança moderada
+            } else if (subtype === IntentSubtype.UNCERTAIN) {
+                confidence *= 0.8; // Incerto: confiança leve
             }
+            // SUGGESTION e COMMAND mantêm confiança total
         }
 
         const decision: RouteDecision = { route, subtype, nature, confidence };
