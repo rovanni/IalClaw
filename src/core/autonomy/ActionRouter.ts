@@ -75,7 +75,7 @@ export class ActionRouter {
      */
     private readonly SUBTYPE_PATTERNS = {
         SUGGESTION: /\b(acho que|deveria|poderia|seria bom|talvez|quem sabe|sugiro|recommend|should|could|maybe)\b/i,
-        DOUBT: /\?|^(por que|como|onde|qual|quais|when|why|where|how|consegue[ms]?)\b/i
+        DOUBT: /\?|^(por que|onde|qual|quais|when|why|where|how)\b/i
     };
 
     /**

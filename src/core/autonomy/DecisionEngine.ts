@@ -143,12 +143,12 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     }
 
     // [Mantendo lógica legada para compatibilidade se não houver diagnostics]
-    if (ctx.intentSubtype === 'doubt') return AutonomyDecision.ASK;
-    if (ctx.intentSubtype === 'suggestion') return ctx.riskLevel === 'low' ? AutonomyDecision.CONFIRM : AutonomyDecision.ASK;
-    if (ctx.intentSubtype === 'uncertain' && ctx.intent !== 'conversation') return AutonomyDecision.ASK;
+    // REMOVIDO: doubt e uncertain sempre perguntam. Agora dependem do contexto.
+    // "Poderia fazer?" "Como instalar?" são pedidos, não dúvidas.
 
     // 🟡 BAIXA CONFIANÇA (Fallback)
-    if (level === AutonomyLevel.BALANCED && confidence < 0.90 && ctx.riskLevel !== 'low') {
+    // Reduzido threshold de 0.90 para 0.60 — pedidos claros devem executar
+    if (level === AutonomyLevel.BALANCED && confidence < 0.60 && ctx.riskLevel !== 'low') {
         if (ctx.route !== ExecutionRoute.DIRECT_LLM) {
             return AutonomyDecision.ASK;
         }
@@ -164,8 +164,9 @@ export function decideAutonomy(ctx: AutonomyContext): AutonomyDecision {
     }
 
     // 🟡 AMARELO: Risco médio → decidir baseado na confiança (BALANCED/SAFE)
+    // Reduzido threshold de 0.90 para 0.60
     if (ctx.riskLevel === 'medium') {
-        return (confidence >= 0.90) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
+        return (confidence >= 0.60) ? AutonomyDecision.EXECUTE : AutonomyDecision.ASK;
     }
 
     return AutonomyDecision.ASK;
