@@ -356,6 +356,7 @@
   "report.failed_steps": "Etapas com falha",
   "autonomy.confirm_action": "⚠️ Esta ação requer confirmação: {action}\n\nTem certeza que deseja continuar?",
   "autonomy.ask_context": "Preciso de mais informações para continuar.",
+  "autonomy.short_input_clarification": "Não entendi \"{{input}}\". Pode explicar melhor o que precisa? Por exemplo: \"instalar o whisper\", \"criar um arquivo\", \"buscar informações\"",
   "autonomy.execute_confirmed": "Executando ação confirmada.",
   "database.not_found": "⚠️  Banco de dados não encontrado!",
   "database.create_prompt": "Deseja criar um novo banco de dados? (s/n): ",

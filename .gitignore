@@ -25,4 +25,5 @@ logs/
 .tmp_*.exit
 
 # Logs gerados na raiz do repositório
-/*.log
+/*.log.env
+ialclaw.sqlite*

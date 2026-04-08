@@ -914,10 +914,8 @@ export function getForcedPlanForTaskType(type: TaskType): string[] | null {
         case 'system_operation':
             return [
                 'verificar pré-requisitos',
-                'preparar comando',
                 'executar operação',
-                'verificar resultado',
-                'reportar status'
+                'verificar resultado'
             ];
         case 'skill_installation':
             return [
@@ -982,11 +980,9 @@ export function getForcedExecutablePlanForTaskType(type: TaskType, userInput: st
             ];
         case 'system_operation':
             return [
-                { description: 'verificar pré-requisitos', tool: 'list_directory', params: {} },
-                { description: 'preparar comando', tool: 'exec_command', params: {} },
+                { description: 'verificar pré-requisitos', tool: 'exec_command', params: {} },
                 { description: 'executar operação', tool: 'exec_command', params: {} },
-                { description: 'verificar resultado', tool: 'exec_command', params: {} },
-                { description: 'reportar status', tool: 'list_directory', params: {} }
+                { description: 'verificar resultado', tool: 'exec_command', params: {} }
             ];
         case 'skill_installation':
             return [

@@ -779,9 +779,13 @@ export class AgentLoop {
         const planForIntent = this.executionContext.currentPlan;
         const requiresRealWorldAction = this.requiresRealWorldAction(this.currentTaskType, decision.route);
         const planExecutability = this.evaluatePlanExecutability(planForIntent);
+        // FIX: conversation/generic_task types should NOT force REAL_TOOLS_ONLY
+        // These types represent ambiguous inputs where the LLM should respond directly,
+        // not be forced into a tool loop that produces generic error messages.
+        const isConversationalType = this.currentTaskType === 'conversation' || this.currentTaskType === 'generic_task';
         const planRequiresTools = requiresRealWorldAction
             ? true
-            : planExecutability.planRequiresTools;
+            : (isConversationalType ? false : planExecutability.planRequiresTools);
         const inputMentionsSkill = /\bskill\b/i.test(userInput);
         const hasExecutionIntent = (requiresRealWorldAction || planRequiresTools || inputMentionsSkill) && !orchestration?.skipPlanning;
         const executionMode = hasExecutionIntent ? 'REAL_TOOLS_ONLY' : 'NORMAL';
@@ -954,6 +958,14 @@ export class AgentLoop {
             if (/só tem esses comandos\?|quais comandos existem\?/i.test(userInput)) {
                 return {
                     answer: t('agent.command.help'),
+                    newMessages: []
+                };
+            }
+
+            // Fallback para inputs curtos/ambíguos - responder de forma útil
+            if (userInput.length <= 3 || /^\d+$/.test(userInput.trim())) {
+                return {
+                    answer: t('autonomy.short_input_clarification', { input: userInput }),
                     newMessages: []
                 };
             }
@@ -1181,7 +1193,21 @@ export class AgentLoop {
                             }
                         }
 
-                        // UX FIX: Interromper loop infinito de ferramenta e pedir elaboração
+                        // UX FIX: Interromper loop infinito de ferramenta
+                        // Se temos resultado de tool, gerar resposta baseada nele em vez de mensagem genérica
+                        const lastResult = this.lastStepResult ?? this.executionContext.lastToolResult;
+                        if (lastResult && typeof lastResult === 'string' && lastResult.trim().length > 0) {
+                            // Tentar gerar resposta final a partir do resultado da tool
+                            this.logger.info('tool_loop_with_result', '[LOOP] Tool repetida mas temos resultado - gerando resposta direta', {
+                                tool_name: response.tool_call.name,
+                                result_length: lastResult.length
+                            });
+                            const summaryAnswer = this.sanitizeUserFacingAnswer(lastResult);
+                            const summaryMsg: MessagePayload = { role: 'assistant', content: summaryAnswer };
+                            newMessages.push(summaryMsg);
+                            return { answer: summaryAnswer, newMessages };
+                        }
+
                         const loopAns = t('loop.tool_repeat_clarification');
                         const loopAnsMsg: MessagePayload = { role: 'assistant', content: loopAns };
                         newMessages.push(loopAnsMsg);

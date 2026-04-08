@@ -370,6 +370,7 @@
   "report.failed_steps": "Failed steps",
   "autonomy.confirm_action": "⚠️ This action requires confirmation: {action}\n\nAre you sure you want to continue?",
   "autonomy.ask_context": "I need more information to continue.",
+  "autonomy.short_input_clarification": "I didn\u2019t understand \"{{input}}\". Can you explain what you need? For example: \"install whisper\", \"create a file\", \"search for information\"",
   "autonomy.execute_confirmed": "Executing confirmed action.",
   "database.not_found": "⚠️  Database not found!",
   "database.create_prompt": "Do you want to create a new database? (y/n): ",
