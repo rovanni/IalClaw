@@ -55,6 +55,8 @@ export class ActionRouter {
         'converter', 'convert', 'transformar', 'transform',
         'executar', 'run', 'rodar', 'apply', 'aplicar',
         'instalar', 'install', 'add', 'adicionar', 'instale',
+        'enviar', 'send', 'manda', 'mande', 'envia',
+        'áudio', 'audio', 'voz', 'voice', 'tts', 'ogg',
         'workspace', 'diretório', 'directory', 'pasta', 'folder', 'arquivo', 'file',
         'arquivos', 'files', 'pastas', 'folders', 'pacote', 'package', 'dependencia', 'dependency',
         'library', 'biblioteca'
