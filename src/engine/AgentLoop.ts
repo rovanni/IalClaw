@@ -851,7 +851,11 @@ export class AgentLoop {
                 });
             }
 
-            if (finalDirectDecision) {
+            // FIX: Se o input pede uma ação que requer tools (áudio, enviar, instalar, etc),
+            // NÃO fazer short-circuit — deve ir para o tool loop
+            const requiresTools = /\b(áudio|audio|voz|voice|tts|enviar|manda|mande|envia|instalar|instale|converter|gerar|criar|executar)\b/i.test(userInput);
+
+            if (finalDirectDecision && !requiresTools) {
                 this.logger.info('short_circuit_activated', '[SHORT-CIRCUIT] Execução direta ativada (baixo risco + rota LLM)', {
                     mode: 'cognitive_direct',
                     bypass_loop: true,
@@ -861,6 +865,13 @@ export class AgentLoop {
                 if (executionMode !== 'REAL_TOOLS_ONLY' || orchestration?.skipToolLoop) {
                     return this.executeContentGenerationDirect(userInput, initialMessages);
                 }
+            }
+
+            if (requiresTools) {
+                this.logger.info('short_circuit_bypassed_for_tools', '[SHORT-CIRCUIT] Bypass DESATIVADO — input requer tools, continuando para loop', {
+                    input_preview: userInput.slice(0, 50),
+                    task_type: this.currentTaskType
+                });
             }
 
             this.logger.info('short_circuit_blocked', '[GOVERNANCE] Short-circuit bloqueado — intenção de execução detectada, continuando para loop', {
