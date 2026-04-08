@@ -97,7 +97,7 @@ export const TASK_TOOL_MAP: Record<string, string[]> = {
 export class AgentLoop {
     private llm: LLMProvider;
     private registry: SkillRegistry;
-    private maxIterations = 4;
+    private maxIterations = 8;
     private logger = createLogger('AgentLoop');
     private executionContext: ExecutionContext = {
         currentPlan: null,
@@ -994,7 +994,7 @@ export class AgentLoop {
         // FLUXO NORMAL: Outros tipos de tarefa usam loop
         // ═══════════════════════════════════════════════════════════════════
         const maxIter = policy?.limits?.max_steps || this.maxIterations;
-        const maxTools = policy?.limits?.max_tool_calls || 3;
+        const maxTools = policy?.limits?.max_tool_calls || 6;
         const timeoutMs = 30000; // 30 segundos
         let toolCallsCount = 0;
         let consecutiveToolFailures = 0;

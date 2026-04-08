@@ -1744,7 +1744,7 @@ export class CognitiveOrchestrator {
     }
 
     private resolveRiskLevel(taskType: TaskType, nature: TaskNature): 'low' | 'medium' | 'high' {
-        if (taskType === 'information_request' || taskType === 'conversation') {
+        if (taskType === 'information_request' || taskType === 'conversation' || taskType === 'content_generation') {
             return 'low';
         }
 

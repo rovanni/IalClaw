@@ -748,8 +748,8 @@ export class AgentController {
 
         const policy = {
             limits: {
-                max_steps: 3,
-                max_tool_calls: 2
+                max_steps: 8,
+                max_tool_calls: 6
             },
             progress: {
                 onEvent: onProgress
