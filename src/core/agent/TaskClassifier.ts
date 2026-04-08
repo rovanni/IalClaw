@@ -389,6 +389,12 @@ export class TaskClassifier {
             return { type: 'system_operation', confidence: 0.98, source: 'heuristic' };
         }
 
+        // 1.5. Pedidos de ação que precisam de tools - system_operation
+        // áudio, voz, TTS, enviar, converter = ações reais, não perguntas
+        if (this.isToolRequiringAction(normalized)) {
+            return { type: 'system_operation', confidence: 0.92, source: 'heuristic' };
+        }
+
         // 2. Skill installation - sempre skill_installation
         if (this.isSkillInstallation(normalized)) {
             return { type: 'skill_installation', confidence: 0.98, source: 'heuristic' };
@@ -443,6 +449,23 @@ export class TaskClassifier {
         }
 
         return bestMatch;
+    }
+
+    private isToolRequiringAction(normalized: string): boolean {
+        // Pedidos que exigem execução de tools (não são perguntas)
+        const actionPatterns = [
+            /\b(enviar|manda|mande|envia)\s+(áudio|audio|voz|voice|mensagem|arquivo|file)/i,
+            /\b(gerar|criar|fazer)\s+(áudio|audio|voz|voice)/i,
+            /\b(tts|text.to.speech)\b/i,
+            /\bconverter\s+(para|em|pra)\s+(áudio|audio|ogg|mp3)/i,
+            /\b(áudio|audio|voz|voice)\s+(de|com|para)/i,
+            /\bpode\s+(enviar|mandar|gerar|criar|converter)\b/i,
+            /\bpoderia\s+(enviar|mandar|gerar|criar|converter)\b/i,
+            /\bconsegue\s+(enviar|mandar|gerar|criar|converter)\b/i,
+            /\bquero\s+(falar|conversar|ouvir)\s+(com|pelo|por)\s+(áudio|audio|voz)/i
+        ];
+
+        return actionPatterns.some(pattern => pattern.test(normalized));
     }
 
     private isTerminalCommand(normalized: string): boolean {
