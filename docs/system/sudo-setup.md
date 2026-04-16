@@ -18,20 +18,20 @@ sudo visudo
 
 ### Passo 2: Adicionar regra restritiva
 
-Adicione a seguinte linha no final do arquivo (substitua `venus` pelo seu usuário):
+Adicione a seguinte linha no final do arquivo (substitua `your_user` pelo seu usuário):
 
 ```
-venus ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get
+your_user ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get
 ```
 
-Esta regra permite que o usuário `venus` execute apenas `apt` e `apt-get` sem senha.
+Esta regra permite que o usuário `your_user` execute apenas `apt` e `apt-get` sem senha.
 
 ### Passo 3: Comandos adicionais (opcional)
 
 Para permitir mais comandos, adicione-os separados por vírgula:
 
 ```
-venus ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/pip, /usr/bin/pip3
+your_user ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /usr/bin/pip, /usr/bin/pip3
 ```
 
 ## Gerenciadores de Pacotes Suportados
@@ -92,7 +92,7 @@ Se pedir senha, a configuração precisa ser ajustada.
 ### NÃO use esta configuração:
 
 ```
-venus ALL=(ALL) NOPASSWD: ALL
+your_user ALL=(ALL) NOPASSWD: ALL
 ```
 
 Esta regra permite **qualquer comando** sem senha, o que é extremamente perigoso.

@@ -27,7 +27,7 @@ When a user sends an audio file, the system persists it in the `TaskContext`. Fo
 
 3.  **Transcription**: Use the GPU-optimized Whisper CLI to transcribe the audio.
     ```bash
-    /home/rover/whisper.cpp/build/bin/whisper-cli -m /home/rover/whisper.cpp/models/ggml-base.bin -f workspace/audios/inputs/input.wav -l pt
+    whisper-cli -m ggml-base.bin -f workspace/audios/inputs/input.wav -l pt
     ```
     *Note: The `-l pt` flag ensures transcription in Portuguese.*
 
@@ -39,7 +39,7 @@ When a voice response is requested or appropriate, follow these steps:
 
 1.  **Speech Generation**: Use the `thorial-tts.sh` script to generate an `.mp3` file.
     ```bash
-    /home/rover/.openclaw/workspace/scripts/thorial-tts.sh "[RESPONSE_TEXT]" workspace/audios/outputs/output.mp3
+    ./scripts/tts.sh "[RESPONSE_TEXT]" workspace/audios/outputs/output.mp3
     ```
 
 2.  **Conversion**: Convert the `.mp3` to a Telegram-compatible Voice message (`.ogg` Opus).
@@ -48,7 +48,7 @@ When a voice response is requested or appropriate, follow these steps:
     ```
     *Default Voice: pt-BR-AntonioNeural (Masculino)*
 
-3.  **Delivery**: Inform the user that the voice message is located at `/home/rover/.openclaw/workspace/audios/output.ogg`.
+3.  **Delivery**: Inform the user that the voice message is located at `./audios/output.ogg`.
 
 ## Strategy for Execution (Cognitive Pattern)
 
@@ -63,10 +63,10 @@ When a voice response is requested or appropriate, follow these steps:
 Esta skill requer ferramentas externas instaladas na VPS Linux:
 
 ### 1. Whisper (STT)
-O motor de transcrição deve estar em `/home/rover/whisper.cpp/build/bin/whisper-cli`.
+O motor de transcrição deve estar em `whisper-cli`.
 
 ### 2. Thorial TTS (TTS)
-O script de voz deve estar em `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`.
+O script de voz deve estar em `./scripts/tts.sh`.
 
 ### 3. FFmpeg
 Necessário para conversão de formatos (`sudo apt update && sudo apt install ffmpeg -y`).
@@ -82,10 +82,10 @@ Necessário para conversão de formatos (`sudo apt update && sudo apt install ff
 
 ## Important Paths
 
-- **Whisper CLI**: `/home/rover/whisper.cpp/build/bin/whisper-cli`
-- **Whisper model (Default)**: `/home/rover/whisper.cpp/models/ggml-base.bin`
-- **TTS Script**: `/home/rover/.openclaw/workspace/scripts/thorial-tts.sh`
-- **Output Audio Dir**: `/home/rover/.openclaw/workspace/audios/`
+- **Whisper CLI**: `whisper-cli`
+- **Whisper model (Default)**: `ggml-base.bin`
+- **TTS Script**: `./scripts/tts.sh`
+- **Output Audio Dir**: `./audios/`
 
 ## 👤 Autoria
 Criada por **Luciano Rovanni do Nascimento**
