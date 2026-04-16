@@ -1138,9 +1138,9 @@ async function run() {
         message: 'Iniciando processamento de mensagem do Telegram.',
         trace_id: '67e03695-958e-4538-8819-e9223b34fe5f',
         pid: 3082,
-        conversation_id: '8071707790',
+        conversation_id: '123456789',
         channel: 'telegram',
-        telegram_user_id: 8071707790,
+        telegram_user_id: 123456789,
         update_id: 429398611
     });
     const stripAnsi = (value: string) => value.replace(/\x1B\[[0-9;]*m/g, '');
