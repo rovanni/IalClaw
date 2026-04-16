@@ -1,0 +1,134 @@
+﻿[2m2026-04-05T20:51:47.907-03:00[0m [36mÔä╣´©Å INFO[0m FlowRegistry:flow_registered - Flow html_slides registered successfully.
+[2m2026-04-05T20:51:48.658-03:00[0m [36mÔä╣´©Å INFO[0m [33m[2/5][0m - OllamaProvider:provider_initialized - [2/5] Provider Ollama inicializado. [2m(host=0.0.0.0)[0m
+[2m2026-04-05T20:51:48.660-03:00[0m [35m­ƒºá [DECISION][0m CognitiveOrchestrator:self_healing_active_decision [2m(reason=insufficient_context)[0m - [ORCHESTRATOR ACTIVE] Governan├ºa de self-healing avaliada
+[2m2026-04-05T20:51:48.661-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signals_ingested_passive_mode - [ORCHESTRATOR PASSIVE] Consumindo signals do AgentLoop
+[2m2026-04-05T20:51:48.661-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signal_failsafe_observed - [ORCHESTRATOR PASSIVE] FailSafeSignal observado
+[2m2026-04-05T20:51:48.662-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signal_self_healing_observed - [ORCHESTRATOR PASSIVE] SelfHealingSignal observado
+[2m2026-04-05T20:51:48.663-03:00[0m [35m­ƒºá [DECISION][0m CognitiveOrchestrator:self_healing_active_decision [2m(success=false reason=fail_safe_activated)[0m - [ORCHESTRATOR ACTIVE] Governan├ºa de self-healing avaliada
+npx.cmd : [parseLlmJson] JSON com aspas n├úo-escapadas detectado
+No linha:1 caractere:1
++ npx.cmd ts-node src/tests/run.ts 2>&1 | Out-File -Encoding utf8 test_ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([parseLlmJson] ...padas detectado 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[parseLlmJson] JSON com aspas n├úo-escapadas detectado
+[2m2026-04-05T20:51:48.676-03:00[0m [33mÔÜÖ´©Å [EXECUTION][0m AgentLoop:execution_mode_ready - [MODE] Modo EXECUTION ativado: type=system_operation, confidence=0.95
+[2m2026-04-05T20:51:48.677-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:minimal_plan_created - [PLAN] source=legacy_forced_plan Plano m├¡nimo criado para: system_operation
+[2m2026-04-05T20:51:48.681-03:00[0m [35m­ƒºá [DECISION][0m execute [2m(confidence=0.95)[0m - [AUTONOMY] Decis├úo: execute
+[2m2026-04-05T20:51:48.682-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:route_autonomy_signal_emitted - [SIGNAL] Route/autonomy recommendation emitted [2m(reason=tool_loop_required)[0m
+[2m2026-04-05T20:51:48.683-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_governance - [GOVERNANCE] Governan├ºa do short-circuit avaliada
+[2m2026-04-05T20:51:48.683-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - [LOG] log.loop.started
+[2m2026-04-05T20:51:48.685-03:00[0m [32mÔ£à [RESULT][0m AgentLoop:loop_completed [2m(duration_ms=1)[0m - [LOG] log.loop.completed
+[2m2026-04-05T20:51:48.685-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:task_context_cleared - [CONTEXT] Contexto operacional limpo (execu├º├úo finalizada)
+[2m2026-04-05T20:51:48.689-03:00[0m [33mÔÜÖ´©Å [EXECUTION][0m AgentLoop:execution_mode_ready - [MODE] Modo EXECUTION ativado: type=system_operation, confidence=0.95
+[2m2026-04-05T20:51:48.690-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:minimal_plan_created - [PLAN] source=legacy_forced_plan Plano m├¡nimo criado para: system_operation
+[2m2026-04-05T20:51:48.691-03:00[0m [35m­ƒºá [DECISION][0m execute [2m(confidence=0.95)[0m - [AUTONOMY] Decis├úo: execute
+[2m2026-04-05T20:51:48.692-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:route_autonomy_signal_emitted - [SIGNAL] Route/autonomy recommendation emitted [2m(reason=tool_loop_required)[0m
+[2m2026-04-05T20:51:48.692-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_governance - [GOVERNANCE] Governan├ºa do short-circuit avaliada
+[2m2026-04-05T20:51:48.693-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - [LOG] log.loop.started
+[2m2026-04-05T20:51:48.694-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - [LOG] log.loop.tool_call_started
+[2m2026-04-05T20:51:48.695-03:00[0m [32mÔ£à [RESULT][0m AgentLoop:tool_call_completed - [LOG] log.loop.tool_call_completed
+[2m2026-04-05T20:51:48.696-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:step_validation_signal_emitted - [SIGNAL] Step validation recommendation emitted [2m(reason=step_validation_passed)[0m
+[2m2026-04-05T20:51:48.698-03:00[0m [32mÔ£à [RESULT][0m AgentLoop:loop_completed [2m(duration_ms=5)[0m - [LOG] log.loop.completed
+[2m2026-04-05T20:51:48.698-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:task_context_cleared - [CONTEXT] Contexto operacional limpo (execu├º├úo finalizada)
+[2m2026-04-05T20:51:48.700-03:00[0m [33mÔÜÖ´©Å [EXECUTION][0m AgentLoop:execution_mode_ready - [MODE] Modo EXECUTION ativado: type=information_request, confidence=0.75
+[2m2026-04-05T20:51:48.701-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:minimal_plan_created - [PLAN] source=legacy_forced_plan Plano m├¡nimo criado para: information_request
+[2m2026-04-05T20:51:48.701-03:00[0m [35m­ƒºá [DECISION][0m ask [2m(confidence=0.75)[0m - [AUTONOMY] Decis├úo: ask
+[2m2026-04-05T20:51:48.702-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:route_autonomy_signal_emitted - [SIGNAL] Route/autonomy recommendation emitted [2m(reason=low_risk_direct_llm)[0m
+[2m2026-04-05T20:51:48.703-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_governance - [GOVERNANCE] Governan├ºa do short-circuit avaliada
+[2m2026-04-05T20:51:48.703-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_activated - [SHORT-CIRCUIT] Execu├º├úo direta ativada (baixo risco + rota LLM)
+[2m2026-04-05T20:51:48.704-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_content_generation - [SHORT-CIRCUIT] Executando content_generation diretamente (sem loop)
+[2m2026-04-05T20:51:48.705-03:00[0m [33mÔÜá´©Å WARN[0m 
+AgentLoop:short_circuit_empty - [SHORT-CIRCUIT] LLM retornou resposta vazia ou 
+muito curta [2m(response_length=43)[0m
+[2m2026-04-05T20:51:48.705-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:task_context_cleared - [CONTEXT] Contexto operacional limpo (execu├º├úo finalizada)
+[2m2026-04-05T20:51:48.706-03:00[0m [33mÔÜÖ´©Å [EXECUTION][0m AgentLoop:execution_mode_ready - [MODE] Modo EXECUTION ativado: type=information_request, confidence=0.95
+[2m2026-04-05T20:51:48.707-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:minimal_plan_created - [PLAN] source=legacy_forced_plan Plano m├¡nimo criado para: information_request
+[2m2026-04-05T20:51:48.707-03:00[0m [35m­ƒºá [DECISION][0m execute [2m(confidence=0.95)[0m - [AUTONOMY] Decis├úo: execute
+[2m2026-04-05T20:51:48.708-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:route_autonomy_signal_emitted - [SIGNAL] Route/autonomy recommendation emitted [2m(reason=tool_loop_required)[0m
+[2m2026-04-05T20:51:48.709-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:short_circuit_governance - [GOVERNANCE] Governan├ºa do short-circuit avaliada
+[2m2026-04-05T20:51:48.709-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:simulate_plan - [COGNITIVE] Simulando plano de a├º├úo
+[2m2026-04-05T20:51:48.710-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:action_plan_simulated - [COGNITIVE] Plano simulado para o usu├írio
+[2m2026-04-05T20:51:48.710-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - [LOG] log.loop.started
+[2m2026-04-05T20:51:48.711-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - [LOG] log.loop.tool_call_started
+[2m2026-04-05T20:51:48.712-03:00[0m [32mÔ£à [RESULT][0m AgentLoop:tool_call_completed - [LOG] log.loop.tool_call_completed
+[2m2026-04-05T20:51:48.713-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:step_validation_signal_emitted - [SIGNAL] Step validation recommendation emitted [2m(reason=step_validation_passed)[0m
+[DEBUG_MSGS] roles=user,system,assistant,tool, toolFound=true, toolContent=Skills instaladas (2):
+ÔÇó skill-installer (interna) ÔÇö Instala skills do marketpla
+[2m2026-04-05T20:51:48.714-03:00[0m [32mÔ£à [RESULT][0m AgentLoop:loop_completed [2m(duration_ms=3)[0m - [LOG] log.loop.completed
+[2m2026-04-05T20:51:48.714-03:00[0m [36mÔä╣´©Å INFO[0m AgentLoop:task_context_cleared - [CONTEXT] Contexto operacional limpo (execu├º├úo finalizada)
+[DEBUG_ACTUAL] Answer: Skills instaladas (2):
+ÔÇó skill-installer (interna) ÔÇö Instala skills do marketplace
+ÔÇó skill-auditor (interna) ÔÇö Audita skills publicas
+[2m2026-04-05T20:51:48.717-03:00[0m [36mÔä╣´©Å INFO[0m AgentController:language_directive_injected - [LCL] Diretiva de idioma injetada no prompt (skill)
+[2m2026-04-05T20:51:48.718-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signals_ingested_passive_mode - [ORCHESTRATOR PASSIVE] Consumindo signals do AgentLoop
+[2m2026-04-05T20:51:48.720-03:00[0m [32mÔ£à [RESULT][0m AgentController:skill_completed [2m(response_length=32)[0m - [LOG] log.agent.skill_completed
+[2m2026-04-05T20:51:48.722-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=498e96ee)[0m - [LOG] log.agent.web_flow_started
+[2m2026-04-05T20:51:48.722-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_skipped_non_user_input - [LCL] Input n├úo-originado do usu├írio ÔÇö idioma preservado [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.724-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_short_input_preserved - [LCL] Input curto/amb├¡guo ÔÇö idioma preservado [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.725-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=498e96ee route=conversation)[0m - [LOG] log.agent.conversation_started
+[2m2026-04-05T20:51:48.727-03:00[0m [36mÔä╣´©Å INFO[0m AgentController:input_intent_classified - [INTENT] Inten├º├úo classificada para contexto do orquestrador [2m(trace=498e96ee conversation_id=pending-action-controller-test)[0m
+[2m2026-04-05T20:51:48.729-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.729-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_pending - [ORCHESTRATOR] Prioridade: Pending Action [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.730-03:00[0m [35m­ƒºá [DECISION][0m AgentController:orchestration_strategy_selected [2m(trace=498e96ee reason=user_confirmed_pending)[0m - [ORCHESTRATOR] Estrat├®gia selecionada
+[2m2026-04-05T20:51:48.731-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_cognitive_strategy - [EXECUTOR] Executando: execute_pending [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.731-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_pending_installation - [EXECUTOR] Instalando capability/skill: pptx [2m(trace=498e96ee)[0m
+[2m2026-04-05T20:51:48.732-03:00[0m [32mÔ£à [RESULT][0m AgentController:web_flow_completed [2m(trace=498e96ee duration_ms=11 response_length=245)[0m - [LOG] log.agent.web_flow_completed
+[2m2026-04-05T20:51:48.734-03:00[0m [36mÔä╣´©Å INFO[0m TaskClassifier:file_conversion_blocked_no_file_signal - Bloqueando file_conversion sem sinal de arquivo
+[2m2026-04-05T20:51:48.736-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow
+[2m2026-04-05T20:51:48.737-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_normal - [ORCHESTRATOR] Prioridade: Processamento Normal
+[2m2026-04-05T20:51:48.737-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_intent_exploration - [ORCHESTRATOR] Inten├º├úo explorat├│ria detectada
+[2m2026-04-05T20:51:48.738-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow
+[2m2026-04-05T20:51:48.739-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_flow_start - [ORCHESTRATOR] Prioridade: In├¡cio de Flow
+[2m2026-04-05T20:51:48.739-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_cognitive_strategy - [EXECUTOR] Executando: start_flow
+[2m2026-04-05T20:51:48.740-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED - Flow html_slides started.
+[2m2026-04-05T20:51:48.741-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:flow_started_by_orchestrator - [KB-045] In├¡cio de flow governado pelo Orquestrador: html_slides
+[2m2026-04-05T20:51:48.742-03:00[0m [36mÔä╣´©Å INFO[0m FlowRegistry:flow_registered - Flow registry_test_flow_a registered successfully.
+[2m2026-04-05T20:51:48.742-03:00[0m [36mÔä╣´©Å INFO[0m FlowRegistry:flow_registered - Flow registry_test_flow_b registered successfully.
+[2m2026-04-05T20:51:48.743-03:00[0m [36mÔä╣´©Å INFO[0m FlowRegistry:flow_registered - Flow registry_test_flow_c registered successfully.
+[2m2026-04-05T20:51:48.744-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=bcf34b2a)[0m - [LOG] log.agent.web_flow_started
+[2m2026-04-05T20:51:48.744-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_skipped_non_user_input - [LCL] Input n├úo-originado do usu├írio ÔÇö idioma preservado [2m(trace=bcf34b2a)[0m
+[2m2026-04-05T20:51:48.745-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=bcf34b2a route=conversation)[0m - [LOG] log.agent.conversation_started
+[2m2026-04-05T20:51:48.759-03:00[0m [36mÔä╣´©Å INFO[0m AgentController:input_intent_classified - [INTENT] Inten├º├úo classificada para contexto do orquestrador [2m(trace=bcf34b2a conversation_id=exploration-controller-test)[0m
+[2m2026-04-05T20:51:48.759-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow [2m(trace=bcf34b2a)[0m
+[2m2026-04-05T20:51:48.760-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_normal - [ORCHESTRATOR] Prioridade: Processamento Normal [2m(trace=bcf34b2a)[0m
+[2m2026-04-05T20:51:48.760-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_intent_exploration - [ORCHESTRATOR] Inten├º├úo explorat├│ria detectada [2m(trace=bcf34b2a)[0m
+[2m2026-04-05T20:51:48.761-03:00[0m [35m­ƒºá [DECISION][0m AgentController:orchestration_strategy_selected [2m(trace=bcf34b2a reason=Vamos desenvolver isso juntos.
+
+Que tipo de jogo voc├¬ est├í pensando?
+1. Algo simples, como cobrinha ou pong
+2. Um projeto 2D ou 3D
+3. Alg...)[0m - [ORCHESTRATOR] Estrat├®gia selecionada
+[2m2026-04-05T20:51:48.762-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_cognitive_strategy - [EXECUTOR] Executando: ask [2m(trace=bcf34b2a)[0m
+[2m2026-04-05T20:51:48.762-03:00[0m [32mÔ£à [RESULT][0m AgentController:web_flow_completed [2m(trace=bcf34b2a duration_ms=19 response_length=180)[0m - [LOG] log.agent.web_flow_completed
+[2m2026-04-05T20:51:48.772-03:00[0m [36mÔä╣´©Å INFO[0m TelegramOutputHandler:attachment_sent - [LOG] log.telegram.output.attachment_sent
+[2m2026-04-05T20:51:48.773-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=495cb218)[0m - [LOG] log.agent.web_flow_started
+[2m2026-04-05T20:51:48.774-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_skipped_non_user_input - [LCL] Input n├úo-originado do usu├írio ÔÇö idioma preservado [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.774-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_short_input_preserved - [LCL] Input curto/amb├¡guo ÔÇö idioma preservado [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.775-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=495cb218 route=conversation)[0m - [LOG] log.agent.conversation_started
+[2m2026-04-05T20:51:48.775-03:00[0m [36mÔä╣´©Å INFO[0m AgentController:input_intent_classified - [INTENT] Inten├º├úo classificada para contexto do orquestrador [2m(trace=495cb218 conversation_id=capability-loop-fix-test)[0m
+[2m2026-04-05T20:51:48.776-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.776-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_pending - [ORCHESTRATOR] Prioridade: Pending Action [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.777-03:00[0m [35m­ƒºá [DECISION][0m AgentController:orchestration_strategy_selected [2m(trace=495cb218 reason=user_confirmed_pending)[0m - [ORCHESTRATOR] Estrat├®gia selecionada
+[2m2026-04-05T20:51:48.777-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_cognitive_strategy - [EXECUTOR] Executando: execute_pending [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.778-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_pending_installation - [EXECUTOR] Instalando capability/skill: audio_support [2m(trace=495cb218)[0m
+[2m2026-04-05T20:51:48.779-03:00[0m [32mÔ£à [RESULT][0m AgentController:web_flow_completed [2m(trace=495cb218 duration_ms=5 response_length=245)[0m - [LOG] log.agent.web_flow_completed
+[2m2026-04-05T20:51:48.779-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=0092e502)[0m - [LOG] log.agent.web_flow_started
+[2m2026-04-05T20:51:48.780-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_skipped_non_user_input - [LCL] Input n├úo-originado do usu├írio ÔÇö idioma preservado [2m(trace=0092e502)[0m
+[2m2026-04-05T20:51:48.781-03:00[0m [36mÔä╣´©Å INFO[0m LanguageControlLayer:language_short_input_preserved - [LCL] Input curto/amb├¡guo ÔÇö idioma preservado [2m(trace=0092e502)[0m
+[2m2026-04-05T20:51:48.781-03:00[0m [36m­ƒÜÇ [START][0m MESSAGE_RECEIVED [2m(trace=0092e502 route=conversation)[0m - [LOG] log.agent.conversation_started
+[2m2026-04-05T20:51:48.782-03:00[0m [36mÔä╣´©Å INFO[0m AgentController:input_intent_classified - [INTENT] Inten├º├úo classificada para contexto do orquestrador [2m(trace=0092e502 conversation_id=retry-safety-test)[0m
+[2m2026-04-05T20:51:48.782-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:flow_start_evaluation - [ORCHESTRATOR] Avaliando in├¡cio de flow [2m(trace=0092e502)[0m
+[2m2026-04-05T20:51:48.783-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:precedence_pending - [ORCHESTRATOR] Prioridade: Pending Action [2m(trace=0092e502)[0m
+[2m2026-04-05T20:51:48.783-03:00[0m [35m­ƒºá [DECISION][0m AgentController:orchestration_strategy_selected [2m(trace=0092e502 reason=user_confirmed_pending)[0m - [ORCHESTRATOR] Estrat├®gia selecionada
+[2m2026-04-05T20:51:48.784-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveActionExecutor:executing_cognitive_strategy - [EXECUTOR] Executando: execute_pending [2m(trace=0092e502)[0m
+[2m2026-04-05T20:51:48.784-03:00[0m [32mÔ£à [RESULT][0m AgentController:web_flow_completed [2m(trace=0092e502 duration_ms=5 response_length=84)[0m - [LOG] log.agent.web_flow_completed
+[2m2026-04-05T20:51:48.786-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signals_ingested_passive_mode - [ORCHESTRATOR PASSIVE] Consumindo signals do AgentLoop
+[2m2026-04-05T20:51:48.787-03:00[0m [36mÔä╣´©Å INFO[0m CognitiveOrchestrator:signal_failsafe_observed - [ORCHESTRATOR PASSIVE] FailSafeSignal observado
+[2m2026-04-05T20:51:48.788-03:00[0m [35m­ƒºá [DECISION][0m CognitiveOrchestrator:tool_selection_active_decision - [KB-024] Orquestrador decidiu explora├º├úo de tool
+[2m2026-04-05T20:51:48.788-03:00[0m [35m­ƒºá [DECISION][0m CognitiveOrchestrator:tool_selection_active_decision - [KB-024] Orquestrador decidiu explora├º├úo de tool
+[2m2026-04-05T20:51:48.789-03:00[0m [35m­ƒºá [DECISION][0m CognitiveOrchestrator:tool_selection_active_decision [2m(reason=contextual_confidence)[0m - [KB-024] Orquestrador decidiu tool com score positivo
+All tests passed.
+^C
